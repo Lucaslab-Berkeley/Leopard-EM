@@ -90,11 +90,13 @@ def do_iteration_statistics_updates(
     cross_correlation: torch.Tensor,
     euler_angles: torch.Tensor,
     defocus_values: torch.Tensor,
+    pixel_values: torch.Tensor,
     mip: torch.Tensor,
     best_phi: torch.Tensor,
     best_theta: torch.Tensor,
     best_psi: torch.Tensor,
     best_defocus: torch.Tensor,
+    best_pixel_size: torch.Tensor,
     correlation_sum: torch.Tensor,
     correlation_squared_sum: torch.Tensor,
     H: int,
@@ -119,6 +121,8 @@ def do_iteration_statistics_updates(
         Euler angles for the current iteration. Has shape (orientations, 3).
     defocus_values : torch.Tensor
         Defocus values for the current iteration. Has shape (defocus,).
+    pixel_values : torch.Tensor
+        Pixel size values for the current iteration. Has shape (pixel_size_batch,).
     mip : torch.Tensor
         Maximum intensity projection of the cross-correlation values.
     best_phi : torch.Tensor
@@ -129,6 +133,8 @@ def do_iteration_statistics_updates(
         Best psi angle for each pixel.
     best_defocus : torch.Tensor
         Best defocus value for each pixel.
+    best_pixel_size : torch.Tensor
+        Best pixel size value for each pixel.
     correlation_sum : torch.Tensor
         Sum of cross-correlation values for each pixel.
     correlation_squared_sum : torch.Tensor
@@ -138,9 +144,11 @@ def do_iteration_statistics_updates(
     W : int
         Width of the cross-correlation values.
     """
+    nCs, nDefoc, nAng = cross_correlation.shape[0:3]
     max_values, max_indices = torch.max(cross_correlation.view(-1, H, W), dim=0)
-    max_defocus_idx = max_indices // euler_angles.shape[0]
-    max_orientation_idx = max_indices % euler_angles.shape[0]
+    max_cs_idx = (max_indices // (nDefoc * nAng)) % nCs
+    max_defocus_idx = (max_indices // nAng) % nDefoc
+    max_orientation_idx = max_indices % nAng
 
     # using torch.where directly
     update_mask = max_values > mip
@@ -157,6 +165,9 @@ def do_iteration_statistics_updates(
     )
     torch.where(
         update_mask, defocus_values[max_defocus_idx], best_defocus, out=best_defocus
+    )
+    torch.where(
+        update_mask, pixel_values[max_cs_idx], best_pixel_size, out=best_pixel_size
     )
 
     correlation_sum += cross_correlation.view(-1, H, W).sum(dim=0)

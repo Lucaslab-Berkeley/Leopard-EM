@@ -42,6 +42,7 @@ class ParticleStack(BaseModel2DTM):
           - defocus_v
           - astigmatism_angle
           - pixel_size
+          - refined_pixel_size
           - voltage
           - spherical_aberration
           - amplitude_contrast_ratio
@@ -290,12 +291,16 @@ class ParticleStack(BaseModel2DTM):
     @property
     def absolute_defocus_u(self) -> torch.Tensor:
         """Get the absolute defocus along the major axis."""
-        return torch.tensor(self._df["defocus_u"] + self._df["relative_defocus"])
+        return torch.tensor(
+            self._df["defocus_u"] + self._df["refined_relative_defocus"]
+        )
 
     @property
     def absolute_defocus_v(self) -> torch.Tensor:
         """Get the absolute defocus along the minor axis."""
-        return torch.tensor(self._df["defocus_v"] + self._df["relative_defocus"])
+        return torch.tensor(
+            self._df["defocus_v"] + self._df["refined_relative_defocus"]
+        )
 
     def __getitem__(self, key: str) -> Any:
         """Get an item from the DataFrame."""

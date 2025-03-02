@@ -1,5 +1,6 @@
 """Helper functions for pre-processing data for 2DTM."""
 
+import einops
 import torch
 from torch_fourier_filter.ctf import calculate_ctf_2d
 
@@ -11,13 +12,16 @@ def calculate_ctf_filter_stack(
     template_shape: tuple[int, int],
     defocus_u: float,  # in um, *NOT* Angstrom
     defocus_v: float,  # in um, *NOT* Angstrom
-    defocus_offsets: list[float],  # in um, *NOT* Angstrom
+    defocus_offsets: torch.Tensor,  # in um, *NOT* Angstrom
     astigmatism_angle: float,
+    pixel_size_offsets: torch.Tensor,  # in um, *NOT* Angstrom
     amplitude_contrast_ratio: float = 0.07,
     spherical_aberration: float = 2.7,
     phase_shift: float = 0.0,
     voltage: float = 300.0,
     ctf_B_factor: float = 60.0,
+    rfft: bool = True,
+    fftshift: bool = False,
 ) -> torch.Tensor:
     """Calculate stack (batch) of CTF filters to apply to projections during 2DTM.
 
@@ -35,8 +39,10 @@ def calculate_ctf_filter_stack(
         The defocus in the u direction, in um.
     defocus_v : float
         The defocus in the v direction, in um.
-    defocus_offsets : list[float]
+    defocus_offsets : torch.Tensor
         The offsets to apply to the defocus, in um.
+    pixel_size_offsets : torch.Tensor
+        The offsets to apply to the pixel size, in um.
     astigmatism_angle : float
         The angle of defocus astigmatism, in degrees.
     amplitude_contrast_ratio : float, optional
@@ -49,31 +55,45 @@ def calculate_ctf_filter_stack(
         The voltage of the microscope, in kV, by default 300.0.
     ctf_B_factor : float, optional
         The additional B factor for the CTF, by default 60.0.
+    rfft : bool, optional
+        Whether to use RFFT, by default True.
+    fftshift : bool, optional
+        Whether to shift the FFT, by default False.
     """
-    ctf_filters = []
+    defocus = (defocus_u + defocus_v) / 2 + defocus_offsets
+    astigmatism = abs(defocus_u - defocus_v) / 2
 
-    for delta_df in defocus_offsets:
-        defocus = (defocus_u + defocus_v) / 2 + delta_df
-        astigmatism = abs(defocus_u - defocus_v) / 2
+    Cs_vals = get_Cs_range(
+        pixel_size=pixel_size,
+        pixel_size_offsets=pixel_size_offsets,
+        Cs=spherical_aberration,
+    )
 
-        ctf = calculate_ctf_2d(
-            defocus=defocus,
-            astigmatism=astigmatism,
-            astigmatism_angle=astigmatism_angle,
-            voltage=voltage,
-            spherical_aberration=spherical_aberration,
-            amplitude_contrast=amplitude_contrast_ratio,
-            b_factor=ctf_B_factor,
-            phase_shift=phase_shift,
-            pixel_size=pixel_size,
-            image_shape=template_shape,
-            rfft=True,
-            fftshift=False,
-        )
+    ctf = calculate_ctf_2d(
+        defocus=defocus,
+        astigmatism=astigmatism,
+        astigmatism_angle=astigmatism_angle,
+        voltage=voltage,
+        spherical_aberration=Cs_vals,
+        amplitude_contrast=amplitude_contrast_ratio,
+        b_factor=ctf_B_factor,
+        phase_shift=phase_shift,
+        pixel_size=pixel_size,
+        image_shape=template_shape,
+        rfft=rfft,
+        fftshift=fftshift,
+    )
 
-        ctf_filters.append(ctf)
+    # The CTF will have a shape of (n_Cs n_defoc, nx, ny)
+    if ctf.ndim == 3:
+        ctf = einops.rearrange(ctf, "n_defoc nx ny -> 1 n_defoc nx ny")
+    elif ctf.ndim == 4:
+        ctf = einops.rearrange(ctf, "n_defoc nCs nx ny -> nCs n_defoc nx ny")
+    elif ctf.ndim == 5:
+        ctf = ctf[0]  # remove dim 0
+        ctf = einops.rearrange(ctf, "n_defoc nCs nx ny -> nCs n_defoc nx ny")
 
-    return torch.stack(ctf_filters, dim=0).squeeze(1)
+    return ctf
 
 
 def do_image_preprocessing(
@@ -132,3 +152,49 @@ def do_image_preprocessing(
     image_rfft *= npix_real**0.5
 
     return image_rfft
+
+
+def get_Cs_range(
+    pixel_size: float,
+    pixel_size_offsets: torch.Tensor,
+    Cs: float = 2.7,
+) -> torch.Tensor:
+    """Get the Cs values for a  range of pixel sizes.
+
+    Parameters
+    ----------
+    pixel_size : float
+        The nominal pixel size.
+    pixel_size_offsets : torch.Tensor
+        The pixel size offsets.
+    Cs : float, optional
+        The Cs value, by default 2.7.
+
+    Returns
+    -------
+    torch.Tensor
+        The Cs values for the range of pixel sizes.
+    """
+    pixel_sizes = pixel_size + pixel_size_offsets
+    Cs_values = Cs / torch.pow(pixel_sizes / pixel_size, 4)
+    return Cs_values
+
+
+def Cs_to_pixel_size(
+    Cs_vals: torch.Tensor,
+    nominal_pixel_size: float,
+    nominal_Cs: float = 2.7,
+) -> torch.Tensor:
+    """Convert Cs values to pixel sizes.
+
+    Parameters
+    ----------
+    Cs_vals : torch.Tensor
+        The Cs values.
+    nominal_pixel_size : float
+        The nominal pixel size.
+    nominal_Cs : float, optional
+        The nominal Cs value, by default 2.7.
+    """
+    pixel_size = torch.pow(nominal_Cs / Cs_vals, 0.25) * nominal_pixel_size
+    return pixel_size

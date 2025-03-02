@@ -8,7 +8,7 @@ import pandas as pd
 import torch
 from pydantic import ConfigDict, field_validator
 
-from leopard_em.backend import core_match_template
+from leopard_em.backend.core_match_template import core_match_template
 from leopard_em.pydantic_models.computational_config import ComputationalConfig
 from leopard_em.pydantic_models.correlation_filters import PreprocessingFilters
 from leopard_em.pydantic_models.defocus_search import DefocusSearchConfig
@@ -188,13 +188,15 @@ class MatchTemplateManager(BaseModel2DTM):
 
         # Calculate the CTF filters at each defocus value
         defocus_values = self.defocus_search_config.defocus_values
-        defocus_values = torch.tensor(defocus_values, dtype=torch.float32)
+        # set pixel search to 0.0 for match template
+        pixel_size_offsets = torch.tensor([0.0], dtype=torch.float32)
         ctf_filters = calculate_ctf_filter_stack(
             pixel_size=self.optics_group.pixel_size,
             template_shape=(template_shape[0], template_shape[0]),
             defocus_u=self.optics_group.defocus_u * 1e-4,  # A to um
             defocus_v=self.optics_group.defocus_v * 1e-4,  # A to um
-            defocus_offsets=defocus_values * 1e-4,  # type: ignore
+            defocus_offsets=defocus_values * 1e-4,  # A to um
+            pixel_size_offsets=pixel_size_offsets,
             astigmatism_angle=self.optics_group.astigmatism_angle,
             amplitude_contrast_ratio=self.optics_group.amplitude_contrast_ratio,
             spherical_aberration=self.optics_group.spherical_aberration,
@@ -226,6 +228,7 @@ class MatchTemplateManager(BaseModel2DTM):
             "whitening_filter_template": cumulative_filter_template,
             "euler_angles": euler_angles,
             "defocus_values": defocus_values,
+            "pixel_values": pixel_size_offsets,
             "device": device_list,
         }
 
@@ -351,6 +354,7 @@ class MatchTemplateManager(BaseModel2DTM):
         df["defocus_v"] = self.optics_group.defocus_v
         df["astigmatism_angle"] = self.optics_group.astigmatism_angle
         df["pixel_size"] = pixel_size
+        df["refined_pixel_size"] = pixel_size
         df["voltage"] = self.optics_group.voltage
         df["spherical_aberration"] = self.optics_group.spherical_aberration
         df["amplitude_contrast_ratio"] = self.optics_group.amplitude_contrast_ratio

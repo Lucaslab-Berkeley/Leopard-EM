@@ -5,7 +5,6 @@ from typing import Any, Literal
 import roma
 import torch
 import tqdm
-from torch_fourier_filter.ctf import calculate_ctf_2d
 from torch_fourier_slice import extract_central_slices_rfft_3d
 
 from leopard_em.backend.core_match_template import (
@@ -14,6 +13,7 @@ from leopard_em.backend.core_match_template import (
 )
 from leopard_em.backend.utils import normalize_template_projection
 from leopard_em.utils.cross_correlation import handle_correlation_mode
+from leopard_em.utils.pre_processing import calculate_ctf_filter_stack
 
 # This is assuming the Euler angles are in the ZYZ intrinsic format
 # AND that the angles are ordered in (phi, theta, psi)
@@ -43,6 +43,7 @@ def core_refine_template(
     defocus_u: torch.Tensor,  # (N,)
     defocus_v: torch.Tensor,  # (N,)
     defocus_angle: torch.Tensor,  # (N,)
+    pixel_size_offsets: torch.Tensor,  # (m,)
     ctf_kwargs: dict,
     projective_filters: torch.Tensor,  # (N, h, w)
     batch_size: int = 64,
@@ -71,6 +72,8 @@ def core_refine_template(
         Is the same as the defocus for the micrograph the particle came from.
     defocus_offsets : torch.Tensor
         The defocus offsets to search over for each particle. Shape of (l,).
+    pixel_size_offsets : torch.Tensor
+        The pixel size offsets to search over for each particle. Shape of (m,).
     ctf_kwargs : dict
         Keyword arguments to pass to the CTF calculation function.
     projective_filters : torch.Tensor
@@ -93,8 +96,8 @@ def core_refine_template(
     defocus_u = defocus_u.to(device)
     defocus_v = defocus_v.to(device)
     defocus_angle = defocus_angle.to(device)
-    defocus_offsets = torch.tensor(defocus_offsets)
     defocus_offsets = defocus_offsets.to(device)
+    pixel_size_offsets = pixel_size_offsets.to(device)
     projective_filters = projective_filters.to(device)
     euler_angle_offsets = euler_angle_offsets.to(device)
 
@@ -122,6 +125,7 @@ def core_refine_template(
             defocus_v=defocus_v[i],
             defocus_angle=defocus_angle[i],
             defocus_offsets=defocus_offsets,
+            pixel_size_offsets=pixel_size_offsets,
             ctf_kwargs=ctf_kwargs,
             projective_filter=projective_filters[i],
             orientation_batch_size=batch_size,
@@ -134,6 +138,10 @@ def core_refine_template(
     )
     refined_defocus_offset = torch.tensor(
         [stats["refined_defocus_offset"] for stats in refined_statistics],
+        device=device,
+    )
+    refined_pixel_size_offset = torch.tensor(
+        [stats["refined_pixel_size_offset"] for stats in refined_statistics],
         device=device,
     )
     refined_pos_y = torch.tensor(
@@ -168,6 +176,7 @@ def core_refine_template(
         "refined_cross_correlation": refined_cross_correlation.cpu(),
         "refined_euler_angles": refined_euler_angles.cpu(),
         "refined_defocus_offset": refined_defocus_offset.cpu(),
+        "refined_pixel_size_offset": refined_pixel_size_offset.cpu(),
         "refined_pos_y": refined_pos_y.cpu(),
         "refined_pos_x": refined_pos_x.cpu(),
     }
@@ -183,6 +192,7 @@ def _core_refine_template_single_thread(
     defocus_v: float,
     defocus_angle: float,
     defocus_offsets: torch.Tensor,
+    pixel_size_offsets: torch.Tensor,
     ctf_kwargs: dict,
     projective_filter: torch.Tensor,
     orientation_batch_size: int = 32,
@@ -210,6 +220,8 @@ def _core_refine_template_single_thread(
         The defocus astigmatism angle for the particle.
     defocus_offsets : torch.Tensor
         The defocus offsets to search over for each particle. Shape of (l,).
+    pixel_size_offsets : torch.Tensor
+        The pixel size offsets to search over for each particle. Shape of (m,).
     ctf_kwargs : dict
         Keyword arguments to pass to the CTF calculation function.
     projective_filter : torch.Tensor
@@ -237,6 +249,7 @@ def _core_refine_template_single_thread(
     refined_theta_offset = 0.0
     refined_psi_offset = 0.0
     refined_defocus_offset = 0.0
+    refined_pixel_size_offset = 0.0
     refined_pos_y = 0
     refined_pos_x = 0
 
@@ -247,17 +260,17 @@ def _core_refine_template_single_thread(
     default_rot_matrix = default_rot_matrix.to(torch.float32)
 
     # Calculate the CTF filters with the relative offsets
-    defocus = (defocus_u + defocus_v) / 2 + defocus_offsets
-    astigmatism = (defocus_u - defocus_v) / 2
-    ctf_filters = calculate_ctf_2d(
-        defocus=defocus * 1e-4,  # to µm
-        astigmatism=astigmatism * 1e-4,  # to µm
-        astigmatism_angle=defocus_angle,
+    ctf_filters = calculate_ctf_filter_stack(
+        defocus_u=defocus_u * 1e-4,  # to µm
+        defocus_v=defocus_v * 1e-4,  # to µm
+        astigmatism_angle=defocus_angle,  # to µm
+        defocus_offsets=defocus_offsets * 1e-4,  # to µm
+        pixel_size_offsets=pixel_size_offsets,  # to µm
         **ctf_kwargs,
     )
 
     # Combine the single projective filter with the CTF filter
-    combined_projective_filter = projective_filter[None, ...] * ctf_filters
+    combined_projective_filter = projective_filter[None, None, ...] * ctf_filters
 
     # Iterate over the Euler angle offsets in batches
     num_batches = euler_angle_offsets.shape[0] // orientation_batch_size
@@ -306,7 +319,7 @@ def _core_refine_template_single_thread(
         if cross_correlation.max() > max_cc:
             max_cc = cross_correlation.max()
             max_idx = torch.argmax(cross_correlation)
-            defocus_idx, angle_idx, y_idx, x_idx = torch.unravel_index(
+            px_idx, defocus_idx, angle_idx, y_idx, x_idx = torch.unravel_index(
                 max_idx, cross_correlation.shape
             )
 
@@ -314,6 +327,7 @@ def _core_refine_template_single_thread(
             refined_theta_offset = euler_angle_offsets_batch[angle_idx, 1]
             refined_psi_offset = euler_angle_offsets_batch[angle_idx, 2]
             refined_defocus_offset = defocus_offsets[defocus_idx]
+            refined_pixel_size_offset = pixel_size_offsets[px_idx]
             refined_pos_y = y_idx
             refined_pos_x = x_idx
 
@@ -324,6 +338,7 @@ def _core_refine_template_single_thread(
         "refined_theta_offset": refined_theta_offset,
         "refined_psi_offset": refined_psi_offset,
         "refined_defocus_offset": refined_defocus_offset,
+        "refined_pixel_size_offset": refined_pixel_size_offset,
         "refined_pos_y": refined_pos_y,
         "refined_pos_x": refined_pos_x,
     }

@@ -122,6 +122,7 @@ class RefineOrientationConfig(BaseModel2DTM):
 
     """
 
+    enabled: bool = True
     in_plane_angular_step_coarse: Annotated[float, Field(..., ge=0.0)] = 1.5
     in_plane_angular_step_fine: Annotated[float, Field(..., ge=0.0)] = 0.15
     out_of_plane_angular_step_coarse: Annotated[float, Field(..., ge=0.0)] = 2.5
@@ -141,6 +142,9 @@ class RefineOrientationConfig(BaseModel2DTM):
             search over. The columns represent the psi, theta, and phi angles,
             respectively, in the 'ZYZ' convention.
         """
+        if not self.enabled:
+            return torch.tensor([0.0, 0.0, 0.0])
+
         psi_values = torch.arange(
             -self.in_plane_angular_step_coarse,
             self.in_plane_angular_step_coarse + EPS,

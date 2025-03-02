@@ -45,6 +45,7 @@ def core_match_template(
     ctf_filters: torch.Tensor,
     whitening_filter_template: torch.Tensor,
     defocus_values: torch.Tensor,
+    pixel_values: torch.Tensor,
     euler_angles: torch.Tensor,
     device: torch.device | list[torch.device],
     orientation_batch_size: int = 1,
@@ -76,6 +77,9 @@ def core_match_template(
     defocus_values : torch.Tensor
         What defoucs values correspond with the CTF filters. Has shape
         (defocus_batch,).
+    pixel_values : torch.Tensor
+        What pixel size values correspond with the CTF filters. Has shape
+        (pixel_size_batch,).
     device : torch.device | list[torch.device]
         Device or devices to split computation across.
     orientation_batch_size : int, optional
@@ -92,6 +96,7 @@ def core_match_template(
             - "best_theta": Best theta angle for each pixel.
             - "best_psi": Best psi angle for each pixel.
             - "best_defocus": Best defocus value for each pixel.
+            - "best_pixel_size": Best pixel size value for each pixel.
             - "correlation_sum": Sum of cross-correlation values for each pixel.
             - "correlation_squared_sum": Sum of squared cross-correlation values for
               each pixel.
@@ -103,7 +108,7 @@ def core_match_template(
     ### Pre-multiply the whitening filter with the CTF filters ###
     ##############################################################
 
-    projective_filters = ctf_filters * whitening_filter_template[None, ...]
+    projective_filters = ctf_filters * whitening_filter_template[None, None, ...]
 
     #########################################
     ### Split orientations across devices ###
@@ -118,6 +123,7 @@ def core_match_template(
         euler_angles=euler_angles,
         projective_filters=projective_filters,
         defocus_values=defocus_values,
+        pixel_values=pixel_values,
         orientation_batch_size=orientation_batch_size,
         devices=device,
     )
@@ -187,6 +193,7 @@ def construct_multi_gpu_match_template_kwargs(
     euler_angles: torch.Tensor,
     projective_filters: torch.Tensor,
     defocus_values: torch.Tensor,
+    pixel_values: torch.Tensor,
     orientation_batch_size: int,
     devices: list[torch.device],
 ) -> list[dict[str, torch.Tensor | int]]:
@@ -207,6 +214,8 @@ def construct_multi_gpu_match_template_kwargs(
         filters to apply to each projection
     defocus_values : torch.Tensor
         corresponding defocus values for each filter
+    pixel_values : torch.Tensor
+        corresponding pixel size values for each filter
     orientation_batch_size : int
         number of projections to calculate at once
     devices : list[torch.device]
@@ -232,7 +241,7 @@ def construct_multi_gpu_match_template_kwargs(
         euler_angles_device = euler_angles_device.to(device)
         projective_filters_device = projective_filters.to(device)
         defocus_values_device = defocus_values.to(device)
-
+        pixel_values_device = pixel_values.to(device)
         # Construct the kwargs dictionary
         kwargs = {
             "image_dft": image_dft_device,
@@ -240,6 +249,7 @@ def construct_multi_gpu_match_template_kwargs(
             "euler_angles": euler_angles_device,
             "projective_filters": projective_filters_device,
             "defocus_values": defocus_values_device,
+            "pixel_values": pixel_values_device,
             "orientation_batch_size": orientation_batch_size,
         }
 
@@ -256,6 +266,7 @@ def _core_match_template_single_gpu(
     euler_angles: torch.Tensor,
     projective_filters: torch.Tensor,
     defocus_values: torch.Tensor,
+    pixel_values: torch.Tensor,
     orientation_batch_size: int,
 ) -> None:
     """Single-GPU call for template matching.
@@ -290,6 +301,9 @@ def _core_match_template_single_gpu(
     defocus_values : torch.Tensor
         What defoucs values correspond with the CTF filters. Has shape
         (defocus_batch,).
+    pixel_values : torch.Tensor
+        What pixel size values correspond with the CTF filters. Has shape
+        (pixel_size_batch,).
     orientation_batch_size : int
         The number of projections to calculate the correlation for at once.
 
@@ -338,6 +352,12 @@ def _core_match_template_single_gpu(
         dtype=DEFAULT_STATISTIC_DTYPE,
         device=device,
     )
+    best_pixel_size = torch.full(
+        size=(H, W),
+        fill_value=float("inf"),
+        dtype=DEFAULT_STATISTIC_DTYPE,
+        device=device,
+    )
     correlation_sum = torch.zeros(
         size=(H, W), dtype=DEFAULT_STATISTIC_DTYPE, device=device
     )
@@ -359,7 +379,9 @@ def _core_match_template_single_gpu(
         position=device.index,
     )
 
-    total_projections = euler_angles.shape[0] * defocus_values.shape[0]
+    total_projections = (
+        euler_angles.shape[0] * defocus_values.shape[0] * pixel_values.shape[0]
+    )
 
     ##################################
     ### Start the orientation loop ###
@@ -385,11 +407,13 @@ def _core_match_template_single_gpu(
             cross_correlation,
             euler_angles_batch,
             defocus_values,
+            pixel_values,
             mip,
             best_phi,
             best_theta,
             best_psi,
             best_defocus,
+            best_pixel_size,
             correlation_sum,
             correlation_squared_sum,
             H,
@@ -404,6 +428,7 @@ def _core_match_template_single_gpu(
         "best_theta": best_theta.cpu().numpy(),
         "best_psi": best_psi.cpu().numpy(),
         "best_defocus": best_defocus.cpu().numpy(),
+        "best_pixel_size": best_pixel_size.cpu().numpy(),
         "correlation_sum": correlation_sum.cpu().numpy(),
         "correlation_squared_sum": correlation_squared_sum.cpu().numpy(),
         "total_projections": total_projections,
@@ -466,7 +491,7 @@ def _do_bached_orientation_cross_correlate(
     fourier_slice *= -1  # flip contrast
 
     # Apply the projective filters on a new batch dimension
-    fourier_slice = fourier_slice[None, ...] * projective_filters[:, None, ...]
+    fourier_slice = fourier_slice[None, None, ...] * projective_filters[:, :, None, ...]
 
     # Inverse Fourier transform into real space and normalize
     projections = torch.fft.irfftn(fourier_slice, dim=(-2, -1))
@@ -478,9 +503,9 @@ def _do_bached_orientation_cross_correlate(
     projections_dft[..., 0, 0] = 0 + 0j  # zero out the DC component (mean zero)
 
     # Cross correlation step by element-wise multiplication
-    projections_dft = image_dft[None, None, ...] * projections_dft.conj()
+    projections_dft = image_dft[None, None, None, ...] * projections_dft.conj()
     cross_correlation = torch.fft.irfftn(projections_dft, dim=(-2, -1))
-
+    # shape is (n_Cs n_defoc n_Ang, H, W)
     return cross_correlation
 
 
@@ -535,7 +560,7 @@ def _do_bached_orientation_cross_correlate_cpu(
     fourier_slice *= -1  # flip contrast
 
     # Apply the projective filters on a new batch dimension
-    fourier_slice = fourier_slice[None, ...] * projective_filters[:, None, ...]
+    fourier_slice = fourier_slice[None, None, ...] * projective_filters[:, :, None, ...]
 
     # Inverse Fourier transform into real space and normalize
     projections = torch.fft.irfftn(fourier_slice, dim=(-2, -1))
@@ -547,7 +572,7 @@ def _do_bached_orientation_cross_correlate_cpu(
     projections_dft[..., 0, 0] = 0 + 0j  # zero out the DC component (mean zero)
 
     # Cross correlation step by element-wise multiplication
-    projections_dft = image_dft[None, None, ...] * projections_dft.conj()
+    projections_dft = image_dft[None, None, None, ...] * projections_dft.conj()
     cross_correlation = torch.fft.irfftn(projections_dft, dim=(-2, -1))
 
     return cross_correlation

@@ -2,7 +2,7 @@
 
 from typing import Annotated
 
-import numpy as np
+import torch
 from pydantic import Field
 
 from leopard_em.pydantic_models.types import BaseModel2DTM
@@ -36,13 +36,13 @@ class DefocusSearchConfig(BaseModel2DTM):
     defocus_step: Annotated[float, Field(..., gt=0.0)]
 
     @property
-    def defocus_values(self) -> list[float]:
+    def defocus_values(self) -> torch.Tensor:
         """Relative defocus values to search over based on held params.
 
         Returns
         -------
-        list[float]
-            List of relative defocus values to search over, in units of Angstroms.
+        torch.Tensor
+            Tensor of relative defocus values to search over, in units of Angstroms.
 
         Raises
         ------
@@ -51,17 +51,23 @@ class DefocusSearchConfig(BaseModel2DTM):
         """
         # Return a relative defocus of 0.0 if search is disabled.
         if not self.enabled:
-            return [0.0]
+            return torch.tensor([0.0])
 
-        vals = np.arange(
+        vals = torch.arange(
             self.defocus_min,
             self.defocus_max + self.defocus_step,
             self.defocus_step,
+            dtype=torch.float32,
         )
-        vals = vals.tolist()
+        # If 0 not in defocuses add it, but keep it 1D
+        if 0.0 not in vals:
+            vals = torch.cat([vals, torch.tensor([0.0])])
+
+        # re-sort defocuses
+        vals = torch.sort(vals)[0]
 
         # Ensure that there is at least one defocus value to search over.
-        if len(vals) == 0:
+        if vals.numel() == 0:
             raise ValueError(
                 "Defocus search parameters result in no values to search over!\n"
                 f"  self.defocus_min: {self.defocus_min}\n"
@@ -69,4 +75,4 @@ class DefocusSearchConfig(BaseModel2DTM):
                 f"  self.defocus_step: {self.defocus_step}\n"
             )
 
-        return vals  # type: ignore
+        return vals
