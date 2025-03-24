@@ -1,0 +1,2 @@
+[TYPECHECK]
+generated-members=numpy.*,torch.*  # See https://github.com/pytorch/pytorch/issues/90827

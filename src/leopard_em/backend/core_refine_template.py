@@ -47,7 +47,6 @@ def core_refine_template(
     ctf_kwargs: dict,
     projective_filters: torch.Tensor,  # (N, h, w)
     batch_size: int = 64,
-    # TODO: additional arguments for cc --> z-score scaling
 ) -> Any:
     """Core function to refine orientations and defoci of a set of particles.
 
@@ -422,7 +421,7 @@ def cross_correlate_particle_stack(
     # Helpful constants for later use
     device = particle_stack_dft.device
     num_particles, H, W = particle_stack_dft.shape
-    d, h, w = template_dft.shape
+    _, h, w = template_dft.shape
     # account for RFFT
     W = 2 * (W - 1)
     w = 2 * (w - 1)
