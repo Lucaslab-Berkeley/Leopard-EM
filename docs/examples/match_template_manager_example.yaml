@@ -7,6 +7,7 @@ defocus_search_config:
   defocus_min: -600.0
   defocus_step: 200.0
   enabled: true
+  skip_enforce_zero: false
 match_template_result:
   allow_file_overwrite: true
   correlation_average_path: ./output_correlation_average.mrc
@@ -48,6 +49,7 @@ orientation_search_config:
   phi_min: 0.0
   psi_max: 360.0
   psi_min: 0.0
+  symmetry: C1
   theta_max: 180.0
   theta_min: 0.0
 preprocessing_filters:

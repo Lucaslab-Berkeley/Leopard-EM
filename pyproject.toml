@@ -72,11 +72,12 @@ dev = [
 ]
 # Documentation dependencies
 docs = [
+    "python-markdown-math",
     "mkdocs",
     "mkdocs-material",
     "mkdocs-jupyter",
-    "python-markdown-math",
     "mkdocs-inline-select-svg-plugin",
+    "mkdocs-autorefs"
 ]
 
 [project.urls]

@@ -3,15 +3,20 @@ theme:
   name: material
 plugins:
   - search
+  - autorefs
   - mkdocs-jupyter
   - inline-select-svg
 markdown_extensions:
   - mdx_math
+  - footnotes
 extra_javascript:
   - https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.4/MathJax.js?config=TeX-AMS-MML_HTMLorMML
 nav:
   - Home: index.md
-  - Data Formats: data_formats.md
+  - Programs:
+    - Match Template: programs/match_template.md
+    - Refine Template: programs/refine_template.md
+  - Program Output Formats: data_formats.md
   - Examples:
     - Match Template Configuration: examples/basic_configuration.ipynb
   #   - Analyzing Match Template Results: examples/analyzing_results.md
