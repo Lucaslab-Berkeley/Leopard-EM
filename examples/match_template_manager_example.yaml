@@ -1,0 +1,73 @@
+computational_config:
+  gpu_ids:
+  - 0
+  num_cpus: 1
+defocus_search_config:
+  defocus_max: 600.0
+  defocus_min: -600.0
+  defocus_step: 200.0
+  enabled: true
+  skip_enforce_zero: false
+match_template_result:
+  allow_file_overwrite: true
+  correlation_average_path: ./output_correlation_average.mrc
+  correlation_variance_path: ./output_correlation_variance.mrc
+  mip_path: ./output_mip.mrc
+  orientation_phi_path: ./output_orientation_phi.mrc
+  orientation_psi_path: ./output_orientation_psi.mrc
+  orientation_theta_path: ./output_orientation_theta.mrc
+  relative_defocus_path: ./output_relative_defocus.mrc
+  scaled_mip_path: ./output_scaled_mip.mrc
+  total_defocus: 0
+  total_orientations: 0
+  total_projections: 0
+micrograph_path: ./dummy_micrograph.mrc
+optics_group:
+  amplitude_contrast_ratio: 0.07
+  astigmatism_angle: 25.0
+  beam_tilt_x: null
+  beam_tilt_y: null
+  chromatic_aberration: 0.0
+  ctf_B_factor: 60.0
+  defocus_u: 5200.0
+  defocus_v: 4950.0
+  even_zernike: null
+  label: my_optics_group
+  mtf_reference: null
+  mtf_values: null
+  odd_zernike: null
+  phase_shift: 0.0
+  pixel_size: 1.06
+  spherical_aberration: 2.7
+  voltage: 300.0
+  zernike_moments: null
+orientation_search_config:
+  base_grid_method: uniform
+  in_plane_step: 4.0
+  out_of_plane_step: 4.0
+  phi_max: 360.0
+  phi_min: 0.0
+  psi_max: 360.0
+  psi_min: 0.0
+  symmetry: C1
+  theta_max: 180.0
+  theta_min: 0.0
+preprocessing_filters:
+  arbitrary_curve_filter:
+    amplitudes: null
+    enabled: false
+    frequencies: null
+  bandpass_filter:
+    enabled: false
+    falloff: null
+    high_freq_cutoff: null
+    low_freq_cutoff: null
+  phase_randomization_filter:
+    cuton: null
+    enabled: false
+  whitening_filter:
+    do_power_spectrum: true
+    enabled: true
+    max_freq: 0.5
+    num_freq_bins: null
+template_volume_path: ./dummy_template_volume.mrc
