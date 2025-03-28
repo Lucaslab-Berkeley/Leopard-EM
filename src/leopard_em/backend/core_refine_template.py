@@ -45,6 +45,8 @@ def core_refine_template(
     defocus_v: torch.Tensor,  # (N,)
     defocus_angle: torch.Tensor,  # (N,)
     pixel_size_offsets: torch.Tensor,  # (m,)
+    corr_mean: torch.Tensor,  # (N, H - h + 1, W - w + 1)
+    corr_std: torch.Tensor,  # (N, H - h + 1, W - w + 1)
     ctf_kwargs: dict,
     projective_filters: torch.Tensor,  # (N, h, w)
     device: torch.device | list[torch.device] = None,
@@ -76,6 +78,14 @@ def core_refine_template(
         The defocus offsets to search over for each particle. Shape of (l,).
     pixel_size_offsets : torch.Tensor
         The pixel size offsets to search over for each particle. Shape of (m,).
+    corr_mean : torch.Tensor
+        The mean of the cross-correlation values from the full orientation search
+        for the pixels around the center of the particle.
+        Shape of (H - h + 1, W - w + 1).
+    corr_std : torch.Tensor
+        The standard deviation of the cross-correlation values from the full
+        orientation search for the pixels around the center of the particle.
+        Shape of (H - h + 1, W - w + 1).
     ctf_kwargs : dict
         Keyword arguments to pass to the CTF calculation function.
     projective_filters : torch.Tensor
@@ -392,6 +402,8 @@ def _core_refine_template_single_gpu(
             defocus_offsets=defocus_offsets,
             pixel_size_offsets=pixel_size_offsets,
             ctf_kwargs=ctf_kwargs,
+            corr_mean=corr_mean[i],
+            corr_std=corr_std[i],
             projective_filter=projective_filters[i],
             orientation_batch_size=batch_size,
             device_id=device_id,
@@ -478,6 +490,8 @@ def _core_refine_template_single_thread(
     defocus_angle: float,
     defocus_offsets: torch.Tensor,
     pixel_size_offsets: torch.Tensor,
+    corr_mean: torch.Tensor,
+    corr_std: torch.Tensor,
     ctf_kwargs: dict,
     projective_filter: torch.Tensor,
     orientation_batch_size: int = 32,
@@ -508,6 +522,12 @@ def _core_refine_template_single_thread(
         The defocus offsets to search over for each particle. Shape of (l,).
     pixel_size_offsets : torch.Tensor
         The pixel size offsets to search over for each particle. Shape of (m,).
+    corr_mean : torch.Tensor
+        The mean of the cross-correlation values from the full orientation search
+        for the pixels around the center of the particle.
+    corr_std : torch.Tensor
+        The standard deviation of the cross-correlation values from the full
+        orientation search for the pixels around the center of the particle.
     ctf_kwargs : dict
         Keyword arguments to pass to the CTF calculation function.
     projective_filter : torch.Tensor
@@ -605,6 +625,10 @@ def _core_refine_template_single_thread(
             )
 
         cross_correlation = cross_correlation[..., :crop_H, :crop_W]  # valid crop
+
+        # Scale cross_correlation to be "z-score"-like
+        cross_correlation = (cross_correlation - corr_mean) / corr_std
+
         # shape xc is (Npx, Ndefoc, Norientations, y, x)
         # Update the best refined statistics (only if max is greater than previous)
         if cross_correlation.max() > max_cc:
