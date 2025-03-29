@@ -45,6 +45,8 @@ def core_refine_template(
     defocus_v: torch.Tensor,  # (N,)
     defocus_angle: torch.Tensor,  # (N,)
     pixel_size_offsets: torch.Tensor,  # (m,)
+    corr_mean: torch.Tensor,  # (N, H - h + 1, W - w + 1)
+    corr_std: torch.Tensor,  # (N, H - h + 1, W - w + 1)
     ctf_kwargs: dict,
     projective_filters: torch.Tensor,  # (N, h, w)
     device: torch.device | list[torch.device] = None,
@@ -76,6 +78,14 @@ def core_refine_template(
         The defocus offsets to search over for each particle. Shape of (l,).
     pixel_size_offsets : torch.Tensor
         The pixel size offsets to search over for each particle. Shape of (m,).
+    corr_mean : torch.Tensor
+        The mean of the cross-correlation values from the full orientation search
+        for the pixels around the center of the particle.
+        Shape of (H - h + 1, W - w + 1).
+    corr_std : torch.Tensor
+        The standard deviation of the cross-correlation values from the full
+        orientation search for the pixels around the center of the particle.
+        Shape of (H - h + 1, W - w + 1).
     ctf_kwargs : dict
         Keyword arguments to pass to the CTF calculation function.
     projective_filters : torch.Tensor
@@ -111,6 +121,8 @@ def core_refine_template(
         defocus_angle=defocus_angle,
         defocus_offsets=defocus_offsets,
         pixel_size_offsets=pixel_size_offsets,
+        corr_mean=corr_mean,
+        corr_std=corr_std,
         ctf_kwargs=ctf_kwargs,
         projective_filters=projective_filters,
         batch_size=batch_size,
@@ -156,6 +168,9 @@ def core_refine_template(
     refined_cross_correlation = torch.cat(
         [torch.from_numpy(r["refined_cross_correlation"]) for r in results]
     )
+    refined_z_score = torch.cat(
+        [torch.from_numpy(r["refined_z_score"]) for r in results]
+    )
     refined_euler_angles = torch.cat(
         [torch.from_numpy(r["refined_euler_angles"]) for r in results]
     )
@@ -176,6 +191,7 @@ def core_refine_template(
     sort_indices = torch.argsort(particle_indices)
 
     refined_cross_correlation = refined_cross_correlation[sort_indices]
+    refined_z_score = refined_z_score[sort_indices]
     refined_euler_angles = refined_euler_angles[sort_indices]
     refined_defocus_offset = refined_defocus_offset[sort_indices]
     refined_pixel_size_offset = refined_pixel_size_offset[sort_indices]
@@ -188,6 +204,7 @@ def core_refine_template(
 
     return {
         "refined_cross_correlation": refined_cross_correlation,
+        "refined_z_score": refined_z_score,
         "refined_euler_angles": refined_euler_angles,
         "refined_defocus_offset": refined_defocus_offset,
         "refined_pixel_size_offset": refined_pixel_size_offset,
@@ -206,6 +223,8 @@ def construct_multi_gpu_refine_template_kwargs(
     defocus_angle: torch.Tensor,
     defocus_offsets: torch.Tensor,
     pixel_size_offsets: torch.Tensor,
+    corr_mean: torch.Tensor,
+    corr_std: torch.Tensor,
     ctf_kwargs: dict,
     projective_filters: torch.Tensor,
     batch_size: int,
@@ -233,6 +252,10 @@ def construct_multi_gpu_refine_template_kwargs(
         Defocus offsets to search over.
     pixel_size_offsets : torch.Tensor
         Pixel size offsets to search over.
+    corr_mean : torch.Tensor
+        Mean of the cross-correlation
+    corr_std : torch.Tensor
+        Standard deviation of the cross-correlation
     ctf_kwargs : dict
         CTF calculation parameters.
     projective_filters : torch.Tensor
@@ -282,6 +305,8 @@ def construct_multi_gpu_refine_template_kwargs(
         device_euler_angle_offsets = euler_angle_offsets.to(device)
         device_defocus_offsets = defocus_offsets.to(device)
         device_pixel_size_offsets = pixel_size_offsets.to(device)
+        device_corr_mean = corr_mean.to(device)
+        device_corr_std = corr_std.to(device)
 
         kwargs = {
             "particle_stack_dft": device_particle_stack_dft,
@@ -294,6 +319,8 @@ def construct_multi_gpu_refine_template_kwargs(
             "defocus_angle": device_defocus_angle,
             "defocus_offsets": device_defocus_offsets,
             "pixel_size_offsets": device_pixel_size_offsets,
+            "corr_mean": device_corr_mean,
+            "corr_std": device_corr_std,
             "ctf_kwargs": ctf_kwargs,
             "projective_filters": device_projective_filters,
             "batch_size": batch_size,
@@ -318,6 +345,8 @@ def _core_refine_template_single_gpu(
     defocus_angle: torch.Tensor,
     defocus_offsets: torch.Tensor,
     pixel_size_offsets: torch.Tensor,
+    corr_mean: torch.Tensor,
+    corr_std: torch.Tensor,
     ctf_kwargs: dict,
     projective_filters: torch.Tensor,
     batch_size: int,
@@ -350,6 +379,10 @@ def _core_refine_template_single_gpu(
         Defocus offsets to search over.
     pixel_size_offsets : torch.Tensor
         Pixel size offsets to search over.
+    corr_mean : torch.Tensor
+        Mean of the cross-correlation
+    corr_std : torch.Tensor
+        Standard deviation of the cross-correlation
     ctf_kwargs : dict
         CTF calculation parameters.
     projective_filters : torch.Tensor
@@ -392,6 +425,8 @@ def _core_refine_template_single_gpu(
             defocus_offsets=defocus_offsets,
             pixel_size_offsets=pixel_size_offsets,
             ctf_kwargs=ctf_kwargs,
+            corr_mean=corr_mean[i],
+            corr_std=corr_std[i],
             projective_filter=projective_filters[i],
             orientation_batch_size=batch_size,
             device_id=device_id,
@@ -401,6 +436,9 @@ def _core_refine_template_single_gpu(
     # For each particle, calculate the new best orientation, defocus, and position
     refined_cross_correlation = torch.tensor(
         [stats["max_cc"] for stats in refined_statistics], device=device
+    )
+    refined_z_score = torch.tensor(
+        [stats["max_z_score"] for stats in refined_statistics], device=device
     )
     refined_defocus_offset = torch.tensor(
         [stats["refined_defocus_offset"] for stats in refined_statistics],
@@ -454,6 +492,7 @@ def _core_refine_template_single_gpu(
     # Store the results in the shared dict
     result = {
         "refined_cross_correlation": refined_cross_correlation.cpu().numpy(),
+        "refined_z_score": refined_z_score.cpu().numpy(),
         "refined_euler_angles": refined_euler_angles.cpu().numpy(),
         "refined_defocus_offset": refined_defocus_offset.cpu().numpy(),
         "refined_pixel_size_offset": refined_pixel_size_offset.cpu().numpy(),
@@ -478,6 +517,8 @@ def _core_refine_template_single_thread(
     defocus_angle: float,
     defocus_offsets: torch.Tensor,
     pixel_size_offsets: torch.Tensor,
+    corr_mean: torch.Tensor,
+    corr_std: torch.Tensor,
     ctf_kwargs: dict,
     projective_filter: torch.Tensor,
     orientation_batch_size: int = 32,
@@ -508,6 +549,12 @@ def _core_refine_template_single_thread(
         The defocus offsets to search over for each particle. Shape of (l,).
     pixel_size_offsets : torch.Tensor
         The pixel size offsets to search over for each particle. Shape of (m,).
+    corr_mean : torch.Tensor
+        The mean of the cross-correlation values from the full orientation search
+        for the pixels around the center of the particle.
+    corr_std : torch.Tensor
+        The standard deviation of the cross-correlation values from the full
+        orientation search for the pixels around the center of the particle.
     ctf_kwargs : dict
         Keyword arguments to pass to the CTF calculation function.
     projective_filter : torch.Tensor
@@ -533,6 +580,7 @@ def _core_refine_template_single_thread(
 
     # Output best statistics
     max_cc = -1e9
+    max_z_score = -1e9
     refined_phi_offset = 0.0
     refined_theta_offset = 0.0
     refined_psi_offset = 0.0
@@ -605,10 +653,15 @@ def _core_refine_template_single_thread(
             )
 
         cross_correlation = cross_correlation[..., :crop_H, :crop_W]  # valid crop
+
+        # Scale cross_correlation to be "z-score"-like
+        z_score = (cross_correlation - corr_mean) / corr_std
+
         # shape xc is (Npx, Ndefoc, Norientations, y, x)
         # Update the best refined statistics (only if max is greater than previous)
-        if cross_correlation.max() > max_cc:
+        if z_score.max() > max_z_score:
             max_cc = cross_correlation.max()
+            max_z_score = z_score.max()
 
             # Find the maximum value and its indices
             max_values, max_indices = torch.max(
@@ -637,6 +690,7 @@ def _core_refine_template_single_thread(
     # Return the refined statistics
     refined_stats = {
         "max_cc": max_cc,
+        "max_z_score": max_z_score,
         "refined_phi_offset": refined_phi_offset,
         "refined_theta_offset": refined_theta_offset,
         "refined_psi_offset": refined_psi_offset,
