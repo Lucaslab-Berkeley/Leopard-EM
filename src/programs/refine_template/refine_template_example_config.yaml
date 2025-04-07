@@ -15,10 +15,10 @@ defocus_refinement_config:
   defocus_step: 20.0   # in Angstroms
 orientation_refinement_config:
   enabled: true
-  in_plane_angular_step_coarse:     1.5   # in degrees
-  in_plane_angular_step_fine:       0.15  # in degrees
-  out_of_plane_angular_step_coarse: 2.5   # in degrees
-  out_of_plane_angular_step_fine:   0.25  # in degrees
+  psi_step_coarse:     1.5   # in degrees
+  psi_step_fine:       0.15  # in degrees
+  theta_step_coarse: 2.5   # in degrees
+  theta_step_fine:   0.25  # in degrees
 pixel_size_refinement_config:
   enabled: false
   pixel_size_min: -0.005

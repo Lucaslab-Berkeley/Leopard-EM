@@ -381,6 +381,9 @@ class MatchTemplateManager(BaseModel2DTM):
             self.match_template_result.correlation_variance_path
         )
 
+        # Add particle index
+        df["particle_index"] = df.index
+
         # Reorder columns
         df = df.reindex(columns=MATCH_TEMPLATE_DF_COLUMN_ORDER)
 

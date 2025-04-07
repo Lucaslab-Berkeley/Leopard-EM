@@ -33,8 +33,8 @@ defocus_search_config:
   enabled: true
 orientation_search_config:
   base_grid_method: uniform
-  in_plane_step: 1.5      # in degrees
-  out_of_plane_step: 2.5  # in degrees
+  psi_step: 1.5      # in degrees
+  theta_step: 2.5  # in degrees
 preprocessing_filters:
   whitening_filter:
     do_power_spectrum: true

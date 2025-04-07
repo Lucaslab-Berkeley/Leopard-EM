@@ -3,34 +3,37 @@
 from typing import Any, ClassVar
 
 import numpy as np
+import roma
 import torch
-from pydantic import ConfigDict
+from pydantic import ConfigDict, Field
 
+from leopard_em.analysis.pick_match_template_peaks import gaussian_noise_zscore_cutoff
 from leopard_em.backend.core_refine_template import core_refine_template
 from leopard_em.pydantic_models.computational_config import ComputationalConfig
 from leopard_em.pydantic_models.correlation_filters import PreprocessingFilters
 from leopard_em.pydantic_models.defocus_search import DefocusSearchConfig
-from leopard_em.pydantic_models.formats import REFINED_DF_COLUMN_ORDER
-from leopard_em.pydantic_models.orientation_search import RefineOrientationConfig
+from leopard_em.pydantic_models.formats import CONSTRAINED_DF_COLUMN_ORDER
+from leopard_em.pydantic_models.orientation_search import ConstrainedOrientationConfig
 from leopard_em.pydantic_models.particle_stack import ParticleStack
-from leopard_em.pydantic_models.pixel_size_search import PixelSizeSearchConfig
 from leopard_em.pydantic_models.types import BaseModel2DTM, ExcludedTensor
-from leopard_em.utils.data_io import load_mrc_volume, read_mrc_to_numpy
+from leopard_em.utils.data_io import load_mrc_volume
 
 
-class RefineTemplateManager(BaseModel2DTM):
-    """Model holding parameters necessary for running the refine template program.
+class ConstrainedSearchManager(BaseModel2DTM):
+    """Model holding parameters necessary for running the constrained search program.
 
     Attributes
     ----------
     template_volume_path : str
         Path to the template volume MRC file.
-    particle_stack : ParticleStack
-        Particle stack object containing particle data.
+    centre_vector : list[float]
+        The centre vector of the template volume.
+    particle_stack_large : ParticleStack
+        Particle stack object containing particle data large particles.
+    particle_stack_small : ParticleStack
+        Particle stack object containing particle data small particles.
     defocus_refinement_config : DefocusSearchConfig
         Configuration for defocus refinement.
-    pixel_size_refinement_config : PixelSizeSearchConfig
-        Configuration for pixel size refinement.
     orientation_refinement_config : RefineOrientationConfig
         Configuration for orientation refinement.
     preprocessing_filters : PreprocessingFilters
@@ -39,32 +42,37 @@ class RefineTemplateManager(BaseModel2DTM):
         What computational resources to allocate for the program.
     template_volume : ExcludedTensor
         The template volume tensor (excluded from serialization).
+    false_positives : float
+        The number of false positives to allow per particle.
 
     Methods
     -------
     TODO serialization/import methods
     __init__(self, skip_mrc_preloads: bool = False, **data: Any)
-        Initialize the refine template manager.
+        Initialize the constrained search manager.
     make_backend_core_function_kwargs(self) -> dict[str, Any]
         Create the kwargs for the backend refine_template core function.
-    run_refine_template(self, orientation_batch_size: int = 64) -> None
-        Run the refine template program.
+    run_constrained_search(self, orientation_batch_size: int = 64) -> None
+        Run the constrained search program.
     """
 
     model_config: ClassVar = ConfigDict(arbitrary_types_allowed=True)
 
     template_volume_path: str  # In df per-particle, but ensure only one reference
-    particle_stack: ParticleStack
+    centre_vector: list[float] = Field(default=[0.0, 0.0, 0.0])
+
+    particle_stack_large: ParticleStack
+    particle_stack_small: ParticleStack
     defocus_refinement_config: DefocusSearchConfig
-    pixel_size_refinement_config: PixelSizeSearchConfig
-    orientation_refinement_config: RefineOrientationConfig
+    orientation_refinement_config: ConstrainedOrientationConfig
     preprocessing_filters: PreprocessingFilters
     computational_config: ComputationalConfig
 
-    snr_threshold: float = 1.0
+    false_positives: float = 0.001  # Default to 1 per 1000 particles
 
     # Excluded tensors
     template_volume: ExcludedTensor
+    zdiffs: ExcludedTensor = torch.tensor([0.0])
 
     def __init__(self, skip_mrc_preloads: bool = False, **data: Any):
         super().__init__(**data)
@@ -76,10 +84,6 @@ class RefineTemplateManager(BaseModel2DTM):
     def make_backend_core_function_kwargs(self) -> dict[str, Any]:
         """Create the kwargs for the backend refine_template core function."""
         device_list = self.computational_config.gpu_devices
-        # Remove the single device limitation
-        # if len(device) > 1:
-        #     raise ValueError("Only single-device execution is currently supported.")
-        # device = device[0]
 
         if self.template_volume is None:
             self.template_volume = load_mrc_volume(self.template_volume_path)
@@ -90,28 +94,17 @@ class RefineTemplateManager(BaseModel2DTM):
 
         template_shape = template.shape[-2:]
 
-        # Extract the necessary data from the particle stack
-        particle_images = self.particle_stack.construct_image_stack(
+        particle_images = self.particle_stack_large.construct_image_stack(
             pos_reference="center",
             padding_value=0.0,
             handle_bounds="pad",
             padding_mode="constant",
         )
-        corr_mean_stack = self.particle_stack.construct_cropped_statistic_stack(
-            "correlation_average"
-        )
-        corr_std_stack = (
-            self.particle_stack.construct_cropped_statistic_stack(
-                "correlation_variance"
-            )
-            ** 0.5
-        )  # var to std
-
         particle_images_dft = torch.fft.rfftn(particle_images, dim=(-2, -1))
         particle_images_dft[..., 0, 0] = 0.0 + 0.0j  # Zero out DC component
 
         # Calculate and apply the filters for the particle image stack
-        filter_stack = self.particle_stack.construct_filter_stack(
+        filter_stack = self.particle_stack_large.construct_filter_stack(
             self.preprocessing_filters, output_shape=particle_images_dft.shape[-2:]
         )
         particle_images_dft *= filter_stack
@@ -131,7 +124,7 @@ class RefineTemplateManager(BaseModel2DTM):
         particle_images_dft *= dimensionality**0.5
 
         # Calculate the filters applied to each template (besides CTF)
-        projective_filters = self.particle_stack.construct_filter_stack(
+        projective_filters = self.particle_stack_large.construct_filter_stack(
             self.preprocessing_filters,
             output_shape=(template_shape[-2], template_shape[-1] // 2 + 1),
         )
@@ -148,19 +141,19 @@ class RefineTemplateManager(BaseModel2DTM):
         # The set of "best" euler angles from match template search
         # Check if refined angles exist, otherwise use the original angles
         phi = (
-            self.particle_stack["refined_phi"]
-            if "refined_phi" in self.particle_stack._df.columns
-            else self.particle_stack["phi"]
+            self.particle_stack_large["refined_phi"]
+            if "refined_phi" in self.particle_stack_large._df.columns
+            else self.particle_stack_large["phi"]
         )
         theta = (
-            self.particle_stack["refined_theta"]
-            if "refined_theta" in self.particle_stack._df.columns
-            else self.particle_stack["theta"]
+            self.particle_stack_large["refined_theta"]
+            if "refined_theta" in self.particle_stack_large._df.columns
+            else self.particle_stack_large["theta"]
         )
         psi = (
-            self.particle_stack["refined_psi"]
-            if "refined_psi" in self.particle_stack._df.columns
-            else self.particle_stack["psi"]
+            self.particle_stack_large["refined_psi"]
+            if "refined_psi" in self.particle_stack_large._df.columns
+            else self.particle_stack_large["psi"]
         )
 
         euler_angles = torch.stack(
@@ -172,24 +165,42 @@ class RefineTemplateManager(BaseModel2DTM):
             dim=-1,
         )
 
+        # get z diff for each particle
+        if not isinstance(self.centre_vector, torch.Tensor):
+            self.centre_vector = torch.tensor(self.centre_vector, dtype=torch.float32)
+        rotation_matrices = roma.rotvec_to_rotmat(
+            roma.euler_to_rotvec(convention="ZYZ", angles=euler_angles)
+        ).to(torch.float32)
+        rotated_vectors = rotation_matrices @ self.centre_vector
+
+        # Get z-component for each particle individually
+        new_z_diffs = rotated_vectors[
+            :, 2
+        ]  # This is now a tensor with shape [batch_size]
+
         # The relative Euler angle offsets to search over
-        euler_angle_offsets = self.orientation_refinement_config.euler_angles_offsets
+        euler_angle_offsets, _ = self.orientation_refinement_config.euler_angles_offsets
+        # euler_angle_offsets = torch.zeros((1, 3))
 
         # The best defocus values for each particle (+ astigmatism)
-        defocus_u = self.particle_stack.absolute_defocus_u
-        defocus_v = self.particle_stack.absolute_defocus_v
-        defocus_angle = torch.tensor(self.particle_stack["astigmatism_angle"])
+        defocus_u = self.particle_stack_large.absolute_defocus_u
+        defocus_u = defocus_u - new_z_diffs
+        defocus_v = self.particle_stack_large.absolute_defocus_v
+        defocus_v = defocus_v - new_z_diffs
+        # Store defocus values as instance attributes for later access
+        self.zdiffs = new_z_diffs
+        defocus_angle = torch.tensor(self.particle_stack_large["astigmatism_angle"])
 
         # The relative defocus values to search over
         defocus_offsets = self.defocus_refinement_config.defocus_values
 
-        # The relative pixel size values to search over
-        pixel_size_offsets = self.pixel_size_refinement_config.pixel_size_values
+        # No pixel size refinement
+        pixel_size_offsets = torch.tensor([0.0])
 
         # Keyword arguments for the CTF filter calculation call
         # NOTE: We currently enforce the parameters (other than the defocus values) are
         # all the same. This could be updated in the future...
-        part_stk = self.particle_stack
+        part_stk = self.particle_stack_large
         assert part_stk["voltage"].nunique() == 1
         assert part_stk["spherical_aberration"].nunique() == 1
         assert part_stk["amplitude_contrast_ratio"].nunique() == 1
@@ -208,6 +219,21 @@ class RefineTemplateManager(BaseModel2DTM):
             "fftshift": False,
         }
 
+        # Ger corr mean and variance
+        # I want positions of large but vals from small
+        part_stk._df.loc[:, "correlation_average_path"] = self.particle_stack_small[
+            "correlation_average_path"
+        ][0]
+        part_stk._df.loc[:, "correlation_variance_path"] = self.particle_stack_small[
+            "correlation_variance_path"
+        ][0]
+        corr_mean_stack = part_stk.construct_cropped_statistic_stack(
+            "correlation_average"
+        )
+        corr_std_stack = (
+            part_stk.construct_cropped_statistic_stack("correlation_variance") ** 0.5
+        )  # var to std
+
         return {
             "particle_stack_dft": particle_images_dft,
             "template_dft": template_dft,
@@ -225,15 +251,15 @@ class RefineTemplateManager(BaseModel2DTM):
             "device": device_list,  # Pass all devices to core_refine_template
         }
 
-    def run_refine_template(
+    def run_constrained_search(
         self, output_dataframe_path: str, orientation_batch_size: int = 64
     ) -> None:
-        """Run the refine template program and saves the resultant DataFrame to csv.
+        """Run the constrained search program and saves the resultant DataFrame to csv.
 
         Parameters
         ----------
         output_dataframe_path : str
-            Path to save the refined particle data.
+            Path to save the constrained search results.
         orientation_batch_size : int
             Number of orientations to process at once. Defaults to 64.
         """
@@ -266,11 +292,11 @@ class RefineTemplateManager(BaseModel2DTM):
         if not self.orientation_refinement_config.enabled:
             orientation_batch_size = 1
         elif (
-            self.orientation_refinement_config.euler_angles_offsets.shape[0]
+            self.orientation_refinement_config.euler_angles_offsets[0].shape[0]
             < orientation_batch_size
         ):
             orientation_batch_size = (
-                self.orientation_refinement_config.euler_angles_offsets.shape[0]
+                self.orientation_refinement_config.euler_angles_offsets[0].shape[0]
             )
 
         result: dict[str, np.ndarray] = {}
@@ -292,7 +318,7 @@ class RefineTemplateManager(BaseModel2DTM):
         result : dict[str, np.ndarray]
             The result of the refine template program.
         """
-        df_refined = self.particle_stack._df.copy()
+        df_refined = self.particle_stack_large._df.copy()
 
         # x and y positions
         pos_offset_y = result["refined_pos_y"]
@@ -312,13 +338,23 @@ class RefineTemplateManager(BaseModel2DTM):
         )
 
         # Euler angles
+        angle_idx = result["angle_idx"]
         df_refined["refined_psi"] = result["refined_euler_angles"][:, 2]
         df_refined["refined_theta"] = result["refined_euler_angles"][:, 1]
         df_refined["refined_phi"] = result["refined_euler_angles"][:, 0]
 
+        _, euler_angle_offsets = self.orientation_refinement_config.euler_angles_offsets
+        euler_angle_offsets_np = euler_angle_offsets.cpu().numpy()
+        # Store the matched original offsets in the dataframe
+        df_refined["original_offset_phi"] = euler_angle_offsets_np[angle_idx, 0]
+        df_refined["original_offset_theta"] = euler_angle_offsets_np[angle_idx, 1]
+        df_refined["original_offset_psi"] = euler_angle_offsets_np[angle_idx, 2]
+
         # Defocus
         df_refined["refined_relative_defocus"] = (
-            result["refined_defocus_offset"] + df_refined["refined_relative_defocus"]
+            result["refined_defocus_offset"]
+            + df_refined["refined_relative_defocus"]
+            - self.zdiffs.cpu().numpy()
         )
 
         # Pixel size
@@ -327,45 +363,41 @@ class RefineTemplateManager(BaseModel2DTM):
         )
 
         # Cross-correlation statistics
-        # Check if correlation statistic files exist and use them if available
-        # This allows for shifts during refinement
-        if (
-            "correlation_average_path" in df_refined.columns
-            and "correlation_variance_path" in df_refined.columns
-        ):
-            # Check if files exist for at least the first entry
-            if (
-                df_refined["correlation_average_path"].iloc[0]
-                and df_refined["correlation_variance_path"].iloc[0]
-            ):
-                # Load the correlation statistics from the files
-                correlation_average = read_mrc_to_numpy(
-                    df_refined["correlation_average_path"].iloc[0]
-                )
-                correlation_variance = read_mrc_to_numpy(
-                    df_refined["correlation_variance_path"].iloc[0]
-                )
-                df_refined["correlation_mean"] = correlation_average[
-                    df_refined["refined_pos_y"], df_refined["refined_pos_x"]
-                ]
-                df_refined["correlation_variance"] = correlation_variance[
-                    df_refined["refined_pos_y"], df_refined["refined_pos_x"]
-                ]
-
         refined_mip = result["refined_cross_correlation"]
         refined_scaled_mip = result["refined_z_score"]
         df_refined["refined_mip"] = refined_mip
         df_refined["refined_scaled_mip"] = refined_scaled_mip
 
         # Reorder the columns
-        df_refined = df_refined.reindex(columns=REFINED_DF_COLUMN_ORDER)
+        df_refined = df_refined.reindex(columns=CONSTRAINED_DF_COLUMN_ORDER)
 
         # Save the refined DataFrame to disk
         df_refined.to_csv(output_dataframe_path)
 
-        # Save the above threshold DataFrame to disk
+        # Save a second dataframe
+        # I also want the original user input offsets back somewhere
+        # This one will have only those above threshold
+        num_projections = (
+            self.defocus_refinement_config.defocus_values.shape[0]
+            * self.orientation_refinement_config.euler_angles_offsets[0].shape[0]
+        )
+        num_px = (
+            self.particle_stack_large.extracted_box_size[0]
+            - self.particle_stack_large.original_template_size[0]
+            + 1
+        ) * (
+            self.particle_stack_large.extracted_box_size[1]
+            - self.particle_stack_large.original_template_size[1]
+            + 1
+        )
+        num_correlations = num_projections * num_px
+        threshold = gaussian_noise_zscore_cutoff(num_correlations, self.false_positives)
+        print(
+            f"Threshold: {threshold} which gives {self.false_positives} "
+            "false positives per particle"
+        )
         df_refined_above_threshold = df_refined[
-            df_refined["refined_scaled_mip"] > self.snr_threshold
+            df_refined["refined_scaled_mip"] > threshold
         ]
         # Also remove if refined_scaled_mip is inf or nan
         df_refined_above_threshold = df_refined_above_threshold[
