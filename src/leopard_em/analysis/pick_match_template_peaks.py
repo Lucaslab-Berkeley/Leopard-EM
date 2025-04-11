@@ -5,7 +5,7 @@ from typing import NamedTuple, Optional
 import numpy as np
 import pandas as pd
 import torch
-from scipy.special import erfcinv
+from scipy.special import erfcinv  # pylint: disable=no-name-in-module
 
 
 class MatchTemplatePeaks(NamedTuple):
@@ -19,7 +19,6 @@ class MatchTemplatePeaks(NamedTuple):
     theta: torch.Tensor
     phi: torch.Tensor
     relative_defocus: torch.Tensor
-    refined_relative_defocus: torch.Tensor
     correlation_mean: torch.Tensor
     correlation_variance: torch.Tensor
     total_correlations: int
@@ -64,73 +63,63 @@ def gaussian_noise_zscore_cutoff(num_ccg: int, false_positives: float = 1.0) -> 
 
 
 def find_peaks_in_zscore(
-    zscore_map: torch.Tensor, zscore_cutoff: float, mask_radius: Optional[float] = 5.0
+    zscore_map: torch.Tensor,
+    zscore_cutoff: float,
+    mask_radius: float = 5.0,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """Finds locations of peaks above a threshold using masking around each found peak.
+    """
+    Find peaks in a z-score map above a cutoff threshold using torch.
+
+    The function returns a tensor of peak indices sorted in descending order by
+    their z-score values. Peaks closer than mask_radius to an already picked peak
+    are suppressed.
 
     Parameters
     ----------
     zscore_map : torch.Tensor
-        2D tensor of z-scores.
+        Input tensor containing z-score values.
     zscore_cutoff : float
-        Z-score cutoff value.
+        Minimum z-score value to consider as a peak.
     mask_radius : float, optional
-        Radius of the circular mask to apply around the peak. Default is 5.0.
+        Minimum allowed distance between peaks, default is 5.0.
 
     Returns
     -------
     tuple[torch.Tensor, torch.Tensor]
-        Tensors corresponding to the x and y coordinates of the peaks, respectively.
+        Two tensors containing the y and x coordinates of the peaks.
     """
-    # Short circuit if the cutoff is too high
-    if zscore_cutoff > zscore_map.max():
-        return torch.tensor([]), torch.tensor([])
+    # Find indices where zscore_map is above the cutoff
+    peaks = torch.nonzero(zscore_map > zscore_cutoff, as_tuple=False)
 
-    zscore_map_copy = zscore_map.clone()
-    H, W = zscore_map.shape
+    if peaks.shape[0] == 0:
+        return torch.tensor([], dtype=torch.long), torch.tensor([], dtype=torch.long)
 
-    # Convert to next highest integer
-    mask_width = np.ceil(mask_radius).astype(int) * 2 + 1
-    mask = torch.ones(mask_width, mask_width)
-    x = torch.arange(mask_width) - mask_width // 2
-    y = torch.arange(mask_width) - mask_width // 2
-    xx, yy = torch.meshgrid(x, y, indexing="ij")
-    dist = torch.sqrt(xx**2 + yy**2)
-    mask[dist <= mask_radius] = 0.0
-    mask_radius = np.ceil(mask_radius).astype(int)
+    # Retrieve the zscore values for these indices and sort descending
+    peak_values = zscore_map[tuple(peaks.t())]
+    _, sort_indices = torch.sort(peak_values, descending=True)
+    peaks = peaks[sort_indices]
 
-    found_peaks_x = []
-    found_peaks_y = []
-    # Iteratively find the highest peak in the map, and then mask the surrounding region
-    while zscore_map_copy.max() >= zscore_cutoff:
-        peak_loc = torch.argmax(zscore_map_copy)
-        peak_loc = torch.unravel_index(peak_loc, zscore_map_copy.shape)
-        peak_x, peak_y = peak_loc
-        found_peaks_x.append(peak_x)
-        found_peaks_y.append(peak_y)
+    # Create a boolean mask to record which peaks are taken
+    taken_mask = torch.zeros(peaks.size(0), dtype=torch.bool, device=peaks.device)
+    picked_peaks = torch.tensor([], dtype=torch.long, device=peaks.device)
 
-        # Mask the region around the peak, taking into account image bounds
-        start_x = max(0, peak_x - mask_radius)
-        end_x = min(H, peak_x + mask_radius + 1)
-        start_y = max(0, peak_y - mask_radius)
-        end_y = min(W, peak_y + mask_radius + 1)
+    for i in range(peaks.size(0)):
+        if taken_mask[i]:
+            continue
 
-        # Calculate the valid range of the mask to apply
-        mask_start_x = max(0, mask_radius - peak_x)
-        mask_end_x = mask_width - max(0, (peak_x + mask_radius + 1) - H)
-        mask_start_y = max(0, mask_radius - peak_y)
-        mask_end_y = mask_width - max(0, (peak_y + mask_radius + 1) - W)
+        picked_peaks = torch.cat((picked_peaks, peaks[i].unsqueeze(0)), dim=0)
 
-        zscore_map_copy[start_x:end_x, start_y:end_y] *= mask[
-            mask_start_x:mask_end_x, mask_start_y:mask_end_y
-        ]
+        # Compute distances between current peak and all peaks
+        distances = torch.norm(peaks - peaks[i].float(), dim=1)
 
-    found_peaks_x = torch.tensor(found_peaks_x)
-    found_peaks_y = torch.tensor(found_peaks_y)
+        # Mark all peaks closer than mask_radius as taken
+        taken_mask |= distances < mask_radius
 
-    return found_peaks_x, found_peaks_y
+    return picked_peaks[:, 0], picked_peaks[:, 1]
 
 
+# pylint: disable=too-many-arguments
+# pylint: disable=too-many-positional-arguments
 def extract_peaks_and_statistics(
     mip: torch.Tensor,
     scaled_mip: torch.Tensor,
@@ -142,7 +131,7 @@ def extract_peaks_and_statistics(
     correlation_variance: torch.Tensor,
     total_correlation_positions: int,
     z_score_cutoff: Optional[float] = None,
-    mask_radius: Optional[float] = 5.0,
+    mask_radius: float = 5.0,
 ) -> MatchTemplatePeaks:
     """Returns peak locations, heights, and pose stats from match template results.
 
@@ -191,27 +180,16 @@ def extract_peaks_and_statistics(
         raise ValueError("No peaks found in scaled MIP.")
 
     # Extract peak heights, orientations, etc. from other maps
-    mip_peaks = mip[pos_y, pos_x]
-    scaled_mip_peaks = scaled_mip[pos_y, pos_x]
-    psi_peaks = best_psi[pos_y, pos_x]
-    theta_peaks = best_theta[pos_y, pos_x]
-    phi_peaks = best_phi[pos_y, pos_x]
-    relative_defocus_peaks = best_defocus[pos_y, pos_x]
-    refined_relative_defocus_peaks = relative_defocus_peaks
-    correlation_average_peaks = correlation_average[pos_y, pos_x]
-    correlation_variance_peaks = correlation_variance[pos_y, pos_x]
-
     return MatchTemplatePeaks(
         pos_y=pos_y,
         pos_x=pos_x,
-        mip=mip_peaks,
-        scaled_mip=scaled_mip_peaks,
-        psi=psi_peaks,
-        theta=theta_peaks,
-        phi=phi_peaks,
-        relative_defocus=relative_defocus_peaks,
-        refined_relative_defocus=refined_relative_defocus_peaks,
-        correlation_mean=correlation_average_peaks,
-        correlation_variance=correlation_variance_peaks,
+        mip=mip[pos_y, pos_x],
+        scaled_mip=scaled_mip[pos_y, pos_x],
+        psi=best_psi[pos_y, pos_x],
+        theta=best_theta[pos_y, pos_x],
+        phi=best_phi[pos_y, pos_x],
+        relative_defocus=best_defocus[pos_y, pos_x],
+        correlation_mean=correlation_average[pos_y, pos_x],
+        correlation_variance=correlation_variance[pos_y, pos_x],
         total_correlations=total_correlation_positions,
     )

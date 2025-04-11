@@ -1,0 +1,9 @@
+[TYPECHECK]
+generated-members=numpy.*,torch.*  # See https://github.com/pytorch/pytorch/issues/90827
+
+[BASIC]
+# Maximum number of arguments for function / method definitions (default is 5)
+# NOTE: We've adopted a more data/functional programming style, so some data related
+#       data is not packed/unpacked as objects and rather passed as data arrays/options.
+max-args=10
+max-positional-arguments=10

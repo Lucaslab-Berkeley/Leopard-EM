@@ -313,7 +313,7 @@ def _core_match_template_single_gpu(
     """
     device = image_dft.device
     H, W = image_dft.shape
-    h, w = template_dft.shape[-2:]
+    _, w = template_dft.shape[-2:]
     # account for RFFT
     W = 2 * (W - 1)
     w = 2 * (w - 1)
@@ -437,8 +437,6 @@ def _core_match_template_single_gpu(
     # Place the results in the shared multi-process manager dictionary so accessible
     # by the main process.
     result_dict[device_id] = result
-
-    return None
 
 
 def _do_bached_orientation_cross_correlate(

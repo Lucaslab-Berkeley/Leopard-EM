@@ -21,6 +21,7 @@ from leopard_em.utils.data_io import load_mrc_image, load_mrc_volume
 from leopard_em.utils.filter_preprocessing import calculate_ctf_filter_stack
 
 
+# pylint: disable=no-self-argument
 class MatchTemplateManager(BaseModel2DTM):
     """Model holding parameters necessary for running full orientation 2DTM.
 
@@ -143,10 +144,8 @@ class MatchTemplateManager(BaseModel2DTM):
         else:
             template = self.template_volume
 
-        template_shape = template.shape[-2:]
-
         # Fourier transform the image (RFFT, unshifted)
-        image_dft = torch.fft.rfftn(image)
+        image_dft = torch.fft.rfftn(image)  # pylint: disable=E1102
         image_dft[0, 0] = 0 + 0j  # zero out the constant term
 
         # Get the combined filter from the pre-processing filter attribute
@@ -183,7 +182,7 @@ class MatchTemplateManager(BaseModel2DTM):
         # RFFT'd the template volume yet. Also, this is 2-dimensional, not 3-dimensional
         cumulative_filter_template = self.preprocessing_filters.get_combined_filter(
             ref_img_rfft=image_dft,
-            output_shape=(template_shape[-2], template_shape[-1] // 2 + 1),
+            output_shape=(template.shape[-2], template.shape[-1] // 2 + 1),
         )
 
         # Calculate the CTF filters at each defocus value
@@ -194,7 +193,7 @@ class MatchTemplateManager(BaseModel2DTM):
 
         ctf_filters = calculate_ctf_filter_stack(
             pixel_size=self.optics_group.pixel_size,
-            template_shape=(template_shape[0], template_shape[0]),
+            template_shape=(template.shape[0], template.shape[0]),
             defocus_u=self.optics_group.defocus_u * 1e-4,  # A to um
             defocus_v=self.optics_group.defocus_v * 1e-4,  # A to um
             defocus_offsets=defocus_values * 1e-4,  # A to um
@@ -219,8 +218,11 @@ class MatchTemplateManager(BaseModel2DTM):
         # omitting this step will cause a 180 degree phase shift on odd (i, j, k)
         # structure factors in the Fourier domain. This just requires an extra
         # IFFTshift after converting a slice back to real-space (handled already).
+        # pylint: disable=E1102
         template_dft = torch.fft.fftshift(template, dim=(-3, -2, -1))
+        # pylint: disable=E1102
         template_dft = torch.fft.rfftn(template_dft, dim=(-3, -2, -1))
+        # pylint: disable=E1102
         template_dft = torch.fft.fftshift(template_dft, dim=(-3, -2))  # skip rfft dim
 
         return {

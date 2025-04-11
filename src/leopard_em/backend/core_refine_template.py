@@ -695,7 +695,7 @@ def cross_correlate_particle_stack(
     # Helpful constants for later use
     device = particle_stack_dft.device
     num_particles, H, W = particle_stack_dft.shape
-    d, h, w = template_dft.shape
+    _, h, w = template_dft.shape
     # account for RFFT
     W = 2 * (W - 1)
     w = 2 * (w - 1)

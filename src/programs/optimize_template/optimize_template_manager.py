@@ -56,9 +56,6 @@ class OptimizeTemplateManager(BaseModel2DTM):
     # Excluded tensors
     template_volume: ExcludedTensor
 
-    def __init__(self, **data: Any):
-        super().__init__(**data)
-
     def make_backend_core_function_kwargs(self) -> dict[str, Any]:
         """Create the kwargs for the backend refine_template core function."""
         device_list = self.computational_config.gpu_devices
@@ -78,6 +75,7 @@ class OptimizeTemplateManager(BaseModel2DTM):
             handle_bounds="pad",
             padding_mode="constant",
         )
+        # pylint: disable=E1102
         particle_images_dft = torch.fft.rfftn(particle_images, dim=(-2, -1))
         particle_images_dft[..., 0, 0] = 0.0 + 0.0j  # Zero out DC component
 
@@ -112,25 +110,28 @@ class OptimizeTemplateManager(BaseModel2DTM):
         # omitting this step will cause a 180 degree phase shift on odd (i, j, k)
         # structure factors in the Fourier domain. This just requires an extra
         # IFFTshift after converting a slice back to real-space (handled already).
+        # pylint: disable=E1102
         template_dft = torch.fft.fftshift(template, dim=(-3, -2, -1))
+        # pylint: disable=E1102
         template_dft = torch.fft.rfftn(template_dft, dim=(-3, -2, -1))
+        # pylint: disable=E1102
         template_dft = torch.fft.fftshift(template_dft, dim=(-3, -2))  # skip rfft dim
 
         # The set of "best" euler angles from match template search
         # Check if refined angles exist, otherwise use the original angles
         phi = (
             self.particle_stack["refined_phi"]
-            if "refined_phi" in self.particle_stack._df.columns
+            if "refined_phi" in self.particle_stack.df_columns
             else self.particle_stack["phi"]
         )
         theta = (
             self.particle_stack["refined_theta"]
-            if "refined_theta" in self.particle_stack._df.columns
+            if "refined_theta" in self.particle_stack.df_columns
             else self.particle_stack["theta"]
         )
         psi = (
             self.particle_stack["refined_psi"]
-            if "refined_psi" in self.particle_stack._df.columns
+            if "refined_psi" in self.particle_stack.df_columns
             else self.particle_stack["psi"]
         )
 
@@ -206,7 +207,7 @@ class OptimizeTemplateManager(BaseModel2DTM):
             optimal_template_px = self.optimize_pixel_size()
             print(f"Optimal template px: {optimal_template_px:.3f} Å")
             # print this to the text file
-            with open(output_text_path, "w") as f:
+            with open(output_text_path, "w", encoding="utf-8") as f:
                 f.write(f"Optimal template px: {optimal_template_px:.3f} Å")
 
     def optimize_pixel_size(self) -> float:
