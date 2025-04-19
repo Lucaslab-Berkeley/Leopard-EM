@@ -9,7 +9,11 @@ from .correlation_filters import (
     WhiteningFilterConfig,
 )
 from .defocus_search import DefocusSearchConfig
-from .orientation_search import OrientationSearchConfig, RefineOrientationConfig
+from .orientation_search import (
+    ConstrainedOrientationConfig,
+    OrientationSearchConfig,
+    RefineOrientationConfig,
+)
 from .pixel_size_search import PixelSizeSearchConfig
 
 __all__ = [
@@ -23,4 +27,5 @@ __all__ = [
     "PreprocessingFilters",
     "RefineOrientationConfig",
     "WhiteningFilterConfig",
+    "ConstrainedOrientationConfig",
 ]

@@ -326,12 +326,82 @@ def get_search_tensors(
         dtype=torch.float32,
     )
 
-    if 0.0 not in vals and not skip_enforce_zero:
+    if abs(torch.min(torch.abs(vals))) > 1e-6 and not skip_enforce_zero:
         vals = torch.cat([vals, torch.tensor([0.0])])
         # Re-sort pixel sizes
         vals = torch.sort(vals)[0]
 
     return vals
+
+
+def setup_images_filters_particle_stack(
+    particle_stack: "ParticleStack",
+    preprocessing_filters: "PreprocessingFilters",
+    template: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Extract and preprocess particle images and calculate filters.
+
+    This function extracts particle images from a particle stack, performs FFT,
+    applies filters, and prepares the template for further processing.
+
+    Parameters
+    ----------
+    particle_stack : ParticleStack
+        The particle stack containing images to process.
+    preprocessing_filters : PreprocessingFilters
+        Filters to apply to the particle images.
+    template : torch.Tensor
+        The 3D template volume.
+
+    Returns
+    -------
+    tuple[torch.Tensor, torch.Tensor, torch.Tensor]
+        A tuple containing:
+        - particle_images_dft: The particle images in Fourier space
+        - template_dft: The Fourier transformed template
+        - projective_filters: Filters applied to the template
+    """
+    # Extract out the regions of interest (particles) based on the particle stack
+    particle_images = particle_stack.construct_image_stack(
+        pos_reference="center",
+        padding_value=0.0,
+        handle_bounds="pad",
+        padding_mode="constant",
+    )
+
+    # FFT the particle images
+    # pylint: disable=E1102
+    particle_images_dft = torch.fft.rfftn(particle_images, dim=(-2, -1))
+    particle_images_dft[..., 0, 0] = 0.0 + 0.0j  # Zero out DC component
+
+    bandpass_filter = preprocessing_filters.bandpass_filter.calculate_bandpass_filter(
+        particle_images_dft.shape[-2:]
+    )
+
+    # Calculate and apply the filters for the particle image stack
+    filter_stack = particle_stack.construct_filter_stack(
+        preprocessing_filters, output_shape=particle_images_dft.shape[-2:]
+    )
+
+    particle_images_dft = preprocess_image(
+        image_rfft=particle_images_dft,
+        cumulative_fourier_filters=filter_stack,
+        bandpass_filter=bandpass_filter,
+    )
+
+    # Calculate the filters applied to each template (besides CTF)
+    projective_filters = particle_stack.construct_filter_stack(
+        preprocessing_filters,
+        output_shape=(template.shape[-2], template.shape[-1] // 2 + 1),
+    )
+
+    template_dft = volume_to_rfft_fourier_slice(template)
+
+    return (
+        particle_images_dft,
+        template_dft,
+        projective_filters,
+    )
 
 
 # pylint: disable=too-many-locals
@@ -374,14 +444,7 @@ def setup_particle_backend_kwargs(
     dict[str, Any]
         Dictionary of keyword arguments for backend functions.
     """
-    # Extract out the regions of interest (particles) based on the particle stack
-    particle_images = particle_stack.construct_image_stack(
-        pos_reference="center",
-        padding_value=0.0,
-        handle_bounds="pad",
-        padding_mode="constant",
-    )
-
+    # Get correlation statistics
     corr_mean_stack = particle_stack.construct_cropped_statistic_stack(
         "correlation_average"
     )
@@ -389,33 +452,14 @@ def setup_particle_backend_kwargs(
         particle_stack.construct_cropped_statistic_stack("correlation_variance") ** 0.5
     )  # var to std
 
-    # FFT the particle images
-    # pylint: disable=E1102
-    particle_images_dft = torch.fft.rfftn(particle_images, dim=(-2, -1))
-    particle_images_dft[..., 0, 0] = 0.0 + 0.0j  # Zero out DC component
-
-    bandpass_filter = preprocessing_filters.bandpass_filter.calculate_bandpass_filter(
-        particle_images_dft.shape[-2:]
+    # Extract and preprocess images and filters
+    (
+        particle_images_dft,
+        template_dft,
+        projective_filters,
+    ) = setup_images_filters_particle_stack(
+        particle_stack, preprocessing_filters, template
     )
-
-    # Calculate and apply the filters for the particle image stack
-    filter_stack = particle_stack.construct_filter_stack(
-        preprocessing_filters, output_shape=particle_images_dft.shape[-2:]
-    )
-
-    particle_images_dft = preprocess_image(
-        image_rfft=particle_images_dft,
-        cumulative_fourier_filters=filter_stack,
-        bandpass_filter=bandpass_filter,
-    )
-
-    # Calculate the filters applied to each template (besides CTF)
-    projective_filters = particle_stack.construct_filter_stack(
-        preprocessing_filters,
-        output_shape=(template.shape[-2], template.shape[-1] // 2 + 1),
-    )
-
-    template_dft = volume_to_rfft_fourier_slice(template)
 
     # The best defocus values for each particle (+ astigmatism)
     defocus_u, defocus_v = particle_stack.get_absolute_defocus()

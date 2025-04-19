@@ -96,6 +96,7 @@ def extract_peaks_and_statistics_zscore(
     correlation_average: torch.Tensor,
     correlation_variance: torch.Tensor,
     total_correlation_positions: int,
+    false_positives: float = 1.0,
     z_score_cutoff: Optional[float] = None,
     mask_radius: float = 5.0,
 ) -> MatchTemplatePeaks:
@@ -122,6 +123,9 @@ def extract_peaks_and_statistics_zscore(
     total_correlation_positions : int
         Total number of correlation positions calculated during template matching. Must
         be provided if `z_score_cutoff` is not provided (needed for the noise model).
+    false_positives : float, optional
+        Number of false positives to allow in the image (over all pixels). Default is
+        1.0 which corresponds to a single false-positive.
     z_score_cutoff : float, optional
         Z-score cutoff value for peak detection. If not provided, it is calculated using
         the Gaussian noise model. Default is None.
@@ -135,7 +139,8 @@ def extract_peaks_and_statistics_zscore(
     """
     if z_score_cutoff is None:
         z_score_cutoff = gaussian_noise_zscore_cutoff(
-            mip.numel() * total_correlation_positions
+            num_ccg=mip.numel() * total_correlation_positions,
+            false_positives=false_positives,
         )
 
     # Find the peak locations only in the scaled MIP

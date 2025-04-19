@@ -63,6 +63,11 @@ def main() -> None:
         df = mtm.results_to_dataframe()
         metric = get_metric(df)
         print(f"B-factor: {b}, Metric: {metric}")
+        # Write results to CSV
+        with open("optimize_B_results.csv", "a") as f:
+            if b == b_values[0]:  # Write header for first iteration
+                f.write(f"b_factor,{OPTIMIZE_METRIC}\n")
+            f.write(f"{b},{metric}\n")
         if metric > best_metric:
             best_metric = metric
             best_b = b

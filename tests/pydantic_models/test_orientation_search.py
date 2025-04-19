@@ -18,14 +18,14 @@ def test_orientation_search_default_values():
     are correctly set to their expected values.
     """
     config = OrientationSearchConfig()
-    assert config.in_plane_step == 1.5
-    assert config.out_of_plane_step == 2.5
-    assert config.psi_min == 0.0
-    assert config.psi_max == 360.0
-    assert config.theta_min == 0.0
-    assert config.theta_max == 180.0
-    assert config.phi_min == 0.0
-    assert config.phi_max == 360.0
+    assert config.psi_step == 1.5
+    assert config.theta_step == 2.5
+    assert config.psi_min is None
+    assert config.psi_max is None
+    assert config.theta_min is None
+    assert config.theta_max is None
+    assert config.phi_min is None
+    assert config.phi_max is None
     assert config.base_grid_method == "uniform"
 
 
@@ -38,7 +38,7 @@ def test_orientation_search_invalid_in_plane_step():
     with pytest.raises(
         ValidationError, match="Input should be greater than or equal to 0"
     ):
-        OrientationSearchConfig(in_plane_step=-1.0)
+        OrientationSearchConfig(psi_step=-1.0)
 
 
 def test_orientation_search_invalid_out_of_plane_step():
@@ -50,7 +50,7 @@ def test_orientation_search_invalid_out_of_plane_step():
     with pytest.raises(
         ValidationError, match="Input should be greater than or equal to 0"
     ):
-        OrientationSearchConfig(out_of_plane_step=-1.0)
+        OrientationSearchConfig(theta_step=-1.0)
 
 
 def test_orientation_search_euler_angles():
@@ -60,7 +60,7 @@ def test_orientation_search_euler_angles():
     Verifies that the generated Euler angles tensor has the expected shape and type
     when using specific in-plane and out-of-plane step values.
     """
-    config = OrientationSearchConfig(in_plane_step=90.0, out_of_plane_step=90.0)
+    config = OrientationSearchConfig(psi_step=90.0, theta_step=90.0)
     euler_angles = config.euler_angles
 
     assert isinstance(euler_angles, torch.Tensor)
@@ -75,10 +75,10 @@ def test_refine_orientation_default_values():
     refinement are correctly set to their expected values.
     """
     config = RefineOrientationConfig()
-    assert config.in_plane_angular_step_coarse == 1.5
-    assert config.in_plane_angular_step_fine == 0.1
-    assert config.out_of_plane_angular_step_coarse == 2.5
-    assert config.out_of_plane_angular_step_fine == 0.25
+    assert config.psi_step_coarse == 1.5
+    assert config.psi_step_fine == 0.1
+    assert config.theta_step_coarse == 2.5
+    assert config.theta_step_fine == 0.25
 
 
 def test_refine_orientation_invalid_in_plane_angular_step_coarse():
@@ -91,7 +91,7 @@ def test_refine_orientation_invalid_in_plane_angular_step_coarse():
     with pytest.raises(
         ValidationError, match="Input should be greater than or equal to 0"
     ):
-        RefineOrientationConfig(in_plane_angular_step_coarse=-1.0)
+        RefineOrientationConfig(psi_step_coarse=-1.0)
 
 
 def test_refine_orientation_invalid_in_plane_angular_step_fine():
@@ -104,7 +104,7 @@ def test_refine_orientation_invalid_in_plane_angular_step_fine():
     with pytest.raises(
         ValidationError, match="Input should be greater than or equal to 0"
     ):
-        RefineOrientationConfig(in_plane_angular_step_fine=-1.0)
+        RefineOrientationConfig(psi_step_fine=-1.0)
 
 
 def test_refine_orientation_invalid_out_of_plane_angular_step_coarse():
@@ -117,7 +117,7 @@ def test_refine_orientation_invalid_out_of_plane_angular_step_coarse():
     with pytest.raises(
         ValidationError, match="Input should be greater than or equal to 0"
     ):
-        RefineOrientationConfig(out_of_plane_angular_step_coarse=-1.0)
+        RefineOrientationConfig(theta_step_coarse=-1.0)
 
 
 def test_refine_orientation_invalid_out_of_plane_angular_step_fine():
@@ -130,7 +130,7 @@ def test_refine_orientation_invalid_out_of_plane_angular_step_fine():
     with pytest.raises(
         ValidationError, match="Input should be greater than or equal to 0"
     ):
-        RefineOrientationConfig(out_of_plane_angular_step_fine=-1.0)
+        RefineOrientationConfig(theta_step_fine=-1.0)
 
 
 def test_refine_orientation_euler_angles_offsets():
@@ -141,12 +141,13 @@ def test_refine_orientation_euler_angles_offsets():
     type when using specific angular step values for both coarse and fine refinement.
     """
     config = RefineOrientationConfig(
-        in_plane_angular_step_coarse=1.5,
-        in_plane_angular_step_fine=0.5,
-        out_of_plane_angular_step_coarse=2.5,
-        out_of_plane_angular_step_fine=1.0,
+        psi_step_coarse=1.5,
+        psi_step_fine=0.5,
+        theta_step_coarse=2.5,
+        theta_step_fine=1.0,
+        base_grid_method="uniform",
     )
     euler_angles_offsets = config.euler_angles_offsets
 
     assert isinstance(euler_angles_offsets, torch.Tensor)
-    assert euler_angles_offsets.shape == (126, 3)
+    assert euler_angles_offsets.shape == (42, 3)

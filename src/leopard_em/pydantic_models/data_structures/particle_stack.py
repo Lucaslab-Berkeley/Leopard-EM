@@ -158,7 +158,7 @@ def _get_cropped_image_regions_torch(
     box_size: tuple[int, int],
     handle_bounds: Literal["pad", "error"],
     padding_mode: Literal["constant", "reflect", "replicate"],
-    padding_value: float,
+    padding_value: float = 0.0,
 ) -> torch.Tensor:
     """Helper function for extracting regions from a torch tensor.
 
@@ -177,9 +177,26 @@ def _get_cropped_image_regions_torch(
         pos_y = pos_y + bs0
         pos_x = pos_x + bs1
 
-    cropped_images = torch.stack(
-        [image[y : y + box_size[0], x : x + box_size[1]] for y, x in zip(pos_y, pos_x)]
-    )
+    # A fix for crops that go out of bounds. Pad with zeros.
+    regions = []
+    for y, x in zip(pos_y, pos_x):
+        # Extract region
+        region = image[y : y + box_size[0], x : x + box_size[1]]
+
+        # Check if region is smaller than expected box_size
+        h, w = region.shape
+        if h != box_size[0] or w != box_size[1]:
+            # Create a padded region with the correct dimensions
+            padded_region = torch.full(
+                box_size, padding_value, dtype=image.dtype, device=image.device
+            )
+            padded_region[:h, :w] = region
+            regions.append(padded_region)
+        else:
+            regions.append(region)
+
+    # Stack all regions
+    cropped_images = torch.stack(regions)
 
     return cropped_images
 
@@ -298,6 +315,10 @@ class ParticleStack(BaseModel2DTM):
     ) -> torch.Tensor:
         """Construct stack of images from the DataFrame (updates image_stack in-place).
 
+        This method preferentially selects refined position columns (refined_pos_x_img,
+        refined_pos_y_img) if they are present in the DataFrame, falling back to
+        unrefined positions (pos_x_img, pos_y_img) otherwise.
+
         Parameters
         ----------
         pos_reference : Literal["center", "top-left"], optional
@@ -335,8 +356,21 @@ class ParticleStack(BaseModel2DTM):
             img = load_mrc_image(img_path)
 
             # with reference to center pixel
-            pos_y = self._df.loc[indexes, "pos_y_img"].to_numpy()
-            pos_x = self._df.loc[indexes, "pos_x_img"].to_numpy()
+            # Determine which position columns to use (refined if available)
+            y_col = (
+                "refined_pos_y_img"
+                if "refined_pos_y_img" in self._df.columns
+                else "pos_y_img"
+            )
+            x_col = (
+                "refined_pos_x_img"
+                if "refined_pos_x_img" in self._df.columns
+                else "pos_x_img"
+            )
+
+            pos_y = self._df.loc[indexes, y_col].to_numpy()
+            pos_x = self._df.loc[indexes, x_col].to_numpy()
+
             pos_y = torch.tensor(pos_y)
             pos_x = torch.tensor(pos_x)
 
@@ -406,8 +440,14 @@ class ParticleStack(BaseModel2DTM):
 
             # with reference to the exact pixel of the statistic (top-left)
             # need to account for relative extracted box size
-            pos_y = self._df.loc[indexes, "pos_y"].to_numpy()
-            pos_x = self._df.loc[indexes, "pos_x"].to_numpy()
+            pos_y = self._df.loc[
+                indexes,
+                "refined_pos_y" if "refined_pos_y" in self._df.columns else "pos_y",
+            ].to_numpy()
+            pos_x = self._df.loc[
+                indexes,
+                "refined_pos_x" if "refined_pos_x" in self._df.columns else "pos_x",
+            ].to_numpy()
             pos_y = torch.tensor(pos_y)
             pos_x = torch.tensor(pos_x)
             pos_y -= (image_h - h) // 2
@@ -579,3 +619,25 @@ class ParticleStack(BaseModel2DTM):
             return self._df[key]
         except KeyError as err:
             raise KeyError(f"Key '{key}' not found in underlying DataFrame.") from err
+
+    def set_column(self, column_name: str, value: Any) -> None:
+        """Set a column in the underlying DataFrame.
+
+        Parameters
+        ----------
+        column_name : str
+            The name of the column to set
+        value : Any
+            The value to set the column to
+        """
+        self._df.loc[:, column_name] = value
+
+    def get_dataframe_copy(self) -> pd.DataFrame:
+        """Return a copy of the underlying DataFrame.
+
+        Returns
+        -------
+        pd.DataFrame
+        A copy of the underlying DataFrame
+        """
+        return self._df.copy()

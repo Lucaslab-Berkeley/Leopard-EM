@@ -1,0 +1,42 @@
+###################################################
+#### Constrained Search configuration example #####
+###################################################
+# An example YAML configuration to modify.
+# Call `RefineTemplateManager.from_yaml(path)` to load this configuration.
+template_volume_path: /some/path/to/template.mrc # Volume of small particle
+particle_stack_large: # This is from the large particles
+  df_path: /some/path/to/particles.csv  # Needs to be readable by pandas
+  extracted_box_size: [528, 528]
+  original_template_size: [512, 512]
+particle_stack_small: # This is from the small particles
+  df_path: /some/path/to/particles.csv  # Needs to be readable by pandas
+  extracted_box_size: [528, 528]
+  original_template_size: [512, 512]
+centre_vector: [53.658134, 82.582367, 47.170788] # Vector from large particle to small particle in Angstroms
+orientation_refinement_config:
+  enabled: true
+  psi_step: 1.0   # psi in degrees
+  theta_step: 1.0   # theta and phi in degrees
+  rotation_axis_euler_angles: [0.0, 0.0, 0.0] # This is the rotation axis
+  phi_min: -12.0
+  phi_max: 12.0
+  theta_min: 0.0
+  theta_max: 0.0
+  psi_min: 0.0
+  psi_max: 0.0
+defocus_search_config:
+  enabled: true
+preprocessing_filters:
+  whitening_filter:
+    do_power_spectrum: true
+    enabled: true
+    max_freq: 0.5  # In terms of Nyquist frequency
+    num_freq_bins: null
+  bandpass_filter:
+    enabled: false
+    falloff: null
+    high_freq_cutoff: null
+    low_freq_cutoff: null
+computational_config:
+  gpu_ids: 0
+  num_cpus: 1

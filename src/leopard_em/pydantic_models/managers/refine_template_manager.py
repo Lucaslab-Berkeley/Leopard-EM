@@ -3,7 +3,6 @@
 from typing import Any, ClassVar
 
 import numpy as np
-import torch
 from pydantic import ConfigDict
 
 from leopard_em.backend.core_refine_template import core_refine_template
@@ -18,7 +17,7 @@ from leopard_em.pydantic_models.custom_types import BaseModel2DTM, ExcludedTenso
 from leopard_em.pydantic_models.data_structures import ParticleStack
 from leopard_em.pydantic_models.formats import REFINED_DF_COLUMN_ORDER
 from leopard_em.pydantic_models.utils import setup_particle_backend_kwargs
-from leopard_em.utils.data_io import load_mrc_volume
+from leopard_em.utils.data_io import load_mrc_volume, load_template_tensor
 
 
 class RefineTemplateManager(BaseModel2DTM):
@@ -64,6 +63,8 @@ class RefineTemplateManager(BaseModel2DTM):
     preprocessing_filters: PreprocessingFilters
     computational_config: ComputationalConfig
 
+    snr_threshold: float = 1.0
+
     # Excluded tensors
     template_volume: ExcludedTensor
 
@@ -75,7 +76,7 @@ class RefineTemplateManager(BaseModel2DTM):
             self.template_volume = load_mrc_volume(self.template_volume_path)
 
     def make_backend_core_function_kwargs(
-        self, prefer_refined_angles: bool = False
+        self, prefer_refined_angles: bool = True
     ) -> dict[str, Any]:
         """Create the kwargs for the backend refine_template core function.
 
@@ -86,12 +87,10 @@ class RefineTemplateManager(BaseModel2DTM):
             False.
         """
         # Ensure the template is loaded in as a Tensor object
-        if self.template_volume is None:
-            self.template_volume = load_mrc_volume(self.template_volume_path)
-        if not isinstance(self.template_volume, torch.Tensor):
-            template = torch.from_numpy(self.template_volume)
-        else:
-            template = self.template_volume
+        template = load_template_tensor(
+            template_volume=self.template_volume,
+            template_volume_path=self.template_volume_path,
+        )
 
         # The set of "best" euler angles from match template search
         # Check if refined angles exist, otherwise use the original angles
@@ -190,31 +189,13 @@ class RefineTemplateManager(BaseModel2DTM):
         """
         # pylint: disable=duplicate-code
         df_refined = self.particle_stack._df.copy()  # pylint: disable=protected-access
-        refined_mip = result["refined_cross_correlation"]
-        refined_scaled_mip = refined_mip - df_refined["correlation_mean"]
-        refined_scaled_mip = refined_scaled_mip / np.sqrt(
-            df_refined["correlation_variance"]
-        )
 
+        # x and y positions
         pos_offset_y = result["refined_pos_y"]
         pos_offset_x = result["refined_pos_x"]
         pos_offset_y_ang = pos_offset_y * df_refined["pixel_size"]
         pos_offset_x_ang = pos_offset_x * df_refined["pixel_size"]
 
-        # Add the new columns to the DataFrame
-        df_refined["refined_mip"] = refined_mip
-        df_refined["refined_scaled_mip"] = refined_scaled_mip
-
-        df_refined["refined_psi"] = result["refined_euler_angles"][:, 2]
-        df_refined["refined_theta"] = result["refined_euler_angles"][:, 1]
-        df_refined["refined_phi"] = result["refined_euler_angles"][:, 0]
-
-        df_refined["refined_relative_defocus"] = (
-            result["refined_defocus_offset"] + df_refined["refined_relative_defocus"]
-        )
-        df_refined["refined_pixel_size"] = (
-            result["refined_pixel_size_offset"] + df_refined["pixel_size"]
-        )
         df_refined["refined_pos_y"] = pos_offset_y + df_refined["pos_y"]
         df_refined["refined_pos_x"] = pos_offset_x + df_refined["pos_x"]
         df_refined["refined_pos_y_img"] = pos_offset_y + df_refined["pos_y_img"]
@@ -225,6 +206,52 @@ class RefineTemplateManager(BaseModel2DTM):
         df_refined["refined_pos_x_img_angstrom"] = (
             pos_offset_x_ang + df_refined["pos_x_img_angstrom"]
         )
+
+        # Euler angles
+        df_refined["refined_psi"] = result["refined_euler_angles"][:, 2]
+        df_refined["refined_theta"] = result["refined_euler_angles"][:, 1]
+        df_refined["refined_phi"] = result["refined_euler_angles"][:, 0]
+
+        # Defocus
+        df_refined["refined_relative_defocus"] = (
+            result["refined_defocus_offset"] + df_refined["refined_relative_defocus"]
+        )
+
+        # Pixel size
+        df_refined["refined_pixel_size"] = (
+            result["refined_pixel_size_offset"] + df_refined["pixel_size"]
+        )
+
+        # Cross-correlation statistics
+        # Check if correlation statistic files exist and use them if available
+        # This allows for shifts during refinement
+
+        # if (
+        #    "correlation_average_path" in df_refined.columns
+        #    and "correlation_variance_path" in df_refined.columns
+        # ):
+        # Check if files exist for at least the first entry
+        #    if (
+        #        df_refined["correlation_average_path"].iloc[0]
+        #        and df_refined["correlation_variance_path"].iloc[0]
+        #    ):
+        # Load the correlation statistics from the files
+        #        correlation_average = read_mrc_to_numpy(
+        #            df_refined["correlation_average_path"].iloc[0]
+        #        )
+        #        correlation_variance = read_mrc_to_numpy(
+        #            df_refined["correlation_variance_path"].iloc[0]
+        #        )
+        #        df_refined["correlation_mean"] = correlation_average[
+        #            df_refined["refined_pos_y"], df_refined["refined_pos_x"]
+        #           ]
+        #        df_refined["correlation_variance"] = correlation_variance[
+        #            df_refined["refined_pos_y"], df_refined["refined_pos_x"]
+        #        ]
+        refined_mip = result["refined_cross_correlation"]
+        refined_scaled_mip = result["refined_z_score"]
+        df_refined["refined_mip"] = refined_mip
+        df_refined["refined_scaled_mip"] = refined_scaled_mip
 
         # Reorder the columns
         df_refined = df_refined.reindex(columns=REFINED_DF_COLUMN_ORDER)

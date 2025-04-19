@@ -1,5 +1,6 @@
 """Pydantic model for running the optimize template program."""
 
+import os
 from typing import Any, ClassVar
 
 import numpy as np
@@ -107,14 +108,25 @@ class OptimizeTemplateManager(BaseModel2DTM):
             Path to save the optimized template pixel size.
         """
         if self.pixel_size_coarse_search.enabled:
-            optimal_template_px = self.optimize_pixel_size()
+            # Create a file for logging all iterations
+            all_results_path = self._get_all_results_path(output_text_path)
+            # Create the file and write header
+            with open(all_results_path, "w", encoding="utf-8") as f:
+                f.write("Pixel Size (Å),SNR\n")
+
+            optimal_template_px = self.optimize_pixel_size(all_results_path)
             print(f"Optimal template px: {optimal_template_px:.3f} Å")
             # print this to the text file
             with open(output_text_path, "w", encoding="utf-8") as f:
                 f.write(f"Optimal template px: {optimal_template_px:.3f} Å")
 
-    def optimize_pixel_size(self) -> float:
+    def optimize_pixel_size(self, all_results_path: str) -> float:
         """Optimize the pixel size of the template volume.
+
+        Parameters
+        ----------
+        all_results_path : str
+            Path to the file for logging all iterations
 
         Returns
         -------
@@ -133,10 +145,16 @@ class OptimizeTemplateManager(BaseModel2DTM):
         coarse_px_values = pixel_size_offsets_coarse + initial_template_px
 
         consecutive_decreases = 0
+        consecutive_threshold = 2
         previous_snr = float("-inf")
         for px in coarse_px_values:
             snr = self.evaluate_template_px(px=px.item())
             print(f"Pixel size: {px:.3f}, SNR: {snr:.3f}")
+
+            # Log to file
+            with open(all_results_path, "a", encoding="utf-8") as f:
+                f.write(f"{px:.3f},{snr:.3f}\n")
+
             if snr > best_snr:
                 best_snr = snr
                 best_px = px.item()
@@ -144,10 +162,10 @@ class OptimizeTemplateManager(BaseModel2DTM):
                 consecutive_decreases = 0
             else:
                 consecutive_decreases += 1
-                if consecutive_decreases >= 2:
+                if consecutive_decreases >= consecutive_threshold:
                     print(
-                        "SNR decreased for two consecutive iterations. "
-                        "Stopping coarse px search."
+                        f"SNR decreased for {consecutive_threshold} iterations. "
+                        f"Stopping coarse px search."
                     )
                     break
             previous_snr = snr
@@ -161,6 +179,11 @@ class OptimizeTemplateManager(BaseModel2DTM):
             for px in fine_px_values:
                 snr = self.evaluate_template_px(px=px.item())
                 print(f"Pixel size: {px:.3f}, SNR: {snr:.3f}")
+
+                # Log to file
+                with open(all_results_path, "a", encoding="utf-8") as f:
+                    f.write(f"{px:.3f},{snr:.3f}\n")
+
                 if snr > best_snr:
                     best_snr = snr
                     best_px = px.item()
@@ -168,9 +191,9 @@ class OptimizeTemplateManager(BaseModel2DTM):
                     consecutive_decreases = 0
                 else:
                     consecutive_decreases += 1
-                    if consecutive_decreases >= 2:
+                    if consecutive_decreases >= consecutive_threshold:
                         print(
-                            "SNR decreased for two consecutive iterations. "
+                            f"SNR decreased for {consecutive_threshold} iterations. "
                             "Stopping fine px search."
                         )
                         break
@@ -236,15 +259,15 @@ class OptimizeTemplateManager(BaseModel2DTM):
         float
             The mean SNR of the template.
         """
-        # pylint: disable=duplicate-code
-        df_refined = self.particle_stack._df.copy()  # pylint: disable=protected-access
+        # Filter out any infinite or NaN values
+        # NOTE: There should not be NaNs or infs, will follow up later
+        refined_scaled_mip = result["refined_z_score"]
+        refined_scaled_mip = refined_scaled_mip[np.isfinite(refined_scaled_mip)]
 
-        # Scale the optimized cross-correlation to a z-score
-        refined_mip = result["refined_cross_correlation"]
-        refined_scaled_mip = refined_mip - df_refined["correlation_mean"]
-        refined_scaled_mip = refined_scaled_mip / np.sqrt(
-            df_refined["correlation_variance"]
-        )
+        # If more than n values, keep only the top n highest SNRs
+        best_n = 6
+        if len(refined_scaled_mip) > best_n:
+            refined_scaled_mip = np.sort(refined_scaled_mip)[-best_n:]
 
         # Printing out the results to console
         print(
@@ -254,3 +277,19 @@ class OptimizeTemplateManager(BaseModel2DTM):
         mean_snr = float(refined_scaled_mip.mean())
 
         return mean_snr
+
+    def _get_all_results_path(self, output_text_path: str) -> str:
+        """Generate the results file path from the output text path.
+
+        Parameters
+        ----------
+        output_text_path : str
+            Path to the output text file
+
+        Returns
+        -------
+        str
+            Path to the file with _all.txt extension
+        """
+        base, _ = os.path.splitext(output_text_path)
+        return f"{base}_all.csv"
