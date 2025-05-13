@@ -100,7 +100,7 @@ class OptimizeTemplateManager(BaseModel2DTM):
         )
 
     def run_optimize_template(self, output_text_path: str) -> None:
-        """Run the refine template program and saves the resultant DataFrame to csv.
+        """Run the optimize template program and saves the resultant DataFrame to csv.
 
         Parameters
         ----------

@@ -63,6 +63,68 @@ def preprocess_image(
     return image_rfft
 
 
+def get_image_normalization_factor(
+    image_rfft: torch.Tensor,
+    cumulative_fourier_filters: torch.Tensor,
+    bandpass_filter: torch.Tensor,
+) -> torch.Tensor:
+    """Get the normalization factor for an image.
+
+    Parameters
+    ----------
+    image_rfft : torch.Tensor
+        The real Fourier-transformed image (unshifted).
+    cumulative_fourier_filters : torch.Tensor
+        The cumulative Fourier filters. Multiplication of the whitening filter, phase
+        randomization filter, bandpass filter, and arbitrary curve filter.
+    bandpass_filter : torch.Tensor
+        The bandpass filter used for the image. Used for dimensionality normalization.
+
+    Returns
+    -------
+    torch.Tensor
+        The normalization factor for the image.
+    """
+    image_rfft = image_rfft * cumulative_fourier_filters
+    # Normalize the image after filtering
+    squared_image_rfft = torch.abs(image_rfft) ** 2
+    squared_sum = torch.sum(squared_image_rfft, dim=(-2, -1), keepdim=True)
+    squared_sum += torch.sum(
+        squared_image_rfft[..., :, 1:-1], dim=(-2, -1), keepdim=True
+    )
+    dimensionality = bandpass_filter.sum() + bandpass_filter[:, 1:-1].sum()
+    normalization_factor = (dimensionality**0.5) / torch.sqrt(squared_sum)
+
+    return normalization_factor
+
+
+def preprocess_frame(
+    frame_rfft: torch.Tensor,
+    cumulative_fourier_filters: torch.Tensor,
+    normalization_factor: torch.Tensor,
+) -> torch.Tensor:
+    """Preprocesses a frame based on the image normalization factor.
+
+    Parameters
+    ----------
+    frame_rfft : torch.Tensor
+        The real Fourier-transformed frame (unshifted).
+    cumulative_fourier_filters : torch.Tensor
+        The cumulative Fourier filters. Multiplication of the whitening filter, phase
+        randomization filter, bandpass filter, and arbitrary curve filter.
+    normalization_factor : torch.Tensor
+        The normalization factor for the image.
+
+    Returns
+    -------
+    torch.Tensor
+        The preprocessed frame.
+    """
+    frame_rfft = frame_rfft * cumulative_fourier_filters
+    frame_rfft *= normalization_factor
+    return frame_rfft
+
+
 def calculate_ctf_filter_stack(
     template_shape: tuple[int, int],
     optics_group: "OpticsGroup",
@@ -339,6 +401,7 @@ def setup_images_filters_particle_stack(
     particle_stack: "ParticleStack",
     preprocessing_filters: "PreprocessingFilters",
     template: torch.Tensor,
+    mrc_image: torch.Tensor = None,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Extract and preprocess particle images and calculate filters.
 
@@ -353,6 +416,9 @@ def setup_images_filters_particle_stack(
         Filters to apply to the particle images.
     template : torch.Tensor
         The 3D template volume.
+    mrc_image : torch.Tensor, optional
+        If an image is provided, this will be used to construct the particle stack.
+        If not provided (default), a list of micrographs is taken from the df.
 
     Returns
     -------
@@ -368,6 +434,7 @@ def setup_images_filters_particle_stack(
         padding_value=0.0,
         handle_bounds="pad",
         padding_mode="constant",
+        mrc_image=mrc_image,
     )
 
     # FFT the particle images
@@ -403,6 +470,118 @@ def setup_images_filters_particle_stack(
         template_dft,
         projective_filters,
     )
+
+
+def setup_frame_filters_particle_stack(
+    particle_stack: "ParticleStack",
+    preprocessing_filters: "PreprocessingFilters",
+    template: torch.Tensor,
+    mrc_image: torch.Tensor = None,
+    normalization_factor: torch.Tensor = None,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Extract and preprocess particle images and calculate filters.
+
+    This function extracts particle images from a particle stack, performs FFT,
+    applies filters, and prepares the template for further processing.
+
+    Parameters
+    ----------
+    particle_stack : ParticleStack
+        The particle stack containing images to process.
+    preprocessing_filters : PreprocessingFilters
+        Filters to apply to the particle images.
+    template : torch.Tensor
+        The 3D template volume.
+    mrc_image : torch.Tensor, optional
+        If an image is provided, this will be used to construct the particle stack.
+        If not provided (default), a list of micrographs is taken from the df.
+    normalization_factor : torch.Tensor, optional
+        The normalization factor for the particle images.
+
+    Returns
+    -------
+    tuple[torch.Tensor, torch.Tensor, torch.Tensor]
+        A tuple containing:
+        - particle_images_dft: The particle images in Fourier space
+        - template_dft: The Fourier transformed template
+        - projective_filters: Filters applied to the template
+    """
+    # Extract out the regions of interest (particles) based on the particle stack
+    particle_images = particle_stack.construct_image_stack(
+        pos_reference="center",
+        padding_value=0.0,
+        handle_bounds="pad",
+        padding_mode="constant",
+        mrc_image=mrc_image,
+    )
+
+    # FFT the particle images
+    # pylint: disable=E1102
+    particle_images_dft = torch.fft.rfftn(particle_images, dim=(-2, -1))
+    particle_images_dft[..., 0, 0] = 0.0 + 0.0j  # Zero out DC component
+
+    # Calculate and apply the filters for the particle image stack
+    filter_stack = particle_stack.construct_filter_stack(
+        preprocessing_filters, output_shape=particle_images_dft.shape[-2:]
+    )
+
+    particle_images_dft = preprocess_frame(
+        frame_rfft=particle_images_dft,
+        cumulative_fourier_filters=filter_stack,
+        normalization_factor=normalization_factor,
+    )
+
+    # Calculate the filters applied to each template (besides CTF)
+    projective_filters = particle_stack.construct_filter_stack(
+        preprocessing_filters,
+        output_shape=(template.shape[-2], template.shape[-1] // 2 + 1),
+    )
+
+    template_dft = volume_to_rfft_fourier_slice(template)
+
+    return (
+        particle_images_dft,
+        template_dft,
+        projective_filters,
+    )
+
+
+def setup_image_normalization_factor(
+    particle_stack: "ParticleStack",
+    preprocessing_filters: "PreprocessingFilters",
+    mrc_image: torch.Tensor = None,
+) -> torch.Tensor:
+    """Get the image normalization factor."""
+    # Extract out the regions of interest (particles) based on the particle stack
+    particle_images = particle_stack.construct_image_stack(
+        pos_reference="center",
+        padding_value=0.0,
+        handle_bounds="pad",
+        padding_mode="constant",
+        mrc_image=mrc_image,
+    )
+
+    # FFT the particle image
+    # pylint: disable=E1102
+    particle_images_dft = torch.fft.rfftn(particle_images, dim=(-2, -1))
+    particle_images_dft[..., 0, 0] = 0.0 + 0.0j  # Zero out DC component
+    bandpass_filter = preprocessing_filters.bandpass_filter.calculate_bandpass_filter(
+        particle_images_dft.shape[-2:]
+    )
+
+    # Calculate and apply the filters for the particle image stack
+    filter_stack = particle_stack.construct_filter_stack(
+        preprocessing_filters, output_shape=particle_images_dft.shape[-2:]
+    )
+
+    # Calculate the normalization factor
+    normalization_factor = get_image_normalization_factor(
+        image_rfft=particle_images_dft,
+        cumulative_fourier_filters=filter_stack,
+        bandpass_filter=bandpass_filter,
+    )
+
+    return normalization_factor
 
 
 # pylint: disable=too-many-locals

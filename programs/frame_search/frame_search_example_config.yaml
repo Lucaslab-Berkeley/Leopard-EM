@@ -1,0 +1,42 @@
+#####################################################
+### CorrelateFramesManager configuration example ###
+#####################################################
+# An example YAML configuration to modify.
+# Call `CorrelateFramesManager.from_yaml(path)` to load this configuration.
+aligned_frames_path: "path/to/aligned_frames.mrc"
+particle_stack:
+  df_path: results/results_match_template_crop.csv  # Needs to be readable by pandas
+  extracted_box_size: [520, 520]
+  original_template_size: [512, 512]
+preprocessing_filters:
+  whitening_filter:
+    do_power_spectrum: true
+    enabled: true
+    max_freq: 1.0  # In terms of Nyquist frequency
+    num_freq_bins: null
+  bandpass_filter:
+    enabled: false
+    falloff: null
+    high_freq_cutoff: null
+    low_freq_cutoff: null
+computational_config:
+  gpu_ids: 
+    - 0
+  num_cpus: 2
+simulator:
+  simulator_config:
+    voltage: 300.0
+    apply_dose_weighting: true
+    dose_start: 0.0
+    dose_end: 50.0
+    dose_filter_modify_signal: "rel_diff"
+    upsampling: -1  
+    mtf_reference: "falcon4EC_300kv"
+  pdb_filepath: "models/60S_aligned_aligned_zero.pdb"
+  volume_shape: [512, 512, 512]
+  b_factor_scaling: 0.5
+  additional_b_factor: 0
+  pixel_spacing: 0.936
+  center_atoms: false
+  remove_hydrogens: true
+

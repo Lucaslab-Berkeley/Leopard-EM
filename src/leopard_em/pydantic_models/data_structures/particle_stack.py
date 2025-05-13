@@ -1,7 +1,7 @@
 """Particle stack Pydantic model for dealing with extracted particle data."""
 
 import warnings
-from typing import Any, ClassVar, Literal
+from typing import Any, ClassVar, Literal, Optional
 
 import numpy as np
 import pandas as pd
@@ -312,7 +312,8 @@ class ParticleStack(BaseModel2DTM):
         pos_reference: Literal["center", "top-left"] = "center",
         handle_bounds: Literal["pad", "error"] = "pad",
         padding_mode: Literal["constant", "reflect", "replicate"] = "constant",
-        padding_value: float = 0.0,
+        padding_value: Optional[float] = None,
+        mrc_image: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """Construct stack of images from the DataFrame (updates image_stack in-place).
 
@@ -340,6 +341,9 @@ class ParticleStack(BaseModel2DTM):
         padding_value : float, optional
             The value to use for padding when `padding_mode` is "constant", by default
             0.0.
+        mrc_image : torch.Tensor, optional
+            If an image is provided, this will be used to construct the particle stack.
+            If not provided (default), a list of micrographs is taken from the df.
 
         Returns
         -------
@@ -349,43 +353,60 @@ class ParticleStack(BaseModel2DTM):
         # Create an empty tensor to store the image stack
         image_stack = torch.zeros((self.num_particles, *self.extracted_box_size))
 
-        # Find the indexes in the DataFrame that correspond to each unique image
-        image_index_groups = self._df.groupby("micrograph_path").groups
+        # Determine which position columns to use (refined if available)
+        y_col = (
+            "refined_pos_y_img"
+            if "refined_pos_y_img" in self._df.columns
+            else "pos_y_img"
+        )
+        x_col = (
+            "refined_pos_x_img"
+            if "refined_pos_x_img" in self._df.columns
+            else "pos_x_img"
+        )
 
-        # Loop over each unique image and extract the particles
-        for img_path, indexes in image_index_groups.items():
-            img = load_mrc_image(img_path)
+        # Set default padding value if None
+        actual_padding_value = 0.0 if padding_value is None else padding_value
 
-            # with reference to center pixel
-            # Determine which position columns to use (refined if available)
-            y_col = (
-                "refined_pos_y_img"
-                if "refined_pos_y_img" in self._df.columns
-                else "pos_y_img"
-            )
-            x_col = (
-                "refined_pos_x_img"
-                if "refined_pos_x_img" in self._df.columns
-                else "pos_x_img"
-            )
-
-            pos_y = self._df.loc[indexes, y_col].to_numpy()
-            pos_x = self._df.loc[indexes, x_col].to_numpy()
-
-            pos_y = torch.tensor(pos_y)
-            pos_x = torch.tensor(pos_x)
+        if mrc_image is not None:
+            # Use the provided image for all particles
+            pos_y = torch.tensor(self._df[y_col].to_numpy())
+            pos_x = torch.tensor(self._df[x_col].to_numpy())
 
             cropped_images = get_cropped_image_regions(
-                img,
+                mrc_image,
                 pos_y,
                 pos_x,
                 self.extracted_box_size,
                 pos_reference=pos_reference,
                 handle_bounds=handle_bounds,
                 padding_mode=padding_mode,
-                padding_value=padding_value,
+                padding_value=actual_padding_value,
             )
-            image_stack[indexes] = cropped_images
+            image_stack = cropped_images
+
+        else:
+            # Find the indexes in the DataFrame that correspond to each unique image
+            image_index_groups = self._df.groupby("micrograph_path").groups
+
+            # Loop over each unique image and extract the particles
+            for img_path, indexes in image_index_groups.items():
+                img = load_mrc_image(img_path)
+
+                pos_y = torch.tensor(self._df.loc[indexes, y_col].to_numpy())
+                pos_x = torch.tensor(self._df.loc[indexes, x_col].to_numpy())
+
+                cropped_images = get_cropped_image_regions(
+                    img,
+                    pos_y,
+                    pos_x,
+                    self.extracted_box_size,
+                    pos_reference=pos_reference,
+                    handle_bounds=handle_bounds,
+                    padding_mode=padding_mode,
+                    padding_value=actual_padding_value,
+                )
+                image_stack[indexes] = cropped_images
 
         self.image_stack = image_stack
 
