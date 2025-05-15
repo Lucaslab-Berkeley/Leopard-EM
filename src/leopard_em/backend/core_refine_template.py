@@ -4,7 +4,6 @@
 # pylint: disable=E1102
 
 from typing import Literal
-
 import roma
 import torch
 import tqdm
@@ -138,10 +137,33 @@ def core_refine_template(
         devices=device,
     )
 
+
+
     results = run_multiprocess_jobs(
-        target=_core_refine_template_single_gpu,
-        kwargs_list=kwargs_per_device,
+         target=_core_refine_template_single_gpu,
+         kwargs_list=kwargs_per_device,
     )
+
+    # Free up memory from kwargs_per_device before proceeding
+    # This is critical because these contain device tensors that need to be released
+    for kwargs in kwargs_per_device:
+        for key, value in list(kwargs.items()):
+            if isinstance(value, torch.Tensor):
+                del kwargs[key]
+    
+    # Clear the entire list of device kwargs
+    kwargs_per_device.clear()
+    
+    # Force garbage collection before continuing
+    import gc
+    gc.collect()
+    
+    # Force CUDA cache clearing on all devices before concatenating results
+    for d in device:
+        if d.type == "cuda":
+            with torch.cuda.device(d):
+                torch.cuda.empty_cache()
+                torch.cuda.synchronize()
 
     # Shape information for offset calculations
     _, img_h, img_w = particle_stack_dft.shape
@@ -193,7 +215,8 @@ def core_refine_template(
     refined_pos_y -= (img_h - template_h + 1) // 2
     refined_pos_x -= (img_w - template_w + 1) // 2
 
-    return {
+    # Create the final results dictionary
+    result_dict = {
         "refined_cross_correlation": refined_cross_correlation,
         "refined_z_score": refined_z_score,
         "refined_euler_angles": refined_euler_angles,
@@ -203,6 +226,31 @@ def core_refine_template(
         "refined_pos_x": refined_pos_x,
         "angle_idx": angle_idx,
     }
+    
+    # Clean up to prevent memory leaks
+    # Clear multiprocess results dictionary first
+    for r in results.values():
+        r.clear()
+    results.clear()
+    
+    # Clean up other temporary tensors
+    del particle_indices
+    del sort_indices
+    
+    # Clean up input tensors that might have gotten retained
+    del kwargs_per_device
+    
+    # Clean up all concatenated result tensors that were created
+    del refined_cross_correlation
+    del refined_z_score
+    del refined_euler_angles
+    del refined_defocus_offset
+    del refined_pixel_size_offset
+    del refined_pos_y
+    del refined_pos_x
+    del angle_idx
+    
+    return result_dict
 
 
 # pylint: disable=too-many-locals
@@ -285,21 +333,32 @@ def construct_multi_gpu_refine_template_kwargs(
         # Get particle indices for this device
         particle_indices = torch.arange(start_idx, end_idx)
 
-        # Split tensors for this device
-        device_particle_stack_dft = particle_stack_dft[start_idx:end_idx].to(device)
-        device_euler_angles = euler_angles[start_idx:end_idx].to(device)
-        device_defocus_u = defocus_u[start_idx:end_idx].to(device)
-        device_defocus_v = defocus_v[start_idx:end_idx].to(device)
-        device_defocus_angle = defocus_angle[start_idx:end_idx].to(device)
-        device_projective_filters = projective_filters[start_idx:end_idx].to(device)
+        # Split tensors for this device - detach and move to CPU first to avoid memory leaks
+        with torch.no_grad():
+            # Create CPU versions first then move to device to avoid memory leaks
+            # This is critical for multiprocessing where tensors might be retained
+            device_particle_stack_dft = particle_stack_dft[start_idx:end_idx].detach().clone().to(device)
+            device_euler_angles = euler_angles[start_idx:end_idx].detach().clone().to(device)
+            device_defocus_u = defocus_u[start_idx:end_idx].detach().clone().to(device)
+            device_defocus_v = defocus_v[start_idx:end_idx].detach().clone().to(device)
+            device_defocus_angle = defocus_angle[start_idx:end_idx].detach().clone().to(device)
+            device_projective_filters = projective_filters[start_idx:end_idx].detach().clone().to(device)
 
-        # These are shared across all particles
-        device_template_dft = template_dft.to(device)
-        device_euler_angle_offsets = euler_angle_offsets.to(device)
-        device_defocus_offsets = defocus_offsets.to(device)
-        device_pixel_size_offsets = pixel_size_offsets.to(device)
-        device_corr_mean = corr_mean.to(device)
-        device_corr_std = corr_std.to(device)
+            # These are shared across all particles
+            device_template_dft = template_dft.detach().clone().to(device)
+            device_euler_angle_offsets = euler_angle_offsets.detach().clone().to(device)
+            device_defocus_offsets = defocus_offsets.detach().clone().to(device)
+            device_pixel_size_offsets = pixel_size_offsets.detach().clone().to(device)
+            
+            # For corr_mean and corr_std, check their shape to determine if they should be sliced
+            if corr_mean.dim() >= 3 and corr_mean.shape[0] == particle_stack_dft.shape[0]:
+                # If they have batch dimension, slice them
+                device_corr_mean = corr_mean[start_idx:end_idx].detach().clone().to(device)
+                device_corr_std = corr_std[start_idx:end_idx].detach().clone().to(device)
+            else:
+                # Otherwise, use the whole tensors
+                device_corr_mean = corr_mean.detach().clone().to(device)
+                device_corr_std = corr_std.detach().clone().to(device)
 
         kwargs = {
             "particle_stack_dft": device_particle_stack_dft,
@@ -320,6 +379,27 @@ def construct_multi_gpu_refine_template_kwargs(
         }
 
         kwargs_per_device.append(kwargs)
+        
+        # Clean up local device tensors immediately to avoid memory leakage
+        # These tensors are already copied into kwargs dictionary
+        del device_particle_stack_dft
+        del device_euler_angles
+        del device_defocus_u
+        del device_defocus_v
+        del device_defocus_angle
+        del device_projective_filters
+        del device_template_dft
+        del device_euler_angle_offsets
+        del device_defocus_offsets
+        del device_pixel_size_offsets
+        del device_corr_mean
+        del device_corr_std
+        del particle_indices
+        
+        # Force torch.cuda.empty_cache() for this device
+        with torch.cuda.device(device):
+            torch.cuda.empty_cache()
+            
         start_idx = end_idx
 
     return kwargs_per_device
@@ -500,6 +580,50 @@ def _core_refine_template_single_gpu(
     }
 
     result_dict[device_id] = result
+    
+    # Clean up all tensors to prevent memory leaks
+    del refined_statistics
+    del refined_cross_correlation
+    del refined_z_score
+    del refined_euler_angles
+    del refined_defocus_offset
+    del refined_pixel_size_offset
+    del refined_pos_y
+    del refined_pos_x
+    del angle_idx
+    
+    # Clean up all input tensors - this is critical to free GPU memory in each process
+    del particle_stack_dft
+    del particle_indices
+    del template_dft
+    del euler_angles
+    del euler_angle_offsets
+    del defocus_u
+    del defocus_v
+    del defocus_angle
+    del defocus_offsets
+    del pixel_size_offsets
+    del corr_mean
+    del corr_std
+    del projective_filters
+    
+    # Force garbage collection
+    import gc
+    gc.collect()
+    
+    # Force CUDA cache clearing
+    if device.type == "cuda":
+        with torch.cuda.device(device):
+            torch.cuda.empty_cache()
+            torch.cuda.synchronize()
+            
+            # Try more advanced cache clearing methods
+            if hasattr(torch.cuda, "memory_stats"):
+                torch.cuda.reset_peak_memory_stats(device)
+                if hasattr(torch.cuda, "reset_max_memory_allocated"):
+                    torch.cuda.reset_max_memory_allocated(device)
+                if hasattr(torch.cuda, "reset_max_memory_cached"):
+                    torch.cuda.reset_max_memory_cached(device)
 
 
 # pylint: disable=too-many-locals, too-many-statements
@@ -684,6 +808,24 @@ def _core_refine_template_single_thread(
             refined_pos_y = y_idx
             refined_pos_x = x_idx
             full_angle_idx = angle_idx + start_idx
+            
+        # Explicitly delete large tensors to free memory
+        del cross_correlation
+        del z_score
+        del rot_matrix_batch
+        del euler_angle_offsets_batch
+        if particle_image_dft.device.type == "cuda":
+            with torch.cuda.device(particle_image_dft.device):
+                torch.cuda.empty_cache()
+    
+    # Clean up other large tensors after the loop
+    del ctf_filters
+    del combined_projective_filter
+    del default_rot_matrix
+    if particle_image_dft.device.type == "cuda":
+        with torch.cuda.device(particle_image_dft.device):
+            torch.cuda.empty_cache()
+    
     # Return the refined statistics
     refined_stats = {
         "max_cc": max_cc,

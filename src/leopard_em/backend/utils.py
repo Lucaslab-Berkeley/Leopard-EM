@@ -243,7 +243,47 @@ def run_multiprocess_jobs(
         processes.append(p)
         p.start()
 
-    for p in processes:
-        p.join()
-
-    return dict(result_dict)
+    try:
+        # Wait for all processes to finish
+        for p in processes:
+            p.join()
+            
+        # Store result before cleaning up the manager
+        result = dict(result_dict)
+        
+        # Clean up processes more aggressively
+        for p in processes:
+            if p.is_alive():
+                p.terminate()
+                p.join(timeout=1.0)
+                
+            # Close the process to release resources
+            p.close()
+            
+        # Clear processes list
+        processes.clear()
+        
+        # Tell the manager to shutdown - must be done after copying all results
+        manager.shutdown()
+        
+        # Don't try to interact with result_dict after manager shutdown
+        # result_dict.clear() - This causes BrokenPipeError
+        
+        return result
+        
+    except Exception as e:
+        # Clean up processes if an exception occurs
+        for p in processes:
+            if p.is_alive():
+                p.terminate()
+            p.close()
+        
+        # Clean up manager
+        try:
+            manager.shutdown()
+        except Exception:
+            # Ignore errors during cleanup of the manager
+            pass
+        
+        # Re-raise the exception
+        raise e

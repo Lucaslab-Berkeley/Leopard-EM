@@ -449,6 +449,9 @@ def _do_bached_orientation_cross_correlate(
         orientation and defocus value. Will have shape
         (orientations, defocus_batch, H, W).
     """
+    # Get the device
+    device = image_dft.device
+    
     # Accounting for RFFT shape
     projection_shape_real = (template_dft.shape[1], template_dft.shape[2] * 2 - 2)
     image_shape_real = (image_dft.shape[0], image_dft.shape[1] * 2 - 2)
@@ -467,6 +470,12 @@ def _do_bached_orientation_cross_correlate(
     fourier_slice = fourier_slice[None, None, ...] * projective_filters[:, :, None, ...]
     # Inverse Fourier transform into real space and normalize
     projections = torch.fft.irfftn(fourier_slice, dim=(-2, -1))
+    # Clean up the large Fourier slice tensor
+    del fourier_slice
+    if device.type == "cuda":
+        with torch.cuda.device(device):
+            torch.cuda.empty_cache()
+        
     projections = torch.fft.ifftshift(projections, dim=(-2, -1))
     projections = normalize_template_projection_compiled(
         projections,
@@ -476,11 +485,23 @@ def _do_bached_orientation_cross_correlate(
 
     # Padded forward Fourier transform for cross-correlation
     projections_dft = torch.fft.rfftn(projections, dim=(-2, -1), s=image_shape_real)
+    # Clean up the projections tensor
+    del projections
+    if device.type == "cuda":
+        with torch.cuda.device(device):
+            torch.cuda.empty_cache()
+        
     projections_dft[..., 0, 0] = 0 + 0j  # zero out the DC component (mean zero)
 
     # Cross correlation step by element-wise multiplication
     projections_dft = image_dft[None, None, None, ...] * projections_dft.conj()
     cross_correlation = torch.fft.irfftn(projections_dft, dim=(-2, -1))
+    
+    # Clean up the projections_dft tensor
+    del projections_dft
+    if device.type == "cuda":
+        with torch.cuda.device(device):
+            torch.cuda.empty_cache()
 
     # shape is (n_Cs n_defoc n_orientations, H, W)
     return cross_correlation
