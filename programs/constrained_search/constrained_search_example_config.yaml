@@ -12,24 +12,24 @@ particle_stack_constrained: # This is from the constrained particles
   df_path: /some/path/to/particles.csv  # Needs to be readable by pandas
   extracted_box_size: [528, 528]
   original_template_size: [512, 512]
-centre_vector: [53.658134, 82.582367, 47.170788] # Vector from reference particle to constrained particle in Angstroms
+center_vector: [53.658134, 82.582367, 47.170788] # Vector from reference particle to constrained particle in Angstroms
 orientation_refinement_config:
   enabled: true
-  base_grid_method: roll
+  rotation_axis_euler_angles: [0.0, 0.0, 0.0] # This is the rotation axis
+  base_grid_method: uniform
   psi_step: 1.0   # psi in degrees
   theta_step: 1.0   # theta and phi in degrees
-  rotation_axis_euler_angles: [0.0, 0.0, 0.0] # This is the rotation axis
   phi_min: -0.0
   phi_max: 0.0
   theta_min: -8.0
   theta_max: 2.0
   psi_min: -13.0
   psi_max: 2.0
-  search_roll_axis: true
-  roll_axis: [0,1] # [x,y] This defines the roll axis (orthogonal to the rotation axis). None means search
+  search_roll_axis: false
+  roll_axis: [0,1] # [x,y] This defines the roll axis (orthogonal to the rotation axis).
   roll_step: 2.0 
 defocus_search_config:
-  enabled: true
+  enabled: false
 preprocessing_filters:
   whitening_filter:
     do_power_spectrum: true
