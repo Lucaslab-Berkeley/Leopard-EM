@@ -158,7 +158,14 @@ class ConstrainedSearchManager(BaseModel2DTM):
             "correlation_average"
         )
         corr_std_stack = (
-            part_stk.construct_cropped_statistic_stack("correlation_variance") ** 0.5
+            part_stk.construct_cropped_statistic_stack(
+                stat="correlation_variance",
+                pos_reference="center",
+                handle_bounds="pad",
+                padding_mode="constant",
+                padding_value=1e10,
+            )
+            ** 0.5
         )  # var to std
 
         return {

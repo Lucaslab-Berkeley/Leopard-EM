@@ -447,10 +447,17 @@ def setup_particle_backend_kwargs(
     """
     # Get correlation statistics
     corr_mean_stack = particle_stack.construct_cropped_statistic_stack(
-        "correlation_average"
+        "correlation_average",
     )
     corr_std_stack = (
-        particle_stack.construct_cropped_statistic_stack("correlation_variance") ** 0.5
+        particle_stack.construct_cropped_statistic_stack(
+            stat="correlation_variance",
+            pos_reference="center",
+            handle_bounds="pad",
+            padding_mode="constant",
+            padding_value=1e10,  # large to avoid out of bound pixels having inf z-score
+        )
+        ** 0.5
     )  # var to std
 
     # Extract and preprocess images and filters
