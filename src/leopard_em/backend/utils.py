@@ -82,7 +82,7 @@ def normalize_template_projection(
     variance = torch.sum((projections - mean) ** 2, dim=(-2, -1), keepdim=True)
     # Add the second term of the variance calculation
     variance += (
-        (large_shape[0] - small_shape[0]) * (large_shape[0] - small_shape[0]) * mean**2
+        (large_shape[0] - small_shape[0]) * (large_shape[1] - small_shape[1]) * mean**2
     )
     variance /= large_shape[0] * large_shape[1]
 
