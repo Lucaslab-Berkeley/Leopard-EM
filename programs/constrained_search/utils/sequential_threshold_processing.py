@@ -7,42 +7,12 @@ from collections import defaultdict
 
 import numpy as np
 import pandas as pd
-from scipy.special import (
-    erfcinv,  # Required for the gaussian_noise_zscore_cutoff function
-)
 
-
-def gaussian_noise_zscore_cutoff(num_ccg: int, false_positives: float = 0.005) -> float:
-    """Determines the z-score cutoff based on Gaussian noise model and number of pixels.
-
-    NOTE: This procedure assumes that the z-scores (normalized maximum intensity
-    projections) are distributed according to a standard normal distribution. Here,
-    this model is used to find the cutoff value such that there is at most
-    'false_positives' number of false positives in all of the pixels.
-
-    Parameters
-    ----------
-    num_ccg : int
-        Total number of cross-correlograms calculated during template matching. Product
-        of the number of pixels, number of defocus values, and number of orientations.
-    false_positives : float, optional
-        Number of false positives to allow in the image (over all pixels). Default is
-        0.005 which corresponds to 0.5% false-positives.
-
-    Returns
-    -------
-    float
-        Z-score cutoff.
-    """
-    tmp = erfcinv(2.0 * false_positives / num_ccg)
-    tmp *= np.sqrt(2.0)
-
-    return float(tmp)
+from leopard_em.analysis.zscore_metric import gaussian_noise_zscore_cutoff
 
 
 def get_micrograph_id(filename: str) -> str:
-    """
-    Extract micrograph ID from filename.
+    """Extract micrograph ID from filename.
 
     Parameters
     ----------
