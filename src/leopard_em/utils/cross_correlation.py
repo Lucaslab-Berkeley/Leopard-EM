@@ -20,10 +20,8 @@ def handle_correlation_mode(
         The desired shape of the output.
     mode : Literal["valid", "same"]
         The mode of the cross correlation. Either 'valid' or 'same'. See
-        [numpy.correlate](
-            numpy.org/doc/stable/reference/generated/numpy.convolve.html#numpy.convolve
-        )
-        for more details. NOTE: 'full' mode is not supported.
+        [numpy.correlate](https://numpy.org/doc/stable/reference/generated/numpy.convolve.html#numpy.convolve)
+        for more details. NOTE: 'full' mode is not implemented.
     """
     # Crop the result to the valid bounds
     if mode == "valid":

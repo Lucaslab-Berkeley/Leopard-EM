@@ -215,16 +215,19 @@ def run_multiprocess_jobs(
 
     Example
     -------
-    def worker(result_dict, idx, param1, param2):
-        # perform work
+    ```
+    def worker_fn(result_dict, idx, param1, param2):
         result_dict[idx] = param1 + param2
+
 
     kwargs_per_process = [
         {"param1": 1, "param2": 2},
         {"param1": 3, "param2": 4},
     ]
-    results = run_multiprocess_jobs(worker, kwargs_per_process)
-    # results will be something like: {0: 3, 1: 7}
+    results = run_multiprocess_jobs(worker_fn, kwargs_per_process)
+    print(results)
+    # {0: 3, 1: 7}
+    ```
     """
     if extra_kwargs is None:
         extra_kwargs = {}

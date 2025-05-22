@@ -93,7 +93,8 @@ def core_match_template(
     Returns
     -------
     dict[str, torch.Tensor]
-        Dictionary containing the following
+        Dictionary containing the following key, value pairs:
+
             - "mip": Maximum intensity projection of the cross-correlation values across
               orientation and defocus search space.
             - "scaled_mip": Z-score scaled MIP of the cross-correlation values.

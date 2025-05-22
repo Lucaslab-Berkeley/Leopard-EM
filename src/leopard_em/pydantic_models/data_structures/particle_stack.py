@@ -210,6 +210,7 @@ class ParticleStack(BaseModel2DTM):
     df_path : str
         Path to the DataFrame containing the particle data. The DataFrame must have
         the following columns (see the documentation for further information):
+
           - mip
           - scaled_mip
           - correlation_mean
@@ -246,6 +247,7 @@ class ParticleStack(BaseModel2DTM):
           - defocus_path
           - correlation_average_path
           - correlation_variance_path
+
     extracted_box_size : tuple[int, int]
         The size of the extracted particle boxes in pixels in units of pixels.
     original_template_size : tuple[int, int]
@@ -403,6 +405,10 @@ class ParticleStack(BaseModel2DTM):
             "theta",
             "phi",
         ],
+        pos_reference: Literal["center", "top-left"] = "center",
+        handle_bounds: Literal["pad", "error"] = "pad",
+        padding_mode: Literal["constant", "reflect", "replicate"] = "constant",
+        padding_value: float = 0.0,
     ) -> torch.Tensor:
         """Return a tensor of the specified statistic for each cropped image.
 
@@ -414,6 +420,25 @@ class ParticleStack(BaseModel2DTM):
         stat : Literal["mip", "scaled_mip", "correlation_average",
             "correlation_variance", "defocus", "psi", "theta", "phi"]
             The statistic to extract from the DataFrame.
+        pos_reference : Literal["center", "top-left"], optional
+            The reference point for the positions, by default "center". If "center", the
+            boxes extracted will be image[y - box_size // 2 : y + box_size // 2, ...].
+            If "top-left", the boxes will be image[y : y + box_size, ...].
+        handle_bounds : Literal["pad", "clip", "error"], optional
+            How to handle the bounds of the image, by default "pad". If "pad", the image
+            will be padded with the padding value based on the padding mode. If "error",
+            an error will be raised if any region exceeds the image bounds. NOTE:
+            clipping is not supported since returned stack may have inhomogeneous sizes.
+        padding_mode : Literal["constant", "reflect", "replicate"], optional
+            The padding mode to use when padding the image, by default "constant".
+            "constant" pads with the value `padding_value`, "reflect" pads with the
+            reflection of the image at the edge, and "replicate" pads with the last
+            pixel of the image. These match the modes available in
+            `torch.nn.functional.pad`.
+        padding_value : float, optional
+            The value to use for padding when `padding_mode` is "constant", by default
+            0.0.
+
 
         Returns
         -------
@@ -459,10 +484,10 @@ class ParticleStack(BaseModel2DTM):
                 pos_y,
                 pos_x,
                 (image_h - h + 1, image_w - w + 1),
-                pos_reference="top-left",
-                handle_bounds="pad",
-                padding_mode="constant",
-                padding_value=0.0,
+                pos_reference=pos_reference,
+                handle_bounds=handle_bounds,
+                padding_mode=padding_mode,
+                padding_value=padding_value,
             )
             stat_stack[indexes] = cropped_stat_maps
 

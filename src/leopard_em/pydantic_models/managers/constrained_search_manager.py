@@ -34,7 +34,7 @@ class ConstrainedSearchManager(BaseModel2DTM):
     ----------
     template_volume_path : str
         Path to the template volume MRC file.
-    centre_vector : list[float]
+    center_vector : list[float]
         The centre vector of the template volume.
     particle_stack_reference : ParticleStack
         Particle stack object containing particle data reference particles.
@@ -67,7 +67,7 @@ class ConstrainedSearchManager(BaseModel2DTM):
     model_config: ClassVar = ConfigDict(arbitrary_types_allowed=True)
 
     template_volume_path: str  # In df per-particle, but ensure only one reference
-    centre_vector: list[float] = Field(default=[0.0, 0.0, 0.0])
+    center_vector: list[float] = Field(default=[0.0, 0.0, 0.0])
 
     particle_stack_reference: ParticleStack
     particle_stack_constrained: ParticleStack
@@ -119,12 +119,12 @@ class ConstrainedSearchManager(BaseModel2DTM):
         )
 
         # get z diff for each particle
-        if not isinstance(self.centre_vector, torch.Tensor):
-            self.centre_vector = torch.tensor(self.centre_vector, dtype=torch.float32)
+        if not isinstance(self.center_vector, torch.Tensor):
+            self.center_vector = torch.tensor(self.center_vector, dtype=torch.float32)
         rotation_matrices = roma.rotvec_to_rotmat(
             roma.euler_to_rotvec(convention="ZYZ", angles=euler_angles)
         ).to(torch.float32)
-        rotated_vectors = rotation_matrices @ self.centre_vector
+        rotated_vectors = rotation_matrices @ self.center_vector
 
         # Get z for each particle -> tensor shape [batch_size]
         new_z_diffs = rotated_vectors[:, 2]
@@ -158,7 +158,14 @@ class ConstrainedSearchManager(BaseModel2DTM):
             "correlation_average"
         )
         corr_std_stack = (
-            part_stk.construct_cropped_statistic_stack("correlation_variance") ** 0.5
+            part_stk.construct_cropped_statistic_stack(
+                stat="correlation_variance",
+                pos_reference="center",
+                handle_bounds="pad",
+                padding_mode="constant",
+                padding_value=1e10,
+            )
+            ** 0.5
         )  # var to std
 
         return {

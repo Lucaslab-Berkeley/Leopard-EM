@@ -1,4 +1,4 @@
-"""Script is used to optimize the template for a given pdb file."""
+"""Runs pixel size optimization for a given template structure."""
 
 from leopard_em.pydantic_models.managers import OptimizeTemplateManager
 

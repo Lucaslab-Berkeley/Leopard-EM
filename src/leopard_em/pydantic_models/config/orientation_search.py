@@ -38,7 +38,7 @@ class OrientationSearchConfig(BaseModel2DTM):
     orientation_sampling_method : str
         Method for sampling orientations. Default is 'Hopf Fibration'.
         Currently only 'Hopf Fibration' is supported.
-    template_symmetry : str
+    symmetry : str
         Symmetry group of the template. Default is 'C1'.
         Currently only 'C1' is supported.
     phi_min : float
