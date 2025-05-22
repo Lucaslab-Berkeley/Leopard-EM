@@ -27,7 +27,7 @@ FALSE_POSITIVES = 0.005  # False positives per particle
 
 
 def main() -> None:
-    """Main function for running the refine template program."""
+    """Main function for running the constrained search program."""
     cs_manager = ConstrainedSearchManager.from_yaml(YAML_CONFIG_PATH)
 
     print("Loaded configuration.")

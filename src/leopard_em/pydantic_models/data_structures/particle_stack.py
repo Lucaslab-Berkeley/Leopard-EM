@@ -210,6 +210,7 @@ class ParticleStack(BaseModel2DTM):
     df_path : str
         Path to the DataFrame containing the particle data. The DataFrame must have
         the following columns (see the documentation for further information):
+
           - mip
           - scaled_mip
           - correlation_mean
@@ -246,6 +247,7 @@ class ParticleStack(BaseModel2DTM):
           - defocus_path
           - correlation_average_path
           - correlation_variance_path
+
     extracted_box_size : tuple[int, int]
         The size of the extracted particle boxes in pixels in units of pixels.
     original_template_size : tuple[int, int]

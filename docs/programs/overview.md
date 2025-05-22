@@ -53,8 +53,11 @@ The required inputs for `optimize_template` are:
 
 The `constrained_search` program uses pre-identified locations and orientations of a reference particle (lets call it particle A) to constrain the search space for another particle (called particle B); constraining the search space increases the sensitivity of 2DTM.
 This is useful when particle A is easier to identify with 2DTM and when prior knowledge about the spatial relationship between particles A and B is available.
-See the [constrained 40S ribosome example](../examples/constrained_search/constrained_search.ipynb) for a detailed demonstration of setting up and analyzing a constrained 2DTM search.
-Along with the tutorial above, the [constrained search program details](constrained_search.md) contains further information on configuration the program.
+<!-- TODO: Uncomment this when constrained search is finished -->
+<!-- See the [constrained 40S ribosome example](../examples/constrained_search/constrained_search.ipynb) for a detailed demonstration of setting up and analyzing a constrained 2DTM search.
+Along with the tutorial above, the [constrained search program details](constrained_search.md) contains further information on configuration the program. -->
+
+The [constrained search program details](constrained_search.md) contains further information on configuration the program.
 
 The required inputs for `constrained_search` are:
 

@@ -9,7 +9,9 @@ Welcome to the **L**ocation & ori**E**ntati**O**n of **PAR**ticles found using t
 Leopard-EM is a Python implementation of Two-Dimensional Template Matching (2DTM) which itself is a data analysis method in cryo-EM.
 This package reflects most of the functionality described in Lucas, *et al.* (2021)[^1] with additional user-friendly features for integrating into broader data science workflows.
 
-If you use Leopard-EM in your research, please cite ((TODO: add manuscript link)).
+!!! note "Citing this work"
+
+    If you use Leopard-EM in your research, please cite ((TODO: add manuscript link)).
 
 ## Installation
 
@@ -22,12 +24,18 @@ The general system requirements for Leopard-EM are
 - Linux operating system
 
 The package config contains a complete set of requirements which are automatically downloaded and checked during the installation process.
-Leopard-EM should work on MacOS and Windows operating systems, but we only fully support Linux.
-The package is also tested against modern Nvidia GPUs but should theoretically run on most PyTorch-supported GPUs.
-Your mileage may vary depending on system architecture.
-
 We also recommend using a virtual environment manager (such as [conda](https://docs.conda.io/en/latest/)) to avoid conflicts with other installed software on your system.
 Please open a [open up a bug report](https://github.com/Lucaslab-Berkeley/Leopard-EM/issues/new) on the GitHub page if you experience major issues during the installation process.
+
+!!! caution "MacOS and Windows support"
+
+    Leopard-EM should *theoretically* work on MacOS and Windows operating systems, but we cannot guarantee compatibility with platforms other than Linux nor do we distribute pre-built wheels for these platforms.
+
+!!! caution "Tested GPU support"
+
+    Leopard-EM has only been tested against NVIDIA GPUs but should run on most modern (supported by PyTorch) GPU hardware.
+    If you've found a compatibility issue, [create an issue on GitHub](https://github.com/Lucaslab-Berkeley/Leopard-EM/issues/new).
+
 
 ### Pre-packaged releases
 
@@ -37,6 +45,8 @@ To install the latest pre-packaged release of Leopard-EM, run the following:
 ```bash
 pip install leopard-em
 ```
+
+From there, you are ready to start running 2DTM workflows or exploring some of our examples.
 
 ### Installing from Source
 
@@ -173,43 +183,12 @@ Under construction
 
 Under construction
 
-## API
-
-Under construction
-<!-- TODO: Get some autodocs to parse the docstrings and generate API documentation. -->
 
 ## Contributing
 We encourage contributions to this package from the broader cryo-EM/ET and structural biology communities.
+See [contributing](contributing.md) for guidelines.
 Leopard-EM is configured with a set of development dependencies to help contributors maintain code quality and consistency.
 See the [Installation -- For Developers](#for-developers) section for instructions on how to install these dependencies.
-
-### Using `pre-commit`
-The `pre-commit` package is used to run a set of code quality checks and auto-formatters on the codebase.
-If this is your first time installing the package, you will need to install the pre-commit hooks:
-
-```bash
-pre-commit install--install-hooks
-```
-
-After staging changes, but before making a commit, you can run the pre-commit checks with:
-
-```bash
-pre-commit run
-```
-
-This will go through the staged files, check that all the changed code adheres to the style guidelines, and auto-format the code where necessary.
-If all the tests pass, you can commit the changes.
-
-### Running Tests
-Leopard-EM uses the `pytest` package for running tests.
-To run the tests, simply run the following command from the root directory of the repository:
-
-```bash
-pytest
-```
-
-Note that we are still working on expanding the unit tests to cover more of the package, but we ask that any new code contributions include tests where appropriate.
-
 
 ## License
 

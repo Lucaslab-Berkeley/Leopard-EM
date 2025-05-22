@@ -16,7 +16,7 @@ We’ve included bug report/issue templates in our GitHub page which detail the 
 
 ### Making feature requests
 
-We encourage users to make applicable feature requests, but we also want to prevent [feature creep]([https://en.wikipedia.org/wiki/Feature\_creep](https://en.wikipedia.org/wiki/Feature_creep)). If you are thinking about adding new functionality or features to the package, please open a feature request *before* opening a pull request so we can discuss if that feature fits within the scope of Leopard-EM. For example, the following would fall outside the scope:
+We encourage users to make applicable feature requests, but we also want to prevent [feature creep](https://en.wikipedia.org/wiki/Feature\_creep). If you are thinking about adding new functionality or features to the package, please open a feature request *before* opening a pull request so we can discuss if that feature fits within the scope of Leopard-EM. For example, the following would fall outside the scope:
 
 * Generating 3D reconstructions from 2DTM results
 * Adding a GUI for processing data using 2DTM (this could be a new package\!)
@@ -64,7 +64,7 @@ The first command will construct the HTML files for the documentation site, and 
 
 ### Code style guidelines
 
-The package is already configured with code formatting standards which aim to reduce complexity and increase readability. Please make sure your code changes are properly [type-hinted]([https://docs.python.org/3/library/typing.html](https://docs.python.org/3/library/typing.html)), include [docstrings]([https://en.wikipedia.org/wiki/Docstring\#Python](https://en.wikipedia.org/wiki/Docstring#Python)), and pass the formatting checks.
+The package is already configured with code formatting standards which aim to reduce complexity and increase readability. Please make sure your code changes are properly [type-hinted](https://docs.python.org/3/library/typing.html), include [docstrings](https://en.wikipedia.org/wiki/Docstring\#Python), and pass the formatting checks.
 
 #### Configuring pre-commit hooks
 
