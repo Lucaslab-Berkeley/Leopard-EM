@@ -4,8 +4,8 @@ import argparse
 import glob
 import os
 from collections import defaultdict
+from typing import dict, tuple
 
-import numpy as np
 import pandas as pd
 
 from leopard_em.analysis.zscore_metric import gaussian_noise_zscore_cutoff
@@ -30,6 +30,282 @@ def get_micrograph_id(filename: str) -> str:
     return parts
 
 
+def load_parameters_file(params_file: str) -> pd.DataFrame:
+    """Load and validate parameters file.
+
+    Parameters
+    ----------
+    params_file : str
+        Path to parameters file
+
+    Returns
+    -------
+    pd.DataFrame
+        Parameters data if valid, empty DataFrame otherwise
+    """
+    try:
+        params_df = pd.read_csv(params_file)
+        return params_df if not params_df.empty else pd.DataFrame()
+    except Exception as e:
+        print(f"  Error reading parameters file {params_file}: {e}")
+        return pd.DataFrame()
+
+
+def calculate_micrograph_thresholds(
+    micrograph_correlations: dict[str, int],
+    false_positive_rate: float,
+) -> dict[str, float]:
+    """Calculate thresholds for each micrograph based on correlation counts.
+
+    Parameters
+    ----------
+    micrograph_correlations : dict[str, int]
+        Dictionary mapping micrograph IDs to their total correlations
+    false_positive_rate : float
+        False positive rate for threshold calculation
+
+    Returns
+    -------
+    dict[str, float]
+        Dictionary mapping micrograph IDs to their thresholds
+    """
+    thresholds = {}
+    for micrograph_id, total_correlations in micrograph_correlations.items():
+        threshold = gaussian_noise_zscore_cutoff(
+            total_correlations, false_positive_rate
+        )
+        thresholds[micrograph_id] = threshold
+    return thresholds
+
+
+def process_results_file(
+    results_file: str,
+    micrograph_thresholds: dict[str, float],
+    step_num: int,
+) -> tuple[pd.DataFrame, str]:
+    """Process a single results file and filter particles above threshold.
+
+    Parameters
+    ----------
+    results_file : str
+        Path to results file
+    micrograph_thresholds : dict[str, float]
+        Dictionary of thresholds per micrograph
+    step_num : int
+        Current step number
+
+    Returns
+    -------
+    tuple[pd.DataFrame, str]
+        DataFrame of particles above threshold and micrograph ID
+
+    Raises
+    ------
+    ValueError
+        If no threshold can be calculated for the micrograph
+    """
+    micrograph_id = get_micrograph_id(results_file)
+
+    try:
+        results_df = pd.read_csv(results_file)
+        if results_df.empty:
+            print(f"  Warning: Empty results file {results_file}")
+            return pd.DataFrame(), micrograph_id
+
+        # Get threshold for this micrograph
+        if micrograph_id not in micrograph_thresholds:
+            raise ValueError(
+                f"No correlation data found for micrograph {micrograph_id}. "
+                "Cannot calculate threshold. Please ensure the parameters file exists "
+                "and contains correlation data."
+            )
+
+        threshold = micrograph_thresholds[micrograph_id]
+
+        # Determine which column to use for comparison
+        compare_col = (
+            "refined_scaled_mip"
+            if "refined_scaled_mip" in results_df.columns
+            else "scaled_mip"
+        )
+        if compare_col != "refined_scaled_mip":
+            print(
+                f"  Warning: refined_scaled_mip not found in {results_file}, "
+                f"using mip instead"
+            )
+
+        # Filter particles above threshold
+        above_threshold_df = results_df[results_df[compare_col] > threshold].copy()
+        if not above_threshold_df.empty:
+            above_threshold_df["step"] = step_num
+            print(
+                f"{micrograph_id}: {len(above_threshold_df)} of {len(results_df)} "
+                f"particles above threshold (using {compare_col})"
+            )
+
+        return above_threshold_df, micrograph_id
+
+    except Exception as e:
+        print(f"  Error processing results file {results_file}: {e}")
+        return pd.DataFrame(), micrograph_id
+
+
+def update_particle_data(
+    all_particles: dict[str, pd.DataFrame],
+    particle_step_map: dict[tuple[str, int], int],
+    new_particles: pd.DataFrame,
+    micrograph_id: str,
+    step_num: int,
+) -> None:
+    """Update particle data with new results.
+
+    Parameters
+    ----------
+    all_particles : dict[str, pd.DataFrame]
+        Dictionary of all particles per micrograph
+    particle_step_map : dict[tuple[str, int], int]
+        Map of particles to their last seen step
+    new_particles : pd.DataFrame
+        New particles to add/update
+    micrograph_id : str
+        ID of the micrograph
+    step_num : int
+        Current step number
+    """
+    if new_particles.empty:
+        return
+
+    if micrograph_id not in all_particles:
+        all_particles[micrograph_id] = new_particles
+        for idx in new_particles["particle_index"]:
+            particle_step_map[(micrograph_id, idx)] = step_num
+        return
+
+    existing_df = all_particles[micrograph_id]
+    updated_df = existing_df.copy()
+
+    for _, particle in new_particles.iterrows():
+        particle_idx = particle["particle_index"]
+        existing_particle = existing_df[existing_df["particle_index"] == particle_idx]
+
+        if len(existing_particle) > 0:
+            # Update existing particle
+            idx_to_update = updated_df.index[
+                updated_df["particle_index"] == particle_idx
+            ].tolist()[0]
+
+            # Handle offset columns
+            offset_cols = [
+                "original_offset_phi",
+                "original_offset_theta",
+                "original_offset_psi",
+            ]
+            for col in offset_cols:
+                if col not in updated_df.columns:
+                    updated_df[col] = 0.0
+                if col in particle and pd.notna(particle[col]):
+                    updated_df.at[idx_to_update, col] += particle[col]
+
+            # Update other parameters
+            for col in particle.index:
+                if col not in offset_cols and pd.notna(particle[col]):
+                    updated_df.at[idx_to_update, col] = particle[col]
+
+            updated_df.at[idx_to_update, "step"] = step_num
+        else:
+            # Add new particle
+            updated_df = pd.concat(
+                [updated_df, pd.DataFrame([particle])], ignore_index=True
+            )
+
+        particle_step_map[(micrograph_id, particle_idx)] = step_num
+
+    all_particles[micrograph_id] = updated_df
+
+
+def save_step_results(
+    all_particles: dict[str, pd.DataFrame],
+    step_num: int,
+    step_output_dir: str,
+) -> None:
+    """Save results for the current step.
+
+    Parameters
+    ----------
+    all_particles : dict[str, pd.DataFrame]
+        Dictionary of all particles per micrograph
+    step_num : int
+        Current step number
+    step_output_dir : str
+        Directory to save results
+    """
+    for micrograph_id, particles_df in all_particles.items():
+        step_particles = particles_df[particles_df["step"] == step_num]
+        if not step_particles.empty:
+            output_file = os.path.join(
+                step_output_dir, f"{micrograph_id}_results_above_threshold.csv"
+            )
+            step_particles.to_csv(output_file, index=False)
+            print(
+                f"  Saved {len(step_particles)} particles for {micrograph_id}"
+                f" in step {step_num}"
+            )
+
+
+def save_final_results(
+    all_particles: dict[str, pd.DataFrame],
+    micrograph_thresholds: dict[str, float],
+    micrograph_correlations: dict[str, int],
+    output_base_dir: str,
+) -> None:
+    """Save final results and summary.
+
+    Parameters
+    ----------
+    all_particles : dict[str, pd.DataFrame]
+        Dictionary of all particles per micrograph
+    micrograph_thresholds : dict[str, float]
+        Dictionary of thresholds per micrograph
+    micrograph_correlations : dict[str, int]
+        Dictionary of correlations per micrograph
+    output_base_dir : str
+        Base directory for output
+    """
+    final_output_dir = os.path.join(output_base_dir, "final_results")
+    os.makedirs(final_output_dir, exist_ok=True)
+
+    summary_data = []
+    for micrograph_id, particles_df in all_particles.items():
+        output_file = os.path.join(
+            final_output_dir, f"{micrograph_id}_results_above_threshold.csv"
+        )
+        particles_df.to_csv(output_file, index=False)
+
+        final_threshold = micrograph_thresholds.get(micrograph_id, "N/A")
+        total_correlations = micrograph_correlations.get(micrograph_id, 0)
+        n_particles = len(particles_df)
+
+        summary_data.append(
+            {
+                "micrograph_id": micrograph_id,
+                "total_particles": n_particles,
+                "total_correlations": total_correlations,
+                "final_threshold": final_threshold,
+            }
+        )
+
+        print(
+            f"Saved {n_particles} final particles for {micrograph_id} "
+            f"(threshold: {final_threshold}, correlations: {total_correlations})"
+        )
+
+    summary_df = pd.DataFrame(summary_data)
+    summary_df.to_csv(
+        os.path.join(final_output_dir, "processing_summary.csv"), index=False
+    )
+    print(f"\nProcessing complete. Final results saved to {final_output_dir}")
+
+
 def process_directories_sequentially(
     directory_list: list[str],
     output_base_dir: str,
@@ -52,53 +328,31 @@ def process_directories_sequentially(
     all_particles : dict
         Dictionary of micrograph IDs as keys and df as values
     """
-    # Create output directory if it doesn't exist
     os.makedirs(output_base_dir, exist_ok=True)
 
-    # Dictionary to store particles from all steps
-    # Key: micrograph_id
-    # Value: DataFrame of particles
     all_particles = {}
-
-    # Dictionary to track which particles were found in which step
-    # Key: (micrograph_id, particle_index)
-    # Value: last step where this particle was found
     particle_step_map = {}
-
-    # Dictionary to track total correlations per micrograph
-    # Key: micrograph_id
-    # Value: total correlations for this micrograph across all steps
     micrograph_correlations = defaultdict(int)
-
-    # Dictionary to track thresholds per micrograph
-    # Key: micrograph_id
-    # Value: threshold for this micrograph in the current step
     micrograph_thresholds = {}
 
-    # Process each directory in order
     for step_idx, directory in enumerate(directory_list):
         step_num = step_idx + 1
         print(f"\nProcessing Step {step_num}: {directory}")
 
-        # Create step output directory
         step_output_dir = os.path.join(output_base_dir, f"step_{step_num}")
         os.makedirs(step_output_dir, exist_ok=True)
 
-        # Find all results.csv files in the directory
         results_files = glob.glob(
             os.path.join(directory, "**", "*_results.csv"), recursive=True
         )
-
         if not results_files:
             print(f"  Warning: No results files found in {directory}")
             continue
 
         print(f"  Found {len(results_files)} results files")
-
-        # Dictionary to store parameters from each micrograph
         step_micrograph_parameters = {}
 
-        # First, find and read all parameters files to update correlation counts
+        # Process parameters files
         for results_file in results_files:
             micrograph_id = get_micrograph_id(results_file)
             params_file = results_file.replace(
@@ -106,265 +360,50 @@ def process_directories_sequentially(
             )
 
             if os.path.exists(params_file):
-                try:
-                    # Read the parameters file
-                    params_df = pd.read_csv(params_file)
-                    if not params_df.empty:
-                        step_micrograph_parameters[micrograph_id] = params_df.iloc[0]
-
-                        # Add to total correlations for this micrograph
-                        if "num_correlations" in params_df.columns:
-                            correlations = int(params_df.iloc[0]["num_correlations"])
-                            micrograph_correlations[micrograph_id] += correlations
-                            print(
-                                f"  {micrograph_id}: Added {correlations} correlations "
-                                f"(total: {micrograph_correlations[micrograph_id]})"
-                            )
-                except Exception as e:
-                    print(f"  Error reading parameters file {params_file}: {e}")
+                params_df = load_parameters_file(params_file)
+                if not params_df.empty:
+                    step_micrograph_parameters[micrograph_id] = params_df.iloc[0]
+                    if "num_correlations" in params_df.columns:
+                        correlations = int(params_df.iloc[0]["num_correlations"])
+                        micrograph_correlations[micrograph_id] += correlations
+                        print(
+                            f"  {micrograph_id}: Added {correlations} correlations "
+                            f"(total: {micrograph_correlations[micrograph_id]})"
+                        )
             else:
                 print(f"  Warning: Parameters file not found for {results_file}")
 
-        # Calculate threshold for each micrograph based on its cumulative correlations
-        for micrograph_id, total_correlations in micrograph_correlations.items():
-            threshold = gaussian_noise_zscore_cutoff(
-                total_correlations, false_positive_rate
-            )
-            micrograph_thresholds[micrograph_id] = threshold
-            print(
-                f"  Threshold for {micrograph_id} in step {step_num}: {threshold:.4f} "
-                f"(based on {total_correlations} total correlations)"
-            )
+        # Calculate thresholds
+        micrograph_thresholds = calculate_micrograph_thresholds(
+            micrograph_correlations, false_positive_rate
+        )
 
-        # Process each results file
+        # Process results files
         for results_file in results_files:
-            micrograph_id = get_micrograph_id(results_file)
+            above_threshold_df, micrograph_id = process_results_file(
+                results_file,
+                micrograph_thresholds,
+                step_micrograph_parameters,
+                false_positive_rate,
+                step_num,
+            )
 
-            try:
-                # Read the results file
-                results_df = pd.read_csv(results_file)
-
-                if results_df.empty:
-                    print(f"  Warning: Empty results file {results_file}")
-                    continue
-
-                # Get the threshold for this micrograph
-                if micrograph_id not in micrograph_thresholds:
-                    print(
-                        f"  Warning: No correlation information for {micrograph_id}, "
-                        "using default threshold"
-                    )
-                    # Try to use correlations from the current step's parameters file
-                    if (
-                        micrograph_id in step_micrograph_parameters
-                        and "num_correlations"
-                        in step_micrograph_parameters[micrograph_id]
-                    ):
-                        correlations = int(
-                            step_micrograph_parameters[micrograph_id][
-                                "num_correlations"
-                            ]
-                        )
-                        micrograph_correlations[micrograph_id] = correlations
-                        threshold = gaussian_noise_zscore_cutoff(
-                            correlations, false_positive_rate
-                        )
-                        micrograph_thresholds[micrograph_id] = threshold
-                        print(
-                            f"  Using threshold {threshold:.4f} for {micrograph_id} "
-                            f"based on {correlations} correlations"
-                        )
-                    else:
-                        # If no information at all, use the median of other thresholds
-                        # or a reasonable default
-                        if micrograph_thresholds:
-                            threshold = np.median(list(micrograph_thresholds.values()))
-                            print(
-                                f"  Using median threshold {threshold:.4f} for "
-                                f"{micrograph_id}"
-                            )
-                        else:
-                            #  Default if no other information is available
-                            threshold = 5.0
-                            print(
-                                f"  Using default threshold {threshold:.4f} for "
-                                f"{micrograph_id}"
-                            )
-                        micrograph_thresholds[micrograph_id] = threshold
-                else:
-                    threshold = micrograph_thresholds[micrograph_id]
-
-                # Check if refined_scaled_mip column exists
-                if "refined_scaled_mip" not in results_df.columns:
-                    print(
-                        f" Warning: refined_scaled_mip not found in {results_file},"
-                        " using mip instead"
-                    )
-                    compare_col = "scaled_mip"
-                else:
-                    compare_col = "refined_scaled_mip"
-
-                # Filter particles above threshold using the appropriate column
-                above_threshold_df = results_df[
-                    results_df[compare_col] > threshold
-                ].copy()
-
-                if above_threshold_df.empty:
-                    print(f"  No particles above threshold in {results_file}")
-                    continue
-
-                # Print stats
-                print(
-                    f"{micrograph_id}: {len(above_threshold_df)} of {len(results_df)}"
-                    f" particles above threshold (using {compare_col})"
+            if not above_threshold_df.empty:
+                update_particle_data(
+                    all_particles,
+                    particle_step_map,
+                    above_threshold_df,
+                    micrograph_id,
+                    step_num,
                 )
 
-                # Add a step column to track which step this is from
-                above_threshold_df["step"] = step_num
+        # Save step results
+        save_step_results(all_particles, step_num, step_output_dir)
 
-                # If this is the first step, just add all particles above threshold
-                if step_num == 1:
-                    all_particles[micrograph_id] = above_threshold_df
-
-                    # Update particle step map
-                    for idx in above_threshold_df["particle_index"]:
-                        particle_step_map[(micrograph_id, idx)] = step_num
-                else:
-                    # If this micrograph was not seen before, add all particles
-                    if micrograph_id not in all_particles:
-                        all_particles[micrograph_id] = above_threshold_df
-
-                        # Update particle step map
-                        for idx in above_threshold_df["particle_index"]:
-                            particle_step_map[(micrograph_id, idx)] = step_num
-                    else:
-                        # For existing micrographs, handle particles differently
-                        existing_df = all_particles[micrograph_id]
-
-                        # Create a new DataFrame to store updated particles
-                        updated_df = existing_df.copy()
-
-                        # For each particle in the new results
-                        for _, particle in above_threshold_df.iterrows():
-                            particle_idx = particle["particle_index"]
-
-                            # Check if this particle exists previously
-                            existing_particle = existing_df[
-                                existing_df["particle_index"] == particle_idx
-                            ]
-
-                            if len(existing_particle) > 0:
-                                # Particle exists, update parameters
-                                # Find the index in the updated_df
-                                idx_to_update = updated_df.index[
-                                    updated_df["particle_index"] == particle_idx
-                                ].tolist()[0]
-
-                                # Check if original offset columns exist
-                                offset_cols = [
-                                    "original_offset_phi",
-                                    "original_offset_theta",
-                                    "original_offset_psi",
-                                ]
-
-                                # Add original offset columns from step 1
-                                for col in offset_cols:
-                                    if col not in updated_df.columns:
-                                        updated_df[col] = 0.0
-
-                                # Add offset values from current step
-                                for col in offset_cols:
-                                    # Add particle's offset to existing offset
-                                    if col in particle and pd.notna(particle[col]):
-                                        updated_df.at[idx_to_update, col] += particle[
-                                            col
-                                        ]
-
-                                # Update other parameters
-                                for col in particle.index:
-                                    if col not in offset_cols and pd.notna(
-                                        particle[col]
-                                    ):
-                                        updated_df.at[idx_to_update, col] = particle[
-                                            col
-                                        ]
-
-                                # Update step
-                                updated_df.at[idx_to_update, "step"] = step_num
-                                particle_step_map[(micrograph_id, particle_idx)] = (
-                                    step_num
-                                )
-                            else:
-                                # New particle, add it to the DataFrame
-                                updated_df = pd.concat(
-                                    [updated_df, pd.DataFrame([particle])],
-                                    ignore_index=True,
-                                )
-                                particle_step_map[(micrograph_id, particle_idx)] = (
-                                    step_num
-                                )
-
-                        # Update the all_particles dictionary
-                        all_particles[micrograph_id] = updated_df
-
-            except Exception as e:
-                print(f"  Error processing results file {results_file}: {e}")
-
-        # Save intermediate results for this step
-        for micrograph_id, particles_df in all_particles.items():
-            # Only save particles found or updated in this step
-            step_particles = particles_df[particles_df["step"] == step_num]
-
-            if not step_particles.empty:
-                output_file = os.path.join(
-                    step_output_dir, f"{micrograph_id}_results_above_threshold.csv"
-                )
-                step_particles.to_csv(output_file, index=False)
-                print(
-                    f"  Saved {len(step_particles)} particles for {micrograph_id} "
-                    f"in step {step_num}"
-                )
-
-    # Save final results after all steps
-    final_output_dir = os.path.join(output_base_dir, "final_results")
-    os.makedirs(final_output_dir, exist_ok=True)
-
-    # Save summary of total particles per micrograph
-    summary_data = []
-
-    for micrograph_id, particles_df in all_particles.items():
-        output_file = os.path.join(
-            final_output_dir, f"{micrograph_id}_results_above_threshold.csv"
-        )
-        particles_df.to_csv(output_file, index=False)
-
-        # Get the final threshold for this micrograph
-        final_threshold = micrograph_thresholds.get(micrograph_id, "N/A")
-        total_correlations = micrograph_correlations.get(micrograph_id, 0)
-
-        # Create summary data
-        n_particles = len(particles_df)
-        summary_data.append(
-            {
-                "micrograph_id": micrograph_id,
-                "total_particles": n_particles,
-                "total_correlations": total_correlations,
-                "final_threshold": final_threshold,
-            }
-        )
-
-        print(
-            f"Saved {n_particles} final particles for {micrograph_id} "
-            f"(threshold: {final_threshold}, correlations: {total_correlations})"
-        )
-
-    # Save summary
-    summary_df = pd.DataFrame(summary_data)
-    summary_df.to_csv(
-        os.path.join(final_output_dir, "processing_summary.csv"), index=False
+    # Save final results
+    save_final_results(
+        all_particles, micrograph_thresholds, micrograph_correlations, output_base_dir
     )
-
-    print(f"\nProcessing complete. Final results saved to {final_output_dir}")
 
     # Print total particles
     total_particles = sum(len(df) for df in all_particles.values())
