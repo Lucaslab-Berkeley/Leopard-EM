@@ -1,0 +1,4006 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+      
+        <link rel="prev" href="../results/match_template_result/">
+      
+      
+        <link rel="next" href="../../utils/">
+      
+      
+      <link rel="icon" href="../../../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.6.5">
+    
+    
+      
+        <title>utils - Leopard-EM: Two-Dimensional Template Matching in Python</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../../../assets/stylesheets/main.8608ea7d.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../../../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("../../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+    
+  </head>
+  
+  
+    <body dir="ltr">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#leopard_em.pydantic_models.utils" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../../../.." title="Leopard-EM: Two-Dimensional Template Matching in Python" class="md-header__button md-logo" aria-label="Leopard-EM: Two-Dimensional Template Matching in Python" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Leopard-EM: Two-Dimensional Template Matching in Python
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              utils
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      <label class="md-header__button md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+      </label>
+      <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+    
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../../.." title="Leopard-EM: Two-Dimensional Template Matching in Python" class="md-nav__button md-logo" aria-label="Leopard-EM: Two-Dimensional Template Matching in Python" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Leopard-EM: Two-Dimensional Template Matching in Python
+  </label>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../.." class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Home
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  <span class="md-ellipsis">
+    Examples
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            Examples
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../examples/01_basic_configuration/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Configuring Pydantic models in Python
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../examples/02_extract_peak_info/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Extracting results from the template matching search
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../examples/03_compare_scoring_metrics/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Comparing 2DTM scoring metrics
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../examples/04_plotting_2dtm_results" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Plotting match template results
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../examples/05_structure_reprojection/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Structure projections on an Image
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  <span class="md-ellipsis">
+    Programs
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            Programs
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../programs/overview/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Overview
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../programs/match_template/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Match Template details
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../programs/refine_template/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Refine Template details
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../programs/optimize_template/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Optimize Template details
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../programs/constrained_search/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Constrained Search details
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../data_formats/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Program Output Formats
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../contributing/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Contributing
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  <span class="md-ellipsis">
+    API Reference
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            API Reference
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6_1" checked>
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../" class="md-nav__link ">
+              
+  
+  <span class="md-ellipsis">
+    leopard_em
+    
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_6_1" id="__nav_6_1_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_6_1_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_6_1">
+            <span class="md-nav__icon md-icon"></span>
+            leopard_em
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6_1_1" >
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../analysis/" class="md-nav__link ">
+              
+  
+  <span class="md-ellipsis">
+    analysis
+    
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_6_1_1" id="__nav_6_1_1_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_6_1_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6_1_1">
+            <span class="md-nav__icon md-icon"></span>
+            analysis
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../analysis/gev_fit_metric/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    gev_fit_metric
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../analysis/match_template_peaks/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    match_template_peaks
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../analysis/pvalue_metric/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    pvalue_metric
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../analysis/utils/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    utils
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../analysis/zscore_metric/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    zscore_metric
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6_1_2" >
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../backend/" class="md-nav__link ">
+              
+  
+  <span class="md-ellipsis">
+    backend
+    
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_6_1_2" id="__nav_6_1_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_6_1_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6_1_2">
+            <span class="md-nav__icon md-icon"></span>
+            backend
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../backend/core_match_template/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    core_match_template
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../backend/core_refine_template/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    core_refine_template
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../backend/process_results/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    process_results
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../backend/utils/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    utils
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6_1_3" checked>
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../" class="md-nav__link ">
+              
+  
+  <span class="md-ellipsis">
+    pydantic_models
+    
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_6_1_3" id="__nav_6_1_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_6_1_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_6_1_3">
+            <span class="md-nav__icon md-icon"></span>
+            pydantic_models
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6_1_3_1" >
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../config/" class="md-nav__link ">
+              
+  
+  <span class="md-ellipsis">
+    config
+    
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_6_1_3_1" id="__nav_6_1_3_1_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="4" aria-labelledby="__nav_6_1_3_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6_1_3_1">
+            <span class="md-nav__icon md-icon"></span>
+            config
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../config/computational_config/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    computational_config
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../config/correlation_filters/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    correlation_filters
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../config/defocus_search/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    defocus_search
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../config/orientation_search/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    orientation_search
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../config/pixel_size_search/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    pixel_size_search
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../custom_types/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    custom_types
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6_1_3_3" >
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../data_structures/" class="md-nav__link ">
+              
+  
+  <span class="md-ellipsis">
+    data_structures
+    
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_6_1_3_3" id="__nav_6_1_3_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="4" aria-labelledby="__nav_6_1_3_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6_1_3_3">
+            <span class="md-nav__icon md-icon"></span>
+            data_structures
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../data_structures/optics_group/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    optics_group
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../data_structures/particle_stack/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    particle_stack
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../formats/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    formats
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6_1_3_5" >
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../managers/" class="md-nav__link ">
+              
+  
+  <span class="md-ellipsis">
+    managers
+    
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_6_1_3_5" id="__nav_6_1_3_5_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="4" aria-labelledby="__nav_6_1_3_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6_1_3_5">
+            <span class="md-nav__icon md-icon"></span>
+            managers
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../managers/constrained_search_manager/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    constrained_search_manager
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../managers/match_template_manager/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    match_template_manager
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../managers/optimize_template_manager/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    optimize_template_manager
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../managers/refine_template_manager/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    refine_template_manager
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6_1_3_6" >
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../results/" class="md-nav__link ">
+              
+  
+  <span class="md-ellipsis">
+    results
+    
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_6_1_3_6" id="__nav_6_1_3_6_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="4" aria-labelledby="__nav_6_1_3_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6_1_3_6">
+            <span class="md-nav__icon md-icon"></span>
+            results
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../results/match_template_result/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    match_template_result
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  <span class="md-ellipsis">
+    utils
+    
+  </span>
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  <span class="md-ellipsis">
+    utils
+    
+  </span>
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#leopard_em.pydantic_models.utils" class="md-nav__link">
+    <span class="md-ellipsis">
+      utils
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#leopard_em.pydantic_models.utils.calculate_ctf_filter_stack" class="md-nav__link">
+    <span class="md-ellipsis">
+      calculate_ctf_filter_stack
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#leopard_em.pydantic_models.utils.calculate_ctf_filter_stack_full_args" class="md-nav__link">
+    <span class="md-ellipsis">
+      calculate_ctf_filter_stack_full_args
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#leopard_em.pydantic_models.utils.cs_to_pixel_size" class="md-nav__link">
+    <span class="md-ellipsis">
+      cs_to_pixel_size
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#leopard_em.pydantic_models.utils.get_cs_range" class="md-nav__link">
+    <span class="md-ellipsis">
+      get_cs_range
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#leopard_em.pydantic_models.utils.get_search_tensors" class="md-nav__link">
+    <span class="md-ellipsis">
+      get_search_tensors
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#leopard_em.pydantic_models.utils.preprocess_image" class="md-nav__link">
+    <span class="md-ellipsis">
+      preprocess_image
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#leopard_em.pydantic_models.utils.setup_images_filters_particle_stack" class="md-nav__link">
+    <span class="md-ellipsis">
+      setup_images_filters_particle_stack
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#leopard_em.pydantic_models.utils.setup_particle_backend_kwargs" class="md-nav__link">
+    <span class="md-ellipsis">
+      setup_particle_backend_kwargs
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#leopard_em.pydantic_models.utils.volume_to_rfft_fourier_slice" class="md-nav__link">
+    <span class="md-ellipsis">
+      volume_to_rfft_fourier_slice
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6_1_4" >
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../utils/" class="md-nav__link ">
+              
+  
+  <span class="md-ellipsis">
+    utils
+    
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_6_1_4" id="__nav_6_1_4_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_6_1_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6_1_4">
+            <span class="md-nav__icon md-icon"></span>
+            utils
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../utils/cross_correlation/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    cross_correlation
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../utils/data_io/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    data_io
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../utils/fourier_slice/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    fourier_slice
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#leopard_em.pydantic_models.utils" class="md-nav__link">
+    <span class="md-ellipsis">
+      utils
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#leopard_em.pydantic_models.utils.calculate_ctf_filter_stack" class="md-nav__link">
+    <span class="md-ellipsis">
+      calculate_ctf_filter_stack
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#leopard_em.pydantic_models.utils.calculate_ctf_filter_stack_full_args" class="md-nav__link">
+    <span class="md-ellipsis">
+      calculate_ctf_filter_stack_full_args
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#leopard_em.pydantic_models.utils.cs_to_pixel_size" class="md-nav__link">
+    <span class="md-ellipsis">
+      cs_to_pixel_size
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#leopard_em.pydantic_models.utils.get_cs_range" class="md-nav__link">
+    <span class="md-ellipsis">
+      get_cs_range
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#leopard_em.pydantic_models.utils.get_search_tensors" class="md-nav__link">
+    <span class="md-ellipsis">
+      get_search_tensors
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#leopard_em.pydantic_models.utils.preprocess_image" class="md-nav__link">
+    <span class="md-ellipsis">
+      preprocess_image
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#leopard_em.pydantic_models.utils.setup_images_filters_particle_stack" class="md-nav__link">
+    <span class="md-ellipsis">
+      setup_images_filters_particle_stack
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#leopard_em.pydantic_models.utils.setup_particle_backend_kwargs" class="md-nav__link">
+    <span class="md-ellipsis">
+      setup_particle_backend_kwargs
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#leopard_em.pydantic_models.utils.volume_to_rfft_fourier_slice" class="md-nav__link">
+    <span class="md-ellipsis">
+      volume_to_rfft_fourier_slice
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+
+  <h1>utils</h1>
+
+<div class="doc doc-object doc-module">
+
+
+
+<a id="leopard_em.pydantic_models.utils"></a>
+    <div class="doc doc-contents first">
+
+        <p>Utility functions shared between pydantic models.</p>
+
+
+
+
+
+
+
+
+
+  <div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="leopard_em.pydantic_models.utils.calculate_ctf_filter_stack" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">calculate_ctf_filter_stack</span><span class="p">(</span><span class="n">template_shape</span><span class="p">,</span> <span class="n">optics_group</span><span class="p">,</span> <span class="n">defocus_offsets</span><span class="p">,</span> <span class="n">pixel_size_offsets</span><span class="p">)</span></code>
+
+</h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Calculate searched CTF filter values for a given shape and optics group.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>template_shape</code>
+            </td>
+            <td>
+                  <code><span title="tuple">tuple</span>[<span title="int">int</span>, <span title="int">int</span>]</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Desired output shape for the filter, in real space.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>optics_group</code>
+            </td>
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="OpticsGroup (leopard_em.pydantic_models.data_structures.optics_group.OpticsGroup)" href="../data_structures/optics_group/#leopard_em.pydantic_models.data_structures.optics_group.OpticsGroup">OpticsGroup</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>OpticsGroup object containing the optics defining the CTF parameters.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>defocus_offsets</code>
+            </td>
+            <td>
+                  <code><span title="torch.Tensor">Tensor</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Tensor of defocus offsets to search over, in Angstroms.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>pixel_size_offsets</code>
+            </td>
+            <td>
+                  <code><span title="torch.Tensor">Tensor</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Tensor of pixel size offsets to search over, in Angstroms.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="torch.Tensor">Tensor</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Tensor of CTF filter values for the specified shape and optics group. Will have
+shape (num_pixel_sizes, num_defocus_offsets, h, w // 2 + 1)</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+            <details class="quote">
+              <summary>Source code in <code>src/leopard_em/pydantic_models/utils.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"> 66</span>
+<span class="normal"> 67</span>
+<span class="normal"> 68</span>
+<span class="normal"> 69</span>
+<span class="normal"> 70</span>
+<span class="normal"> 71</span>
+<span class="normal"> 72</span>
+<span class="normal"> 73</span>
+<span class="normal"> 74</span>
+<span class="normal"> 75</span>
+<span class="normal"> 76</span>
+<span class="normal"> 77</span>
+<span class="normal"> 78</span>
+<span class="normal"> 79</span>
+<span class="normal"> 80</span>
+<span class="normal"> 81</span>
+<span class="normal"> 82</span>
+<span class="normal"> 83</span>
+<span class="normal"> 84</span>
+<span class="normal"> 85</span>
+<span class="normal"> 86</span>
+<span class="normal"> 87</span>
+<span class="normal"> 88</span>
+<span class="normal"> 89</span>
+<span class="normal"> 90</span>
+<span class="normal"> 91</span>
+<span class="normal"> 92</span>
+<span class="normal"> 93</span>
+<span class="normal"> 94</span>
+<span class="normal"> 95</span>
+<span class="normal"> 96</span>
+<span class="normal"> 97</span>
+<span class="normal"> 98</span>
+<span class="normal"> 99</span>
+<span class="normal">100</span>
+<span class="normal">101</span>
+<span class="normal">102</span>
+<span class="normal">103</span>
+<span class="normal">104</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">calculate_ctf_filter_stack</span><span class="p">(</span>
+    <span class="n">template_shape</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">],</span>
+    <span class="n">optics_group</span><span class="p">:</span> <span class="s2">&quot;OpticsGroup&quot;</span><span class="p">,</span>
+    <span class="n">defocus_offsets</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>  <span class="c1"># in Angstrom, relative</span>
+    <span class="n">pixel_size_offsets</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>  <span class="c1"># in Angstrom, relative</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Calculate searched CTF filter values for a given shape and optics group.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    template_shape : tuple[int, int]</span>
+<span class="sd">        Desired output shape for the filter, in real space.</span>
+<span class="sd">    optics_group : OpticsGroup</span>
+<span class="sd">        OpticsGroup object containing the optics defining the CTF parameters.</span>
+<span class="sd">    defocus_offsets : torch.Tensor</span>
+<span class="sd">        Tensor of defocus offsets to search over, in Angstroms.</span>
+<span class="sd">    pixel_size_offsets : torch.Tensor</span>
+<span class="sd">        Tensor of pixel size offsets to search over, in Angstroms.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    torch.Tensor</span>
+<span class="sd">        Tensor of CTF filter values for the specified shape and optics group. Will have</span>
+<span class="sd">        shape (num_pixel_sizes, num_defocus_offsets, h, w // 2 + 1)</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">return</span> <span class="n">calculate_ctf_filter_stack_full_args</span><span class="p">(</span>
+        <span class="n">template_shape</span><span class="p">,</span>
+        <span class="n">optics_group</span><span class="o">.</span><span class="n">defocus_u</span><span class="p">,</span>
+        <span class="n">optics_group</span><span class="o">.</span><span class="n">defocus_v</span><span class="p">,</span>
+        <span class="n">defocus_offsets</span><span class="p">,</span>
+        <span class="n">pixel_size_offsets</span><span class="p">,</span>
+        <span class="n">astigmatism_angle</span><span class="o">=</span><span class="n">optics_group</span><span class="o">.</span><span class="n">astigmatism_angle</span><span class="p">,</span>
+        <span class="n">voltage</span><span class="o">=</span><span class="n">optics_group</span><span class="o">.</span><span class="n">voltage</span><span class="p">,</span>
+        <span class="n">spherical_aberration</span><span class="o">=</span><span class="n">optics_group</span><span class="o">.</span><span class="n">spherical_aberration</span><span class="p">,</span>
+        <span class="n">amplitude_contrast_ratio</span><span class="o">=</span><span class="n">optics_group</span><span class="o">.</span><span class="n">amplitude_contrast_ratio</span><span class="p">,</span>
+        <span class="n">ctf_B_factor</span><span class="o">=</span><span class="n">optics_group</span><span class="o">.</span><span class="n">ctf_B_factor</span><span class="p">,</span>
+        <span class="n">phase_shift</span><span class="o">=</span><span class="n">optics_group</span><span class="o">.</span><span class="n">phase_shift</span><span class="p">,</span>
+        <span class="n">pixel_size</span><span class="o">=</span><span class="n">optics_group</span><span class="o">.</span><span class="n">pixel_size</span><span class="p">,</span>
+    <span class="p">)</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="leopard_em.pydantic_models.utils.calculate_ctf_filter_stack_full_args" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">calculate_ctf_filter_stack_full_args</span><span class="p">(</span><span class="n">template_shape</span><span class="p">,</span> <span class="n">defocus_u</span><span class="p">,</span> <span class="n">defocus_v</span><span class="p">,</span> <span class="n">defocus_offsets</span><span class="p">,</span> <span class="n">pixel_size_offsets</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span></code>
+
+</h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Calculate a CTF filter stack for a given set of parameters and search offsets.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>template_shape</code>
+            </td>
+            <td>
+                  <code><span title="tuple">tuple</span>[<span title="int">int</span>, <span title="int">int</span>]</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Desired output shape for the filter, in real space.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>defocus_u</code>
+            </td>
+            <td>
+                  <code><span title="float">float</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Defocus along the major axis, in Angstroms.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>defocus_v</code>
+            </td>
+            <td>
+                  <code><span title="float">float</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Defocus along the minor axis, in Angstroms.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>defocus_offsets</code>
+            </td>
+            <td>
+                  <code><span title="torch.Tensor">Tensor</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Tensor of defocus offsets to search over, in Angstroms.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>pixel_size_offsets</code>
+            </td>
+            <td>
+                  <code><span title="torch.Tensor">Tensor</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Tensor of pixel size offsets to search over, in Angstroms.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>**kwargs</code>
+            </td>
+            <td>
+                  <code><span title="typing.Any">Any</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Additional keyword to pass to the calculate_ctf_2d function.</p>
+              </div>
+            </td>
+            <td>
+                  <code>{}</code>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="torch.Tensor">Tensor</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Tensor of CTF filter values for the specified shape and parameters. Will have
+shape (num_pixel_sizes, num_defocus_offsets, h, w // 2 + 1)</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code># Raises</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code># ------</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code># ValueError</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code>#     If not all the required parameters are passed as additional keyword arguments.</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+            <details class="quote">
+              <summary>Source code in <code>src/leopard_em/pydantic_models/utils.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">107</span>
+<span class="normal">108</span>
+<span class="normal">109</span>
+<span class="normal">110</span>
+<span class="normal">111</span>
+<span class="normal">112</span>
+<span class="normal">113</span>
+<span class="normal">114</span>
+<span class="normal">115</span>
+<span class="normal">116</span>
+<span class="normal">117</span>
+<span class="normal">118</span>
+<span class="normal">119</span>
+<span class="normal">120</span>
+<span class="normal">121</span>
+<span class="normal">122</span>
+<span class="normal">123</span>
+<span class="normal">124</span>
+<span class="normal">125</span>
+<span class="normal">126</span>
+<span class="normal">127</span>
+<span class="normal">128</span>
+<span class="normal">129</span>
+<span class="normal">130</span>
+<span class="normal">131</span>
+<span class="normal">132</span>
+<span class="normal">133</span>
+<span class="normal">134</span>
+<span class="normal">135</span>
+<span class="normal">136</span>
+<span class="normal">137</span>
+<span class="normal">138</span>
+<span class="normal">139</span>
+<span class="normal">140</span>
+<span class="normal">141</span>
+<span class="normal">142</span>
+<span class="normal">143</span>
+<span class="normal">144</span>
+<span class="normal">145</span>
+<span class="normal">146</span>
+<span class="normal">147</span>
+<span class="normal">148</span>
+<span class="normal">149</span>
+<span class="normal">150</span>
+<span class="normal">151</span>
+<span class="normal">152</span>
+<span class="normal">153</span>
+<span class="normal">154</span>
+<span class="normal">155</span>
+<span class="normal">156</span>
+<span class="normal">157</span>
+<span class="normal">158</span>
+<span class="normal">159</span>
+<span class="normal">160</span>
+<span class="normal">161</span>
+<span class="normal">162</span>
+<span class="normal">163</span>
+<span class="normal">164</span>
+<span class="normal">165</span>
+<span class="normal">166</span>
+<span class="normal">167</span>
+<span class="normal">168</span>
+<span class="normal">169</span>
+<span class="normal">170</span>
+<span class="normal">171</span>
+<span class="normal">172</span>
+<span class="normal">173</span>
+<span class="normal">174</span>
+<span class="normal">175</span>
+<span class="normal">176</span>
+<span class="normal">177</span>
+<span class="normal">178</span>
+<span class="normal">179</span>
+<span class="normal">180</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">calculate_ctf_filter_stack_full_args</span><span class="p">(</span>
+    <span class="n">template_shape</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">],</span>
+    <span class="n">defocus_u</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>  <span class="c1"># in Angstrom</span>
+    <span class="n">defocus_v</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>  <span class="c1"># in Angstrom</span>
+    <span class="n">defocus_offsets</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>  <span class="c1"># in Angstrom, relative</span>
+    <span class="n">pixel_size_offsets</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>  <span class="c1"># in Angstrom, relative</span>
+    <span class="o">**</span><span class="n">kwargs</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Calculate a CTF filter stack for a given set of parameters and search offsets.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    template_shape : tuple[int, int]</span>
+<span class="sd">        Desired output shape for the filter, in real space.</span>
+<span class="sd">    defocus_u : float</span>
+<span class="sd">        Defocus along the major axis, in Angstroms.</span>
+<span class="sd">    defocus_v : float</span>
+<span class="sd">        Defocus along the minor axis, in Angstroms.</span>
+<span class="sd">    defocus_offsets : torch.Tensor</span>
+<span class="sd">        Tensor of defocus offsets to search over, in Angstroms.</span>
+<span class="sd">    pixel_size_offsets : torch.Tensor</span>
+<span class="sd">        Tensor of pixel size offsets to search over, in Angstroms.</span>
+<span class="sd">    **kwargs</span>
+<span class="sd">        Additional keyword to pass to the calculate_ctf_2d function.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    torch.Tensor</span>
+<span class="sd">        Tensor of CTF filter values for the specified shape and parameters. Will have</span>
+<span class="sd">        shape (num_pixel_sizes, num_defocus_offsets, h, w // 2 + 1)</span>
+
+<span class="sd">    # Raises</span>
+<span class="sd">    # ------</span>
+<span class="sd">    # ValueError</span>
+<span class="sd">    #     If not all the required parameters are passed as additional keyword arguments.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># Calculate the defocus values + offsets in terms of Angstrom</span>
+    <span class="n">defocus</span> <span class="o">=</span> <span class="n">defocus_offsets</span> <span class="o">+</span> <span class="p">((</span><span class="n">defocus_u</span> <span class="o">+</span> <span class="n">defocus_v</span><span class="p">)</span> <span class="o">/</span> <span class="mi">2</span><span class="p">)</span>
+    <span class="n">astigmatism</span> <span class="o">=</span> <span class="nb">abs</span><span class="p">(</span><span class="n">defocus_u</span> <span class="o">-</span> <span class="n">defocus_v</span><span class="p">)</span> <span class="o">/</span> <span class="mi">2</span>
+
+    <span class="c1"># The different Cs values to search over as another dimension</span>
+    <span class="n">cs_values</span> <span class="o">=</span> <span class="n">get_cs_range</span><span class="p">(</span>
+        <span class="n">pixel_size</span><span class="o">=</span><span class="n">kwargs</span><span class="p">[</span><span class="s2">&quot;pixel_size&quot;</span><span class="p">],</span>
+        <span class="n">pixel_size_offsets</span><span class="o">=</span><span class="n">pixel_size_offsets</span><span class="p">,</span>
+        <span class="n">cs</span><span class="o">=</span><span class="n">kwargs</span><span class="p">[</span><span class="s2">&quot;spherical_aberration&quot;</span><span class="p">],</span>
+    <span class="p">)</span>
+
+    <span class="c1"># Ensure defocus and astigmatism have a batch dimension so Cs and defocus can be</span>
+    <span class="c1"># interleaved correctly</span>
+    <span class="k">if</span> <span class="n">defocus</span><span class="o">.</span><span class="n">dim</span><span class="p">()</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="n">defocus</span> <span class="o">=</span> <span class="n">defocus</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
+
+    <span class="c1"># Loop over spherical aberrations one at a time and collect results</span>
+    <span class="n">ctf_list</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="k">for</span> <span class="n">cs_val</span> <span class="ow">in</span> <span class="n">cs_values</span><span class="p">:</span>
+        <span class="n">tmp</span> <span class="o">=</span> <span class="n">calculate_ctf_2d</span><span class="p">(</span>
+            <span class="n">defocus</span><span class="o">=</span><span class="n">defocus</span> <span class="o">*</span> <span class="mf">1e-4</span><span class="p">,</span>  <span class="c1"># Convert to um from Angstrom</span>
+            <span class="n">astigmatism</span><span class="o">=</span><span class="n">astigmatism</span> <span class="o">*</span> <span class="mf">1e-4</span><span class="p">,</span>  <span class="c1"># Convert to um from Angstrom</span>
+            <span class="n">astigmatism_angle</span><span class="o">=</span><span class="n">kwargs</span><span class="p">[</span><span class="s2">&quot;astigmatism_angle&quot;</span><span class="p">],</span>
+            <span class="n">voltage</span><span class="o">=</span><span class="n">kwargs</span><span class="p">[</span><span class="s2">&quot;voltage&quot;</span><span class="p">],</span>
+            <span class="n">spherical_aberration</span><span class="o">=</span><span class="n">cs_val</span><span class="p">,</span>
+            <span class="n">amplitude_contrast</span><span class="o">=</span><span class="n">kwargs</span><span class="p">[</span><span class="s2">&quot;amplitude_contrast_ratio&quot;</span><span class="p">],</span>
+            <span class="n">b_factor</span><span class="o">=</span><span class="n">kwargs</span><span class="p">[</span><span class="s2">&quot;ctf_B_factor&quot;</span><span class="p">],</span>
+            <span class="n">phase_shift</span><span class="o">=</span><span class="n">kwargs</span><span class="p">[</span><span class="s2">&quot;phase_shift&quot;</span><span class="p">],</span>
+            <span class="n">pixel_size</span><span class="o">=</span><span class="n">kwargs</span><span class="p">[</span><span class="s2">&quot;pixel_size&quot;</span><span class="p">],</span>
+            <span class="n">image_shape</span><span class="o">=</span><span class="n">template_shape</span><span class="p">,</span>
+            <span class="n">rfft</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+            <span class="n">fftshift</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+        <span class="p">)</span>
+        <span class="n">ctf_list</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">tmp</span><span class="p">)</span>
+
+    <span class="n">ctf</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">stack</span><span class="p">(</span><span class="n">ctf_list</span><span class="p">,</span> <span class="n">dim</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">ctf</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="leopard_em.pydantic_models.utils.cs_to_pixel_size" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">cs_to_pixel_size</span><span class="p">(</span><span class="n">cs_vals</span><span class="p">,</span> <span class="n">nominal_pixel_size</span><span class="p">,</span> <span class="n">nominal_cs</span><span class="o">=</span><span class="mf">2.7</span><span class="p">)</span></code>
+
+</h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Convert Cs values to pixel sizes.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>cs_vals</code>
+            </td>
+            <td>
+                  <code><span title="torch.Tensor">Tensor</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The Cs (spherical aberration) values.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>nominal_pixel_size</code>
+            </td>
+            <td>
+                  <code><span title="float">float</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The nominal pixel size.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>nominal_cs</code>
+            </td>
+            <td>
+                  <code><span title="float">float</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The nominal Cs value, by default 2.7.</p>
+              </div>
+            </td>
+            <td>
+                  <code>2.7</code>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="torch.Tensor">Tensor</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The pixel sizes.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+            <details class="quote">
+              <summary>Source code in <code>src/leopard_em/pydantic_models/utils.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">209</span>
+<span class="normal">210</span>
+<span class="normal">211</span>
+<span class="normal">212</span>
+<span class="normal">213</span>
+<span class="normal">214</span>
+<span class="normal">215</span>
+<span class="normal">216</span>
+<span class="normal">217</span>
+<span class="normal">218</span>
+<span class="normal">219</span>
+<span class="normal">220</span>
+<span class="normal">221</span>
+<span class="normal">222</span>
+<span class="normal">223</span>
+<span class="normal">224</span>
+<span class="normal">225</span>
+<span class="normal">226</span>
+<span class="normal">227</span>
+<span class="normal">228</span>
+<span class="normal">229</span>
+<span class="normal">230</span>
+<span class="normal">231</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">cs_to_pixel_size</span><span class="p">(</span>
+    <span class="n">cs_vals</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">nominal_pixel_size</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">nominal_cs</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">2.7</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Convert Cs values to pixel sizes.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    cs_vals : torch.Tensor</span>
+<span class="sd">        The Cs (spherical aberration) values.</span>
+<span class="sd">    nominal_pixel_size : float</span>
+<span class="sd">        The nominal pixel size.</span>
+<span class="sd">    nominal_cs : float, optional</span>
+<span class="sd">        The nominal Cs value, by default 2.7.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    torch.Tensor</span>
+<span class="sd">        The pixel sizes.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">pixel_size</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">pow</span><span class="p">(</span><span class="n">nominal_cs</span> <span class="o">/</span> <span class="n">cs_vals</span><span class="p">,</span> <span class="mf">0.25</span><span class="p">)</span> <span class="o">*</span> <span class="n">nominal_pixel_size</span>
+    <span class="k">return</span> <span class="n">pixel_size</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="leopard_em.pydantic_models.utils.get_cs_range" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">get_cs_range</span><span class="p">(</span><span class="n">pixel_size</span><span class="p">,</span> <span class="n">pixel_size_offsets</span><span class="p">,</span> <span class="n">cs</span><span class="o">=</span><span class="mf">2.7</span><span class="p">)</span></code>
+
+</h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Get the Cs values for a  range of pixel sizes.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>pixel_size</code>
+            </td>
+            <td>
+                  <code><span title="float">float</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The nominal pixel size.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>pixel_size_offsets</code>
+            </td>
+            <td>
+                  <code><span title="torch.Tensor">Tensor</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The pixel size offsets.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>cs</code>
+            </td>
+            <td>
+                  <code><span title="float">float</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The Cs (spherical aberration) value, by default 2.7.</p>
+              </div>
+            </td>
+            <td>
+                  <code>2.7</code>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="torch.Tensor">Tensor</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The Cs values for the range of pixel sizes.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+            <details class="quote">
+              <summary>Source code in <code>src/leopard_em/pydantic_models/utils.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">183</span>
+<span class="normal">184</span>
+<span class="normal">185</span>
+<span class="normal">186</span>
+<span class="normal">187</span>
+<span class="normal">188</span>
+<span class="normal">189</span>
+<span class="normal">190</span>
+<span class="normal">191</span>
+<span class="normal">192</span>
+<span class="normal">193</span>
+<span class="normal">194</span>
+<span class="normal">195</span>
+<span class="normal">196</span>
+<span class="normal">197</span>
+<span class="normal">198</span>
+<span class="normal">199</span>
+<span class="normal">200</span>
+<span class="normal">201</span>
+<span class="normal">202</span>
+<span class="normal">203</span>
+<span class="normal">204</span>
+<span class="normal">205</span>
+<span class="normal">206</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">get_cs_range</span><span class="p">(</span>
+    <span class="n">pixel_size</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">pixel_size_offsets</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">cs</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">2.7</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Get the Cs values for a  range of pixel sizes.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    pixel_size : float</span>
+<span class="sd">        The nominal pixel size.</span>
+<span class="sd">    pixel_size_offsets : torch.Tensor</span>
+<span class="sd">        The pixel size offsets.</span>
+<span class="sd">    cs : float, optional</span>
+<span class="sd">        The Cs (spherical aberration) value, by default 2.7.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    torch.Tensor</span>
+<span class="sd">        The Cs values for the range of pixel sizes.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">pixel_sizes</span> <span class="o">=</span> <span class="n">pixel_size</span> <span class="o">+</span> <span class="n">pixel_size_offsets</span>
+    <span class="n">cs_values</span> <span class="o">=</span> <span class="n">cs</span> <span class="o">/</span> <span class="n">torch</span><span class="o">.</span><span class="n">pow</span><span class="p">(</span><span class="n">pixel_sizes</span> <span class="o">/</span> <span class="n">pixel_size</span><span class="p">,</span> <span class="mi">4</span><span class="p">)</span>
+    <span class="k">return</span> <span class="n">cs_values</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="leopard_em.pydantic_models.utils.get_search_tensors" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">get_search_tensors</span><span class="p">(</span><span class="n">min_val</span><span class="p">,</span> <span class="n">max_val</span><span class="p">,</span> <span class="n">step_size</span><span class="p">,</span> <span class="n">skip_enforce_zero</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span></code>
+
+</h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Get the search tensors (pixel or defocus) for a given range and step size.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>min_val</code>
+            </td>
+            <td>
+                  <code><span title="float">float</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The minimum value.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>max_val</code>
+            </td>
+            <td>
+                  <code><span title="float">float</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The maximum value.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>step_size</code>
+            </td>
+            <td>
+                  <code><span title="float">float</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The step size.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>skip_enforce_zero</code>
+            </td>
+            <td>
+                  <code><span title="bool">bool</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Whether to skip enforcing a zero value, by default False.</p>
+              </div>
+            </td>
+            <td>
+                  <code>False</code>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="torch.tensor">tensor</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The search tensors.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+            <details class="quote">
+              <summary>Source code in <code>src/leopard_em/pydantic_models/utils.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">299</span>
+<span class="normal">300</span>
+<span class="normal">301</span>
+<span class="normal">302</span>
+<span class="normal">303</span>
+<span class="normal">304</span>
+<span class="normal">305</span>
+<span class="normal">306</span>
+<span class="normal">307</span>
+<span class="normal">308</span>
+<span class="normal">309</span>
+<span class="normal">310</span>
+<span class="normal">311</span>
+<span class="normal">312</span>
+<span class="normal">313</span>
+<span class="normal">314</span>
+<span class="normal">315</span>
+<span class="normal">316</span>
+<span class="normal">317</span>
+<span class="normal">318</span>
+<span class="normal">319</span>
+<span class="normal">320</span>
+<span class="normal">321</span>
+<span class="normal">322</span>
+<span class="normal">323</span>
+<span class="normal">324</span>
+<span class="normal">325</span>
+<span class="normal">326</span>
+<span class="normal">327</span>
+<span class="normal">328</span>
+<span class="normal">329</span>
+<span class="normal">330</span>
+<span class="normal">331</span>
+<span class="normal">332</span>
+<span class="normal">333</span>
+<span class="normal">334</span>
+<span class="normal">335</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">get_search_tensors</span><span class="p">(</span>
+    <span class="n">min_val</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">max_val</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">step_size</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">skip_enforce_zero</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Get the search tensors (pixel or defocus) for a given range and step size.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    min_val : float</span>
+<span class="sd">        The minimum value.</span>
+<span class="sd">    max_val : float</span>
+<span class="sd">        The maximum value.</span>
+<span class="sd">    step_size : float</span>
+<span class="sd">        The step size.</span>
+<span class="sd">    skip_enforce_zero : bool, optional</span>
+<span class="sd">        Whether to skip enforcing a zero value, by default False.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    torch.tensor</span>
+<span class="sd">        The search tensors.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">vals</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">arange</span><span class="p">(</span>
+        <span class="n">min_val</span><span class="p">,</span>
+        <span class="n">max_val</span> <span class="o">+</span> <span class="n">step_size</span><span class="p">,</span>
+        <span class="n">step_size</span><span class="p">,</span>
+        <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">,</span>
+    <span class="p">)</span>
+
+    <span class="k">if</span> <span class="nb">abs</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">min</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">vals</span><span class="p">)))</span> <span class="o">&gt;</span> <span class="mf">1e-6</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">skip_enforce_zero</span><span class="p">:</span>
+        <span class="n">vals</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">([</span><span class="n">vals</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">([</span><span class="mf">0.0</span><span class="p">])])</span>
+        <span class="c1"># Re-sort pixel sizes</span>
+        <span class="n">vals</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">sort</span><span class="p">(</span><span class="n">vals</span><span class="p">)[</span><span class="mi">0</span><span class="p">]</span>
+
+    <span class="k">return</span> <span class="n">vals</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="leopard_em.pydantic_models.utils.preprocess_image" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">preprocess_image</span><span class="p">(</span><span class="n">image_rfft</span><span class="p">,</span> <span class="n">cumulative_fourier_filters</span><span class="p">,</span> <span class="n">bandpass_filter</span><span class="p">)</span></code>
+
+</h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Preprocesses and normalizes the image based on the given filters.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>image_rfft</code>
+            </td>
+            <td>
+                  <code><span title="torch.Tensor">Tensor</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The real Fourier-transformed image (unshifted).</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>cumulative_fourier_filters</code>
+            </td>
+            <td>
+                  <code><span title="torch.Tensor">Tensor</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The cumulative Fourier filters. Multiplication of the whitening filter, phase
+randomization filter, bandpass filter, and arbitrary curve filter.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>bandpass_filter</code>
+            </td>
+            <td>
+                  <code><span title="torch.Tensor">Tensor</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The bandpass filter used for the image. Used for dimensionality normalization.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="torch.Tensor">Tensor</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Preprocessed and normalized image in Fourier space</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+            <details class="quote">
+              <summary>Source code in <code>src/leopard_em/pydantic_models/utils.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">16</span>
+<span class="normal">17</span>
+<span class="normal">18</span>
+<span class="normal">19</span>
+<span class="normal">20</span>
+<span class="normal">21</span>
+<span class="normal">22</span>
+<span class="normal">23</span>
+<span class="normal">24</span>
+<span class="normal">25</span>
+<span class="normal">26</span>
+<span class="normal">27</span>
+<span class="normal">28</span>
+<span class="normal">29</span>
+<span class="normal">30</span>
+<span class="normal">31</span>
+<span class="normal">32</span>
+<span class="normal">33</span>
+<span class="normal">34</span>
+<span class="normal">35</span>
+<span class="normal">36</span>
+<span class="normal">37</span>
+<span class="normal">38</span>
+<span class="normal">39</span>
+<span class="normal">40</span>
+<span class="normal">41</span>
+<span class="normal">42</span>
+<span class="normal">43</span>
+<span class="normal">44</span>
+<span class="normal">45</span>
+<span class="normal">46</span>
+<span class="normal">47</span>
+<span class="normal">48</span>
+<span class="normal">49</span>
+<span class="normal">50</span>
+<span class="normal">51</span>
+<span class="normal">52</span>
+<span class="normal">53</span>
+<span class="normal">54</span>
+<span class="normal">55</span>
+<span class="normal">56</span>
+<span class="normal">57</span>
+<span class="normal">58</span>
+<span class="normal">59</span>
+<span class="normal">60</span>
+<span class="normal">61</span>
+<span class="normal">62</span>
+<span class="normal">63</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">preprocess_image</span><span class="p">(</span>
+    <span class="n">image_rfft</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">cumulative_fourier_filters</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">bandpass_filter</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Preprocesses and normalizes the image based on the given filters.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    image_rfft : torch.Tensor</span>
+<span class="sd">        The real Fourier-transformed image (unshifted).</span>
+<span class="sd">    cumulative_fourier_filters : torch.Tensor</span>
+<span class="sd">        The cumulative Fourier filters. Multiplication of the whitening filter, phase</span>
+<span class="sd">        randomization filter, bandpass filter, and arbitrary curve filter.</span>
+<span class="sd">    bandpass_filter : torch.Tensor</span>
+<span class="sd">        The bandpass filter used for the image. Used for dimensionality normalization.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    torch.Tensor</span>
+<span class="sd">        Preprocessed and normalized image in Fourier space</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">image_rfft</span> <span class="o">=</span> <span class="n">image_rfft</span> <span class="o">*</span> <span class="n">cumulative_fourier_filters</span>
+
+    <span class="c1"># Normalize the image after filtering</span>
+    <span class="n">squared_image_rfft</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">abs</span><span class="p">(</span><span class="n">image_rfft</span><span class="p">)</span> <span class="o">**</span> <span class="mi">2</span>
+    <span class="n">squared_sum</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span><span class="n">squared_image_rfft</span><span class="p">,</span> <span class="n">dim</span><span class="o">=</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">),</span> <span class="n">keepdim</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+    <span class="n">squared_sum</span> <span class="o">+=</span> <span class="n">torch</span><span class="o">.</span><span class="n">sum</span><span class="p">(</span>
+        <span class="n">squared_image_rfft</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="p">:,</span> <span class="mi">1</span><span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">],</span> <span class="n">dim</span><span class="o">=</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">),</span> <span class="n">keepdim</span><span class="o">=</span><span class="kc">True</span>
+    <span class="p">)</span>
+    <span class="n">image_rfft</span> <span class="o">/=</span> <span class="n">torch</span><span class="o">.</span><span class="n">sqrt</span><span class="p">(</span><span class="n">squared_sum</span><span class="p">)</span>
+
+    <span class="c1"># NOTE: For two Gaussian random variables in d-dimensional space --  A and B --</span>
+    <span class="c1"># each with mean 0 and variance 1 their correlation will have on average a</span>
+    <span class="c1"># variance of d.</span>
+    <span class="c1"># NOTE: Since we have the variance of the image and template projections each at</span>
+    <span class="c1"># 1, we need to multiply the image by the square root of the number of pixels</span>
+    <span class="c1"># so the cross-correlograms have a variance of 1 and not d.</span>
+    <span class="c1"># NOTE: When applying the Fourier filters to the image and template, any</span>
+    <span class="c1"># elements that get set to zero effectively reduce the dimensionality of our</span>
+    <span class="c1"># cross-correlation. Therefore, instead of multiplying by the number of pixels,</span>
+    <span class="c1"># we need to multiply tby the effective number of pixels that are non-zero.</span>
+    <span class="c1"># Below, we calculate the dimensionality of our cross-correlation and divide</span>
+    <span class="c1"># by the square root of that number to normalize the image.</span>
+    <span class="n">dimensionality</span> <span class="o">=</span> <span class="n">bandpass_filter</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span> <span class="o">+</span> <span class="n">bandpass_filter</span><span class="p">[:,</span> <span class="mi">1</span><span class="p">:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">sum</span><span class="p">()</span>
+    <span class="n">image_rfft</span> <span class="o">*=</span> <span class="n">dimensionality</span><span class="o">**</span><span class="mf">0.5</span>
+
+    <span class="k">return</span> <span class="n">image_rfft</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="leopard_em.pydantic_models.utils.setup_images_filters_particle_stack" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">setup_images_filters_particle_stack</span><span class="p">(</span><span class="n">particle_stack</span><span class="p">,</span> <span class="n">preprocessing_filters</span><span class="p">,</span> <span class="n">template</span><span class="p">)</span></code>
+
+</h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Extract and preprocess particle images and calculate filters.</p>
+<p>This function extracts particle images from a particle stack, performs FFT,
+applies filters, and prepares the template for further processing.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>particle_stack</code>
+            </td>
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="ParticleStack (leopard_em.pydantic_models.data_structures.particle_stack.ParticleStack)" href="../data_structures/particle_stack/#leopard_em.pydantic_models.data_structures.particle_stack.ParticleStack">ParticleStack</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The particle stack containing images to process.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>preprocessing_filters</code>
+            </td>
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="PreprocessingFilters (leopard_em.pydantic_models.config.correlation_filters.PreprocessingFilters)" href="../config/correlation_filters/#leopard_em.pydantic_models.config.correlation_filters.PreprocessingFilters">PreprocessingFilters</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Filters to apply to the particle images.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>template</code>
+            </td>
+            <td>
+                  <code><span title="torch.Tensor">Tensor</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The 3D template volume.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="tuple">tuple</span>[<span title="torch.Tensor">Tensor</span>, <span title="torch.Tensor">Tensor</span>, <span title="torch.Tensor">Tensor</span>]</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>A tuple containing:
+- particle_images_dft: The particle images in Fourier space
+- template_dft: The Fourier transformed template
+- projective_filters: Filters applied to the template</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+            <details class="quote">
+              <summary>Source code in <code>src/leopard_em/pydantic_models/utils.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">338</span>
+<span class="normal">339</span>
+<span class="normal">340</span>
+<span class="normal">341</span>
+<span class="normal">342</span>
+<span class="normal">343</span>
+<span class="normal">344</span>
+<span class="normal">345</span>
+<span class="normal">346</span>
+<span class="normal">347</span>
+<span class="normal">348</span>
+<span class="normal">349</span>
+<span class="normal">350</span>
+<span class="normal">351</span>
+<span class="normal">352</span>
+<span class="normal">353</span>
+<span class="normal">354</span>
+<span class="normal">355</span>
+<span class="normal">356</span>
+<span class="normal">357</span>
+<span class="normal">358</span>
+<span class="normal">359</span>
+<span class="normal">360</span>
+<span class="normal">361</span>
+<span class="normal">362</span>
+<span class="normal">363</span>
+<span class="normal">364</span>
+<span class="normal">365</span>
+<span class="normal">366</span>
+<span class="normal">367</span>
+<span class="normal">368</span>
+<span class="normal">369</span>
+<span class="normal">370</span>
+<span class="normal">371</span>
+<span class="normal">372</span>
+<span class="normal">373</span>
+<span class="normal">374</span>
+<span class="normal">375</span>
+<span class="normal">376</span>
+<span class="normal">377</span>
+<span class="normal">378</span>
+<span class="normal">379</span>
+<span class="normal">380</span>
+<span class="normal">381</span>
+<span class="normal">382</span>
+<span class="normal">383</span>
+<span class="normal">384</span>
+<span class="normal">385</span>
+<span class="normal">386</span>
+<span class="normal">387</span>
+<span class="normal">388</span>
+<span class="normal">389</span>
+<span class="normal">390</span>
+<span class="normal">391</span>
+<span class="normal">392</span>
+<span class="normal">393</span>
+<span class="normal">394</span>
+<span class="normal">395</span>
+<span class="normal">396</span>
+<span class="normal">397</span>
+<span class="normal">398</span>
+<span class="normal">399</span>
+<span class="normal">400</span>
+<span class="normal">401</span>
+<span class="normal">402</span>
+<span class="normal">403</span>
+<span class="normal">404</span>
+<span class="normal">405</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">setup_images_filters_particle_stack</span><span class="p">(</span>
+    <span class="n">particle_stack</span><span class="p">:</span> <span class="s2">&quot;ParticleStack&quot;</span><span class="p">,</span>
+    <span class="n">preprocessing_filters</span><span class="p">:</span> <span class="s2">&quot;PreprocessingFilters&quot;</span><span class="p">,</span>
+    <span class="n">template</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Extract and preprocess particle images and calculate filters.</span>
+
+<span class="sd">    This function extracts particle images from a particle stack, performs FFT,</span>
+<span class="sd">    applies filters, and prepares the template for further processing.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    particle_stack : ParticleStack</span>
+<span class="sd">        The particle stack containing images to process.</span>
+<span class="sd">    preprocessing_filters : PreprocessingFilters</span>
+<span class="sd">        Filters to apply to the particle images.</span>
+<span class="sd">    template : torch.Tensor</span>
+<span class="sd">        The 3D template volume.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    tuple[torch.Tensor, torch.Tensor, torch.Tensor]</span>
+<span class="sd">        A tuple containing:</span>
+<span class="sd">        - particle_images_dft: The particle images in Fourier space</span>
+<span class="sd">        - template_dft: The Fourier transformed template</span>
+<span class="sd">        - projective_filters: Filters applied to the template</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># Extract out the regions of interest (particles) based on the particle stack</span>
+    <span class="n">particle_images</span> <span class="o">=</span> <span class="n">particle_stack</span><span class="o">.</span><span class="n">construct_image_stack</span><span class="p">(</span>
+        <span class="n">pos_reference</span><span class="o">=</span><span class="s2">&quot;center&quot;</span><span class="p">,</span>
+        <span class="n">padding_value</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span>
+        <span class="n">handle_bounds</span><span class="o">=</span><span class="s2">&quot;pad&quot;</span><span class="p">,</span>
+        <span class="n">padding_mode</span><span class="o">=</span><span class="s2">&quot;constant&quot;</span><span class="p">,</span>
+    <span class="p">)</span>
+
+    <span class="c1"># FFT the particle images</span>
+    <span class="c1"># pylint: disable=E1102</span>
+    <span class="n">particle_images_dft</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">fft</span><span class="o">.</span><span class="n">rfftn</span><span class="p">(</span><span class="n">particle_images</span><span class="p">,</span> <span class="n">dim</span><span class="o">=</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">))</span>
+    <span class="n">particle_images_dft</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.0</span> <span class="o">+</span> <span class="mf">0.0</span><span class="n">j</span>  <span class="c1"># Zero out DC component</span>
+
+    <span class="n">bandpass_filter</span> <span class="o">=</span> <span class="n">preprocessing_filters</span><span class="o">.</span><span class="n">bandpass_filter</span><span class="o">.</span><span class="n">calculate_bandpass_filter</span><span class="p">(</span>
+        <span class="n">particle_images_dft</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">2</span><span class="p">:]</span>
+    <span class="p">)</span>
+
+    <span class="c1"># Calculate and apply the filters for the particle image stack</span>
+    <span class="n">filter_stack</span> <span class="o">=</span> <span class="n">particle_stack</span><span class="o">.</span><span class="n">construct_filter_stack</span><span class="p">(</span>
+        <span class="n">preprocessing_filters</span><span class="p">,</span> <span class="n">output_shape</span><span class="o">=</span><span class="n">particle_images_dft</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">2</span><span class="p">:]</span>
+    <span class="p">)</span>
+
+    <span class="n">particle_images_dft</span> <span class="o">=</span> <span class="n">preprocess_image</span><span class="p">(</span>
+        <span class="n">image_rfft</span><span class="o">=</span><span class="n">particle_images_dft</span><span class="p">,</span>
+        <span class="n">cumulative_fourier_filters</span><span class="o">=</span><span class="n">filter_stack</span><span class="p">,</span>
+        <span class="n">bandpass_filter</span><span class="o">=</span><span class="n">bandpass_filter</span><span class="p">,</span>
+    <span class="p">)</span>
+
+    <span class="c1"># Calculate the filters applied to each template (besides CTF)</span>
+    <span class="n">projective_filters</span> <span class="o">=</span> <span class="n">particle_stack</span><span class="o">.</span><span class="n">construct_filter_stack</span><span class="p">(</span>
+        <span class="n">preprocessing_filters</span><span class="p">,</span>
+        <span class="n">output_shape</span><span class="o">=</span><span class="p">(</span><span class="n">template</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">2</span><span class="p">],</span> <span class="n">template</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">//</span> <span class="mi">2</span> <span class="o">+</span> <span class="mi">1</span><span class="p">),</span>
+    <span class="p">)</span>
+
+    <span class="n">template_dft</span> <span class="o">=</span> <span class="n">volume_to_rfft_fourier_slice</span><span class="p">(</span><span class="n">template</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="p">(</span>
+        <span class="n">particle_images_dft</span><span class="p">,</span>
+        <span class="n">template_dft</span><span class="p">,</span>
+        <span class="n">projective_filters</span><span class="p">,</span>
+    <span class="p">)</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="leopard_em.pydantic_models.utils.setup_particle_backend_kwargs" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">setup_particle_backend_kwargs</span><span class="p">(</span><span class="n">particle_stack</span><span class="p">,</span> <span class="n">template</span><span class="p">,</span> <span class="n">preprocessing_filters</span><span class="p">,</span> <span class="n">euler_angles</span><span class="p">,</span> <span class="n">euler_angle_offsets</span><span class="p">,</span> <span class="n">defocus_offsets</span><span class="p">,</span> <span class="n">pixel_size_offsets</span><span class="p">,</span> <span class="n">device_list</span><span class="p">)</span></code>
+
+</h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Create common kwargs dictionary for template backend functions.</p>
+<p>This function extracts the common code between RefineTemplateManager and
+OptimizeTemplateManager's make_backend_core_function_kwargs methods.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>particle_stack</code>
+            </td>
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="ParticleStack (leopard_em.pydantic_models.data_structures.particle_stack.ParticleStack)" href="../data_structures/particle_stack/#leopard_em.pydantic_models.data_structures.particle_stack.ParticleStack">ParticleStack</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The particle stack containing images to process.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>template</code>
+            </td>
+            <td>
+                  <code><span title="torch.Tensor">Tensor</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The 3D template volume.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>preprocessing_filters</code>
+            </td>
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="PreprocessingFilters (leopard_em.pydantic_models.config.correlation_filters.PreprocessingFilters)" href="../config/correlation_filters/#leopard_em.pydantic_models.config.correlation_filters.PreprocessingFilters">PreprocessingFilters</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Filters to apply to the particle images.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>euler_angles</code>
+            </td>
+            <td>
+                  <code><span title="torch.Tensor">Tensor</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The set of Euler angles to use.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>euler_angle_offsets</code>
+            </td>
+            <td>
+                  <code><span title="torch.Tensor">Tensor</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The relative Euler angle offsets to search over.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>defocus_offsets</code>
+            </td>
+            <td>
+                  <code><span title="torch.Tensor">Tensor</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The relative defocus values to search over.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>pixel_size_offsets</code>
+            </td>
+            <td>
+                  <code><span title="torch.Tensor">Tensor</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The relative pixel size values to search over.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>device_list</code>
+            </td>
+            <td>
+                  <code><span title="list">list</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>List of computational devices to use.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="dict">dict</span>[<span title="str">str</span>, <span title="typing.Any">Any</span>]</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Dictionary of keyword arguments for backend functions.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+            <details class="quote">
+              <summary>Source code in <code>src/leopard_em/pydantic_models/utils.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">409</span>
+<span class="normal">410</span>
+<span class="normal">411</span>
+<span class="normal">412</span>
+<span class="normal">413</span>
+<span class="normal">414</span>
+<span class="normal">415</span>
+<span class="normal">416</span>
+<span class="normal">417</span>
+<span class="normal">418</span>
+<span class="normal">419</span>
+<span class="normal">420</span>
+<span class="normal">421</span>
+<span class="normal">422</span>
+<span class="normal">423</span>
+<span class="normal">424</span>
+<span class="normal">425</span>
+<span class="normal">426</span>
+<span class="normal">427</span>
+<span class="normal">428</span>
+<span class="normal">429</span>
+<span class="normal">430</span>
+<span class="normal">431</span>
+<span class="normal">432</span>
+<span class="normal">433</span>
+<span class="normal">434</span>
+<span class="normal">435</span>
+<span class="normal">436</span>
+<span class="normal">437</span>
+<span class="normal">438</span>
+<span class="normal">439</span>
+<span class="normal">440</span>
+<span class="normal">441</span>
+<span class="normal">442</span>
+<span class="normal">443</span>
+<span class="normal">444</span>
+<span class="normal">445</span>
+<span class="normal">446</span>
+<span class="normal">447</span>
+<span class="normal">448</span>
+<span class="normal">449</span>
+<span class="normal">450</span>
+<span class="normal">451</span>
+<span class="normal">452</span>
+<span class="normal">453</span>
+<span class="normal">454</span>
+<span class="normal">455</span>
+<span class="normal">456</span>
+<span class="normal">457</span>
+<span class="normal">458</span>
+<span class="normal">459</span>
+<span class="normal">460</span>
+<span class="normal">461</span>
+<span class="normal">462</span>
+<span class="normal">463</span>
+<span class="normal">464</span>
+<span class="normal">465</span>
+<span class="normal">466</span>
+<span class="normal">467</span>
+<span class="normal">468</span>
+<span class="normal">469</span>
+<span class="normal">470</span>
+<span class="normal">471</span>
+<span class="normal">472</span>
+<span class="normal">473</span>
+<span class="normal">474</span>
+<span class="normal">475</span>
+<span class="normal">476</span>
+<span class="normal">477</span>
+<span class="normal">478</span>
+<span class="normal">479</span>
+<span class="normal">480</span>
+<span class="normal">481</span>
+<span class="normal">482</span>
+<span class="normal">483</span>
+<span class="normal">484</span>
+<span class="normal">485</span>
+<span class="normal">486</span>
+<span class="normal">487</span>
+<span class="normal">488</span>
+<span class="normal">489</span>
+<span class="normal">490</span>
+<span class="normal">491</span>
+<span class="normal">492</span>
+<span class="normal">493</span>
+<span class="normal">494</span>
+<span class="normal">495</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">setup_particle_backend_kwargs</span><span class="p">(</span>
+    <span class="n">particle_stack</span><span class="p">:</span> <span class="s2">&quot;ParticleStack&quot;</span><span class="p">,</span>
+    <span class="n">template</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">preprocessing_filters</span><span class="p">:</span> <span class="s2">&quot;PreprocessingFilters&quot;</span><span class="p">,</span>
+    <span class="n">euler_angles</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">euler_angle_offsets</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">defocus_offsets</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">pixel_size_offsets</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">device_list</span><span class="p">:</span> <span class="nb">list</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Create common kwargs dictionary for template backend functions.</span>
+
+<span class="sd">    This function extracts the common code between RefineTemplateManager and</span>
+<span class="sd">    OptimizeTemplateManager&#39;s make_backend_core_function_kwargs methods.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    particle_stack : ParticleStack</span>
+<span class="sd">        The particle stack containing images to process.</span>
+<span class="sd">    template : torch.Tensor</span>
+<span class="sd">        The 3D template volume.</span>
+<span class="sd">    preprocessing_filters : PreprocessingFilters</span>
+<span class="sd">        Filters to apply to the particle images.</span>
+<span class="sd">    euler_angles : torch.Tensor</span>
+<span class="sd">        The set of Euler angles to use.</span>
+<span class="sd">    euler_angle_offsets : torch.Tensor</span>
+<span class="sd">        The relative Euler angle offsets to search over.</span>
+<span class="sd">    defocus_offsets : torch.Tensor</span>
+<span class="sd">        The relative defocus values to search over.</span>
+<span class="sd">    pixel_size_offsets : torch.Tensor</span>
+<span class="sd">        The relative pixel size values to search over.</span>
+<span class="sd">    device_list : list</span>
+<span class="sd">        List of computational devices to use.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    dict[str, Any]</span>
+<span class="sd">        Dictionary of keyword arguments for backend functions.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># Get correlation statistics</span>
+    <span class="n">corr_mean_stack</span> <span class="o">=</span> <span class="n">particle_stack</span><span class="o">.</span><span class="n">construct_cropped_statistic_stack</span><span class="p">(</span>
+        <span class="s2">&quot;correlation_average&quot;</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="n">corr_std_stack</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">particle_stack</span><span class="o">.</span><span class="n">construct_cropped_statistic_stack</span><span class="p">(</span>
+            <span class="n">stat</span><span class="o">=</span><span class="s2">&quot;correlation_variance&quot;</span><span class="p">,</span>
+            <span class="n">pos_reference</span><span class="o">=</span><span class="s2">&quot;center&quot;</span><span class="p">,</span>
+            <span class="n">handle_bounds</span><span class="o">=</span><span class="s2">&quot;pad&quot;</span><span class="p">,</span>
+            <span class="n">padding_mode</span><span class="o">=</span><span class="s2">&quot;constant&quot;</span><span class="p">,</span>
+            <span class="n">padding_value</span><span class="o">=</span><span class="mf">1e10</span><span class="p">,</span>  <span class="c1"># large to avoid out of bound pixels having inf z-score</span>
+        <span class="p">)</span>
+        <span class="o">**</span> <span class="mf">0.5</span>
+    <span class="p">)</span>  <span class="c1"># var to std</span>
+
+    <span class="c1"># Extract and preprocess images and filters</span>
+    <span class="p">(</span>
+        <span class="n">particle_images_dft</span><span class="p">,</span>
+        <span class="n">template_dft</span><span class="p">,</span>
+        <span class="n">projective_filters</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">=</span> <span class="n">setup_images_filters_particle_stack</span><span class="p">(</span>
+        <span class="n">particle_stack</span><span class="p">,</span> <span class="n">preprocessing_filters</span><span class="p">,</span> <span class="n">template</span>
+    <span class="p">)</span>
+
+    <span class="c1"># The best defocus values for each particle (+ astigmatism)</span>
+    <span class="n">defocus_u</span><span class="p">,</span> <span class="n">defocus_v</span> <span class="o">=</span> <span class="n">particle_stack</span><span class="o">.</span><span class="n">get_absolute_defocus</span><span class="p">()</span>
+    <span class="n">defocus_angle</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">particle_stack</span><span class="p">[</span><span class="s2">&quot;astigmatism_angle&quot;</span><span class="p">])</span>
+
+    <span class="n">ctf_kwargs</span> <span class="o">=</span> <span class="n">_setup_ctf_kwargs_from_particle_stack</span><span class="p">(</span>
+        <span class="n">particle_stack</span><span class="p">,</span> <span class="p">(</span><span class="n">template</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">2</span><span class="p">],</span> <span class="n">template</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">])</span>
+    <span class="p">)</span>
+
+    <span class="k">return</span> <span class="p">{</span>
+        <span class="s2">&quot;particle_stack_dft&quot;</span><span class="p">:</span> <span class="n">particle_images_dft</span><span class="p">,</span>
+        <span class="s2">&quot;template_dft&quot;</span><span class="p">:</span> <span class="n">template_dft</span><span class="p">,</span>
+        <span class="s2">&quot;euler_angles&quot;</span><span class="p">:</span> <span class="n">euler_angles</span><span class="p">,</span>
+        <span class="s2">&quot;euler_angle_offsets&quot;</span><span class="p">:</span> <span class="n">euler_angle_offsets</span><span class="p">,</span>
+        <span class="s2">&quot;defocus_u&quot;</span><span class="p">:</span> <span class="n">defocus_u</span><span class="p">,</span>
+        <span class="s2">&quot;defocus_v&quot;</span><span class="p">:</span> <span class="n">defocus_v</span><span class="p">,</span>
+        <span class="s2">&quot;defocus_angle&quot;</span><span class="p">:</span> <span class="n">defocus_angle</span><span class="p">,</span>
+        <span class="s2">&quot;defocus_offsets&quot;</span><span class="p">:</span> <span class="n">defocus_offsets</span><span class="p">,</span>
+        <span class="s2">&quot;pixel_size_offsets&quot;</span><span class="p">:</span> <span class="n">pixel_size_offsets</span><span class="p">,</span>
+        <span class="s2">&quot;corr_mean&quot;</span><span class="p">:</span> <span class="n">corr_mean_stack</span><span class="p">,</span>
+        <span class="s2">&quot;corr_std&quot;</span><span class="p">:</span> <span class="n">corr_std_stack</span><span class="p">,</span>
+        <span class="s2">&quot;ctf_kwargs&quot;</span><span class="p">:</span> <span class="n">ctf_kwargs</span><span class="p">,</span>
+        <span class="s2">&quot;projective_filters&quot;</span><span class="p">:</span> <span class="n">projective_filters</span><span class="p">,</span>
+        <span class="s2">&quot;device&quot;</span><span class="p">:</span> <span class="n">device_list</span><span class="p">,</span>
+    <span class="p">}</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="leopard_em.pydantic_models.utils.volume_to_rfft_fourier_slice" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">volume_to_rfft_fourier_slice</span><span class="p">(</span><span class="n">volume</span><span class="p">)</span></code>
+
+</h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Prepares a 3D volume for Fourier slice extraction.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>volume</code>
+            </td>
+            <td>
+                  <code><span title="torch.Tensor">Tensor</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The input volume.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="torch.Tensor">Tensor</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The prepared volume in Fourier space ready for slice extraction.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+            <details class="quote">
+              <summary>Source code in <code>src/leopard_em/pydantic_models/utils.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">234</span>
+<span class="normal">235</span>
+<span class="normal">236</span>
+<span class="normal">237</span>
+<span class="normal">238</span>
+<span class="normal">239</span>
+<span class="normal">240</span>
+<span class="normal">241</span>
+<span class="normal">242</span>
+<span class="normal">243</span>
+<span class="normal">244</span>
+<span class="normal">245</span>
+<span class="normal">246</span>
+<span class="normal">247</span>
+<span class="normal">248</span>
+<span class="normal">249</span>
+<span class="normal">250</span>
+<span class="normal">251</span>
+<span class="normal">252</span>
+<span class="normal">253</span>
+<span class="normal">254</span>
+<span class="normal">255</span>
+<span class="normal">256</span>
+<span class="normal">257</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">volume_to_rfft_fourier_slice</span><span class="p">(</span><span class="n">volume</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Prepares a 3D volume for Fourier slice extraction.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    volume : torch.Tensor</span>
+<span class="sd">        The input volume.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    torch.Tensor</span>
+<span class="sd">        The prepared volume in Fourier space ready for slice extraction.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">assert</span> <span class="n">volume</span><span class="o">.</span><span class="n">dim</span><span class="p">()</span> <span class="o">==</span> <span class="mi">3</span><span class="p">,</span> <span class="s2">&quot;Volume must be 3D&quot;</span>
+
+    <span class="c1"># NOTE: There is an extra FFTshift step before the RFFT since, for some reason,</span>
+    <span class="c1"># omitting this step will cause a 180 degree phase shift on odd (i, j, k)</span>
+    <span class="c1"># structure factors in the Fourier domain. This just requires an extra</span>
+    <span class="c1"># IFFTshift after converting a slice back to real-space (handled already).</span>
+    <span class="n">volume</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">fft</span><span class="o">.</span><span class="n">fftshift</span><span class="p">(</span><span class="n">volume</span><span class="p">,</span> <span class="n">dim</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">))</span>  <span class="c1"># pylint: disable=E1102</span>
+    <span class="n">volume_rfft</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">fft</span><span class="o">.</span><span class="n">rfftn</span><span class="p">(</span><span class="n">volume</span><span class="p">,</span> <span class="n">dim</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">,</span> <span class="mi">2</span><span class="p">))</span>  <span class="c1"># pylint: disable=E1102</span>
+    <span class="n">volume_rfft</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">fft</span><span class="o">.</span><span class="n">fftshift</span><span class="p">(</span><span class="n">volume_rfft</span><span class="p">,</span> <span class="n">dim</span><span class="o">=</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="mi">1</span><span class="p">))</span>  <span class="c1"># pylint: disable=E1102</span>
+
+    <span class="k">return</span> <span class="n">volume_rfft</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    <script id="__config" type="application/json">{"base": "../../../..", "features": [], "search": "../../../../assets/javascripts/workers/search.f8cc74c7.min.js", "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}}</script>
+    
+    
+      <script src="../../../../assets/javascripts/bundle.f1b6f286.min.js"></script>
+      
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.4/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script>
+      
+    
+  </body>
+</html>

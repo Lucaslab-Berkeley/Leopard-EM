@@ -1,0 +1,4564 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+      
+        <link rel="prev" href="../computational_config/">
+      
+      
+        <link rel="next" href="../defocus_search/">
+      
+      
+      <link rel="icon" href="../../../../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.6.5">
+    
+    
+      
+        <title>correlation_filters - Leopard-EM: Two-Dimensional Template Matching in Python</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../../../../assets/stylesheets/main.8608ea7d.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../../../../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("../../../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+    
+  </head>
+  
+  
+    <body dir="ltr">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#leopard_em.pydantic_models.config.correlation_filters" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../../../../.." title="Leopard-EM: Two-Dimensional Template Matching in Python" class="md-header__button md-logo" aria-label="Leopard-EM: Two-Dimensional Template Matching in Python" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Leopard-EM: Two-Dimensional Template Matching in Python
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              correlation_filters
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      <label class="md-header__button md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+      </label>
+      <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+    
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../../../.." title="Leopard-EM: Two-Dimensional Template Matching in Python" class="md-nav__button md-logo" aria-label="Leopard-EM: Two-Dimensional Template Matching in Python" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Leopard-EM: Two-Dimensional Template Matching in Python
+  </label>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../.." class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Home
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  <span class="md-ellipsis">
+    Examples
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            Examples
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../../examples/01_basic_configuration/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Configuring Pydantic models in Python
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../../examples/02_extract_peak_info/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Extracting results from the template matching search
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../../examples/03_compare_scoring_metrics/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Comparing 2DTM scoring metrics
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../../examples/04_plotting_2dtm_results" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Plotting match template results
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../../examples/05_structure_reprojection/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Structure projections on an Image
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  <span class="md-ellipsis">
+    Programs
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            Programs
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../../programs/overview/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Overview
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../../programs/match_template/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Match Template details
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../../programs/refine_template/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Refine Template details
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../../programs/optimize_template/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Optimize Template details
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../../programs/constrained_search/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Constrained Search details
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../../data_formats/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Program Output Formats
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../../contributing/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Contributing
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  <span class="md-ellipsis">
+    API Reference
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            API Reference
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6_1" checked>
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../../" class="md-nav__link ">
+              
+  
+  <span class="md-ellipsis">
+    leopard_em
+    
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_6_1" id="__nav_6_1_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_6_1_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_6_1">
+            <span class="md-nav__icon md-icon"></span>
+            leopard_em
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6_1_1" >
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../../analysis/" class="md-nav__link ">
+              
+  
+  <span class="md-ellipsis">
+    analysis
+    
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_6_1_1" id="__nav_6_1_1_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_6_1_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6_1_1">
+            <span class="md-nav__icon md-icon"></span>
+            analysis
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../analysis/gev_fit_metric/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    gev_fit_metric
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../analysis/match_template_peaks/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    match_template_peaks
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../analysis/pvalue_metric/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    pvalue_metric
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../analysis/utils/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    utils
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../analysis/zscore_metric/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    zscore_metric
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6_1_2" >
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../../backend/" class="md-nav__link ">
+              
+  
+  <span class="md-ellipsis">
+    backend
+    
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_6_1_2" id="__nav_6_1_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_6_1_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6_1_2">
+            <span class="md-nav__icon md-icon"></span>
+            backend
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../backend/core_match_template/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    core_match_template
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../backend/core_refine_template/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    core_refine_template
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../backend/process_results/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    process_results
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../backend/utils/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    utils
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6_1_3" checked>
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../" class="md-nav__link ">
+              
+  
+  <span class="md-ellipsis">
+    pydantic_models
+    
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_6_1_3" id="__nav_6_1_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_6_1_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_6_1_3">
+            <span class="md-nav__icon md-icon"></span>
+            pydantic_models
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6_1_3_1" checked>
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../" class="md-nav__link ">
+              
+  
+  <span class="md-ellipsis">
+    config
+    
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_6_1_3_1" id="__nav_6_1_3_1_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="4" aria-labelledby="__nav_6_1_3_1_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_6_1_3_1">
+            <span class="md-nav__icon md-icon"></span>
+            config
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../computational_config/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    computational_config
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  <span class="md-ellipsis">
+    correlation_filters
+    
+  </span>
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  <span class="md-ellipsis">
+    correlation_filters
+    
+  </span>
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#leopard_em.pydantic_models.config.correlation_filters" class="md-nav__link">
+    <span class="md-ellipsis">
+      correlation_filters
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#leopard_em.pydantic_models.config.correlation_filters.ArbitraryCurveFilterConfig" class="md-nav__link">
+    <span class="md-ellipsis">
+      ArbitraryCurveFilterConfig
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="ArbitraryCurveFilterConfig">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#leopard_em.pydantic_models.config.correlation_filters.ArbitraryCurveFilterConfig.calculate_arbitrary_curve_filter" class="md-nav__link">
+    <span class="md-ellipsis">
+      calculate_arbitrary_curve_filter
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#leopard_em.pydantic_models.config.correlation_filters.BandpassFilterConfig" class="md-nav__link">
+    <span class="md-ellipsis">
+      BandpassFilterConfig
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="BandpassFilterConfig">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#leopard_em.pydantic_models.config.correlation_filters.BandpassFilterConfig.calculate_bandpass_filter" class="md-nav__link">
+    <span class="md-ellipsis">
+      calculate_bandpass_filter
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#leopard_em.pydantic_models.config.correlation_filters.BandpassFilterConfig.from_spatial_resolution" class="md-nav__link">
+    <span class="md-ellipsis">
+      from_spatial_resolution
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#leopard_em.pydantic_models.config.correlation_filters.PhaseRandomizationFilterConfig" class="md-nav__link">
+    <span class="md-ellipsis">
+      PhaseRandomizationFilterConfig
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="PhaseRandomizationFilterConfig">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#leopard_em.pydantic_models.config.correlation_filters.PhaseRandomizationFilterConfig.calculate_phase_randomization_filter" class="md-nav__link">
+    <span class="md-ellipsis">
+      calculate_phase_randomization_filter
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#leopard_em.pydantic_models.config.correlation_filters.PreprocessingFilters" class="md-nav__link">
+    <span class="md-ellipsis">
+      PreprocessingFilters
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="PreprocessingFilters">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#leopard_em.pydantic_models.config.correlation_filters.PreprocessingFilters.get_combined_filter" class="md-nav__link">
+    <span class="md-ellipsis">
+      get_combined_filter
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#leopard_em.pydantic_models.config.correlation_filters.WhiteningFilterConfig" class="md-nav__link">
+    <span class="md-ellipsis">
+      WhiteningFilterConfig
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="WhiteningFilterConfig">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#leopard_em.pydantic_models.config.correlation_filters.WhiteningFilterConfig.calculate_whitening_filter" class="md-nav__link">
+    <span class="md-ellipsis">
+      calculate_whitening_filter
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../defocus_search/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    defocus_search
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../orientation_search/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    orientation_search
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../pixel_size_search/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    pixel_size_search
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../custom_types/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    custom_types
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6_1_3_3" >
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../data_structures/" class="md-nav__link ">
+              
+  
+  <span class="md-ellipsis">
+    data_structures
+    
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_6_1_3_3" id="__nav_6_1_3_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="4" aria-labelledby="__nav_6_1_3_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6_1_3_3">
+            <span class="md-nav__icon md-icon"></span>
+            data_structures
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../data_structures/optics_group/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    optics_group
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../data_structures/particle_stack/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    particle_stack
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../formats/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    formats
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6_1_3_5" >
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../managers/" class="md-nav__link ">
+              
+  
+  <span class="md-ellipsis">
+    managers
+    
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_6_1_3_5" id="__nav_6_1_3_5_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="4" aria-labelledby="__nav_6_1_3_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6_1_3_5">
+            <span class="md-nav__icon md-icon"></span>
+            managers
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../managers/constrained_search_manager/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    constrained_search_manager
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../managers/match_template_manager/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    match_template_manager
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../managers/optimize_template_manager/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    optimize_template_manager
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../managers/refine_template_manager/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    refine_template_manager
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6_1_3_6" >
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../results/" class="md-nav__link ">
+              
+  
+  <span class="md-ellipsis">
+    results
+    
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_6_1_3_6" id="__nav_6_1_3_6_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="4" aria-labelledby="__nav_6_1_3_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6_1_3_6">
+            <span class="md-nav__icon md-icon"></span>
+            results
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../results/match_template_result/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    match_template_result
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../utils/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    utils
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6_1_4" >
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../../utils/" class="md-nav__link ">
+              
+  
+  <span class="md-ellipsis">
+    utils
+    
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_6_1_4" id="__nav_6_1_4_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_6_1_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6_1_4">
+            <span class="md-nav__icon md-icon"></span>
+            utils
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../utils/cross_correlation/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    cross_correlation
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../utils/data_io/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    data_io
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../utils/fourier_slice/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    fourier_slice
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#leopard_em.pydantic_models.config.correlation_filters" class="md-nav__link">
+    <span class="md-ellipsis">
+      correlation_filters
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#leopard_em.pydantic_models.config.correlation_filters.ArbitraryCurveFilterConfig" class="md-nav__link">
+    <span class="md-ellipsis">
+      ArbitraryCurveFilterConfig
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="ArbitraryCurveFilterConfig">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#leopard_em.pydantic_models.config.correlation_filters.ArbitraryCurveFilterConfig.calculate_arbitrary_curve_filter" class="md-nav__link">
+    <span class="md-ellipsis">
+      calculate_arbitrary_curve_filter
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#leopard_em.pydantic_models.config.correlation_filters.BandpassFilterConfig" class="md-nav__link">
+    <span class="md-ellipsis">
+      BandpassFilterConfig
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="BandpassFilterConfig">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#leopard_em.pydantic_models.config.correlation_filters.BandpassFilterConfig.calculate_bandpass_filter" class="md-nav__link">
+    <span class="md-ellipsis">
+      calculate_bandpass_filter
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#leopard_em.pydantic_models.config.correlation_filters.BandpassFilterConfig.from_spatial_resolution" class="md-nav__link">
+    <span class="md-ellipsis">
+      from_spatial_resolution
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#leopard_em.pydantic_models.config.correlation_filters.PhaseRandomizationFilterConfig" class="md-nav__link">
+    <span class="md-ellipsis">
+      PhaseRandomizationFilterConfig
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="PhaseRandomizationFilterConfig">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#leopard_em.pydantic_models.config.correlation_filters.PhaseRandomizationFilterConfig.calculate_phase_randomization_filter" class="md-nav__link">
+    <span class="md-ellipsis">
+      calculate_phase_randomization_filter
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#leopard_em.pydantic_models.config.correlation_filters.PreprocessingFilters" class="md-nav__link">
+    <span class="md-ellipsis">
+      PreprocessingFilters
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="PreprocessingFilters">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#leopard_em.pydantic_models.config.correlation_filters.PreprocessingFilters.get_combined_filter" class="md-nav__link">
+    <span class="md-ellipsis">
+      get_combined_filter
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#leopard_em.pydantic_models.config.correlation_filters.WhiteningFilterConfig" class="md-nav__link">
+    <span class="md-ellipsis">
+      WhiteningFilterConfig
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="WhiteningFilterConfig">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#leopard_em.pydantic_models.config.correlation_filters.WhiteningFilterConfig.calculate_whitening_filter" class="md-nav__link">
+    <span class="md-ellipsis">
+      calculate_whitening_filter
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+
+  <h1>correlation_filters</h1>
+
+<div class="doc doc-object doc-module">
+
+
+
+<a id="leopard_em.pydantic_models.config.correlation_filters"></a>
+    <div class="doc doc-contents first">
+
+        <p>Set of classes for configuring correlation filters in 2DTM.</p>
+
+
+
+
+
+
+
+
+
+  <div class="doc doc-children">
+
+
+
+
+
+
+
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="leopard_em.pydantic_models.config.correlation_filters.ArbitraryCurveFilterConfig" class="doc doc-heading">
+            <code>ArbitraryCurveFilterConfig</code>
+
+
+</h2>
+
+
+    <div class="doc doc-contents ">
+            <p class="doc doc-class-bases">
+              Bases: <code><a class="autorefs autorefs-internal" title="BaseModel2DTM (leopard_em.pydantic_models.custom_types.BaseModel2DTM)" href="../../custom_types/#leopard_em.pydantic_models.custom_types.BaseModel2DTM">BaseModel2DTM</a></code></p>
+
+
+        <p>Class holding frequency and amplitude values for arbitrary curve filter.</p>
+
+
+<p><span class="doc-section-title">Attributes:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td><code><span title="leopard_em.pydantic_models.config.correlation_filters.ArbitraryCurveFilterConfig.frequencies">frequencies</span></code></td>
+            <td>
+                  <code><span title="list">list</span>[<span title="float">float</span>]</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>List of spatial frequencies (in terms of Nyquist) for the corresponding
+amplitudes.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="leopard_em.pydantic_models.config.correlation_filters.ArbitraryCurveFilterConfig.amplitudes">amplitudes</span></code></td>
+            <td>
+                  <code><span title="list">list</span>[<span title="float">float</span>]</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>List of amplitudes for the corresponding spatial frequencies.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+
+
+
+
+
+              <details class="quote">
+                <summary>Source code in <code>src/leopard_em/pydantic_models/config/correlation_filters.py</code></summary>
+                <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">274</span>
+<span class="normal">275</span>
+<span class="normal">276</span>
+<span class="normal">277</span>
+<span class="normal">278</span>
+<span class="normal">279</span>
+<span class="normal">280</span>
+<span class="normal">281</span>
+<span class="normal">282</span>
+<span class="normal">283</span>
+<span class="normal">284</span>
+<span class="normal">285</span>
+<span class="normal">286</span>
+<span class="normal">287</span>
+<span class="normal">288</span>
+<span class="normal">289</span>
+<span class="normal">290</span>
+<span class="normal">291</span>
+<span class="normal">292</span>
+<span class="normal">293</span>
+<span class="normal">294</span>
+<span class="normal">295</span>
+<span class="normal">296</span>
+<span class="normal">297</span>
+<span class="normal">298</span>
+<span class="normal">299</span>
+<span class="normal">300</span>
+<span class="normal">301</span>
+<span class="normal">302</span>
+<span class="normal">303</span>
+<span class="normal">304</span>
+<span class="normal">305</span>
+<span class="normal">306</span>
+<span class="normal">307</span>
+<span class="normal">308</span>
+<span class="normal">309</span>
+<span class="normal">310</span>
+<span class="normal">311</span>
+<span class="normal">312</span>
+<span class="normal">313</span>
+<span class="normal">314</span>
+<span class="normal">315</span>
+<span class="normal">316</span>
+<span class="normal">317</span>
+<span class="normal">318</span>
+<span class="normal">319</span>
+<span class="normal">320</span>
+<span class="normal">321</span>
+<span class="normal">322</span>
+<span class="normal">323</span>
+<span class="normal">324</span>
+<span class="normal">325</span>
+<span class="normal">326</span>
+<span class="normal">327</span>
+<span class="normal">328</span>
+<span class="normal">329</span>
+<span class="normal">330</span>
+<span class="normal">331</span>
+<span class="normal">332</span>
+<span class="normal">333</span>
+<span class="normal">334</span>
+<span class="normal">335</span>
+<span class="normal">336</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">ArbitraryCurveFilterConfig</span><span class="p">(</span><span class="n">BaseModel2DTM</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Class holding frequency and amplitude values for arbitrary curve filter.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    frequencies : list[float]</span>
+<span class="sd">        List of spatial frequencies (in terms of Nyquist) for the corresponding</span>
+<span class="sd">        amplitudes.</span>
+<span class="sd">    amplitudes : list[float]</span>
+<span class="sd">        List of amplitudes for the corresponding spatial frequencies.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">enabled</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="n">frequencies</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span>  <span class="c1"># in terms of Nyquist frequency</span>
+    <span class="n">amplitudes</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">list</span><span class="p">[</span><span class="nb">float</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">calculate_arbitrary_curve_filter</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">output_shape</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Calculates the curve filter for the desired output shape.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        output_shape : tuple[int, ...]</span>
+<span class="sd">            Desired output shape of the curve filter in Fourier space. This is the</span>
+<span class="sd">            filter shape in Fourier space *not* real space (like in the</span>
+<span class="sd">            torch_fourier_filter package).</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        torch.Tensor</span>
+<span class="sd">            The curve filter for the desired output shape.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">enabled</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">output_shape</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+
+        <span class="c1"># Ensure that neither frequencies nor amplitudes are None</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">frequencies</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">amplitudes</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="s2">&quot;When enabled, both &#39;frequencies&#39; and &#39;amplitudes&#39; must be provided.&quot;</span>
+            <span class="p">)</span>
+
+        <span class="c1"># Convert to real-space shape for function call</span>
+        <span class="n">output_shape</span> <span class="o">=</span> <span class="n">output_shape</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="p">(</span><span class="n">output_shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="mi">1</span><span class="p">),)</span>
+
+        <span class="n">freq_grid</span> <span class="o">=</span> <span class="n">fftfreq_grid</span><span class="p">(</span>
+            <span class="n">image_shape</span><span class="o">=</span><span class="n">output_shape</span><span class="p">,</span>
+            <span class="n">rfft</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+            <span class="n">fftshift</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+            <span class="n">norm</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="n">frequencies</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">frequencies</span><span class="p">)</span>
+        <span class="n">amplitudes</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">amplitudes</span><span class="p">)</span>
+        <span class="n">filter_ndim</span> <span class="o">=</span> <span class="n">curve_1dim_to_ndim</span><span class="p">(</span>
+            <span class="n">frequency_1d</span><span class="o">=</span><span class="n">frequencies</span><span class="p">,</span>
+            <span class="n">values_1d</span><span class="o">=</span><span class="n">amplitudes</span><span class="p">,</span>
+            <span class="n">frequency_grid</span><span class="o">=</span><span class="n">freq_grid</span><span class="p">,</span>
+            <span class="n">fill_lower</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>  <span class="c1"># Fill oob areas with ones (no scaling)</span>
+            <span class="n">fill_upper</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>
+        <span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">filter_ndim</span>
+</code></pre></div></td></tr></table></div>
+              </details>
+
+
+
+  <div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="leopard_em.pydantic_models.config.correlation_filters.ArbitraryCurveFilterConfig.calculate_arbitrary_curve_filter" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">calculate_arbitrary_curve_filter</span><span class="p">(</span><span class="n">output_shape</span><span class="p">)</span></code>
+
+</h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Calculates the curve filter for the desired output shape.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>output_shape</code>
+            </td>
+            <td>
+                  <code><span title="tuple">tuple</span>[<span title="int">int</span>, ...]</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Desired output shape of the curve filter in Fourier space. This is the
+filter shape in Fourier space <em>not</em> real space (like in the
+torch_fourier_filter package).</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="torch.Tensor">Tensor</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The curve filter for the desired output shape.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+            <details class="quote">
+              <summary>Source code in <code>src/leopard_em/pydantic_models/config/correlation_filters.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">290</span>
+<span class="normal">291</span>
+<span class="normal">292</span>
+<span class="normal">293</span>
+<span class="normal">294</span>
+<span class="normal">295</span>
+<span class="normal">296</span>
+<span class="normal">297</span>
+<span class="normal">298</span>
+<span class="normal">299</span>
+<span class="normal">300</span>
+<span class="normal">301</span>
+<span class="normal">302</span>
+<span class="normal">303</span>
+<span class="normal">304</span>
+<span class="normal">305</span>
+<span class="normal">306</span>
+<span class="normal">307</span>
+<span class="normal">308</span>
+<span class="normal">309</span>
+<span class="normal">310</span>
+<span class="normal">311</span>
+<span class="normal">312</span>
+<span class="normal">313</span>
+<span class="normal">314</span>
+<span class="normal">315</span>
+<span class="normal">316</span>
+<span class="normal">317</span>
+<span class="normal">318</span>
+<span class="normal">319</span>
+<span class="normal">320</span>
+<span class="normal">321</span>
+<span class="normal">322</span>
+<span class="normal">323</span>
+<span class="normal">324</span>
+<span class="normal">325</span>
+<span class="normal">326</span>
+<span class="normal">327</span>
+<span class="normal">328</span>
+<span class="normal">329</span>
+<span class="normal">330</span>
+<span class="normal">331</span>
+<span class="normal">332</span>
+<span class="normal">333</span>
+<span class="normal">334</span>
+<span class="normal">335</span>
+<span class="normal">336</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">calculate_arbitrary_curve_filter</span><span class="p">(</span>
+    <span class="bp">self</span><span class="p">,</span> <span class="n">output_shape</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Calculates the curve filter for the desired output shape.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    output_shape : tuple[int, ...]</span>
+<span class="sd">        Desired output shape of the curve filter in Fourier space. This is the</span>
+<span class="sd">        filter shape in Fourier space *not* real space (like in the</span>
+<span class="sd">        torch_fourier_filter package).</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    torch.Tensor</span>
+<span class="sd">        The curve filter for the desired output shape.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">enabled</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">output_shape</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+
+    <span class="c1"># Ensure that neither frequencies nor amplitudes are None</span>
+    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">frequencies</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">or</span> <span class="bp">self</span><span class="o">.</span><span class="n">amplitudes</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="s2">&quot;When enabled, both &#39;frequencies&#39; and &#39;amplitudes&#39; must be provided.&quot;</span>
+        <span class="p">)</span>
+
+    <span class="c1"># Convert to real-space shape for function call</span>
+    <span class="n">output_shape</span> <span class="o">=</span> <span class="n">output_shape</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="p">(</span><span class="n">output_shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="mi">1</span><span class="p">),)</span>
+
+    <span class="n">freq_grid</span> <span class="o">=</span> <span class="n">fftfreq_grid</span><span class="p">(</span>
+        <span class="n">image_shape</span><span class="o">=</span><span class="n">output_shape</span><span class="p">,</span>
+        <span class="n">rfft</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="n">fftshift</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+        <span class="n">norm</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+    <span class="p">)</span>
+
+    <span class="n">frequencies</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">frequencies</span><span class="p">)</span>
+    <span class="n">amplitudes</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">amplitudes</span><span class="p">)</span>
+    <span class="n">filter_ndim</span> <span class="o">=</span> <span class="n">curve_1dim_to_ndim</span><span class="p">(</span>
+        <span class="n">frequency_1d</span><span class="o">=</span><span class="n">frequencies</span><span class="p">,</span>
+        <span class="n">values_1d</span><span class="o">=</span><span class="n">amplitudes</span><span class="p">,</span>
+        <span class="n">frequency_grid</span><span class="o">=</span><span class="n">freq_grid</span><span class="p">,</span>
+        <span class="n">fill_lower</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>  <span class="c1"># Fill oob areas with ones (no scaling)</span>
+        <span class="n">fill_upper</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span>
+    <span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">filter_ndim</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="leopard_em.pydantic_models.config.correlation_filters.BandpassFilterConfig" class="doc doc-heading">
+            <code>BandpassFilterConfig</code>
+
+
+</h2>
+
+
+    <div class="doc doc-contents ">
+            <p class="doc doc-class-bases">
+              Bases: <code><a class="autorefs autorefs-internal" title="BaseModel2DTM (leopard_em.pydantic_models.custom_types.BaseModel2DTM)" href="../../custom_types/#leopard_em.pydantic_models.custom_types.BaseModel2DTM">BaseModel2DTM</a></code></p>
+
+
+        <p>Configuration for the bandpass filter.</p>
+
+
+<p><span class="doc-section-title">Attributes:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td><code><span title="leopard_em.pydantic_models.config.correlation_filters.BandpassFilterConfig.enabled">enabled</span></code></td>
+            <td>
+                  <code><span title="bool">bool</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If True, apply a bandpass filter to correlation during template
+matching. Default is False.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="leopard_em.pydantic_models.config.correlation_filters.BandpassFilterConfig.low_freq_cutoff">low_freq_cutoff</span></code></td>
+            <td>
+                  <code><span title="typing.Optional">Optional</span>[<span title="float">float</span>]</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Low pass filter cutoff frequency. Default is None, which is no low
+pass filter.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="leopard_em.pydantic_models.config.correlation_filters.BandpassFilterConfig.high_freq_cutoff">high_freq_cutoff</span></code></td>
+            <td>
+                  <code><span title="typing.Optional">Optional</span>[<span title="float">float</span>]</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>High pass filter cutoff frequency. Default is None, which is no high
+pass filter.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="leopard_em.pydantic_models.config.correlation_filters.BandpassFilterConfig.falloff">falloff</span></code></td>
+            <td>
+                  <code><span title="typing.Optional">Optional</span>[<span title="float">float</span>]</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Falloff factor for bandpass filter. Default is 0.0, which is no
+falloff.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+<p><span class="doc-section-title">Methods:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+            <tr class="doc-section-item">
+              <td><code><a class="autorefs autorefs-internal" title="from_spatial_resolution(low_resolution, high_resolution, pixel_size, **kwargs)
+
+  
+      classmethod
+   (leopard_em.pydantic_models.config.correlation_filters.BandpassFilterConfig.from_spatial_resolution)" href="#leopard_em.pydantic_models.config.correlation_filters.BandpassFilterConfig.from_spatial_resolution">from_spatial_resolution</a></code></td>
+              <td>
+                <div class="doc-md-description">
+                  <p>Helper method to instantiate a bandpass filter from spatial resolutions and
+a pixel size.</p>
+                </div>
+              </td>
+            </tr>
+            <tr class="doc-section-item">
+              <td><code><a class="autorefs autorefs-internal" title="calculate_bandpass_filter(output_shape) (leopard_em.pydantic_models.config.correlation_filters.BandpassFilterConfig.calculate_bandpass_filter)" href="#leopard_em.pydantic_models.config.correlation_filters.BandpassFilterConfig.calculate_bandpass_filter">calculate_bandpass_filter</a></code></td>
+              <td>
+                <div class="doc-md-description">
+                  <p>Helper function for bandpass filter based on the desired output shape. This
+method returns a filter for a RFFT'd and unshifted (zero-frequency component
+at the top-left corner) image.</p>
+                </div>
+              </td>
+            </tr>
+      </tbody>
+    </table>
+
+
+
+
+
+
+
+              <details class="quote">
+                <summary>Source code in <code>src/leopard_em/pydantic_models/config/correlation_filters.py</code></summary>
+                <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">165</span>
+<span class="normal">166</span>
+<span class="normal">167</span>
+<span class="normal">168</span>
+<span class="normal">169</span>
+<span class="normal">170</span>
+<span class="normal">171</span>
+<span class="normal">172</span>
+<span class="normal">173</span>
+<span class="normal">174</span>
+<span class="normal">175</span>
+<span class="normal">176</span>
+<span class="normal">177</span>
+<span class="normal">178</span>
+<span class="normal">179</span>
+<span class="normal">180</span>
+<span class="normal">181</span>
+<span class="normal">182</span>
+<span class="normal">183</span>
+<span class="normal">184</span>
+<span class="normal">185</span>
+<span class="normal">186</span>
+<span class="normal">187</span>
+<span class="normal">188</span>
+<span class="normal">189</span>
+<span class="normal">190</span>
+<span class="normal">191</span>
+<span class="normal">192</span>
+<span class="normal">193</span>
+<span class="normal">194</span>
+<span class="normal">195</span>
+<span class="normal">196</span>
+<span class="normal">197</span>
+<span class="normal">198</span>
+<span class="normal">199</span>
+<span class="normal">200</span>
+<span class="normal">201</span>
+<span class="normal">202</span>
+<span class="normal">203</span>
+<span class="normal">204</span>
+<span class="normal">205</span>
+<span class="normal">206</span>
+<span class="normal">207</span>
+<span class="normal">208</span>
+<span class="normal">209</span>
+<span class="normal">210</span>
+<span class="normal">211</span>
+<span class="normal">212</span>
+<span class="normal">213</span>
+<span class="normal">214</span>
+<span class="normal">215</span>
+<span class="normal">216</span>
+<span class="normal">217</span>
+<span class="normal">218</span>
+<span class="normal">219</span>
+<span class="normal">220</span>
+<span class="normal">221</span>
+<span class="normal">222</span>
+<span class="normal">223</span>
+<span class="normal">224</span>
+<span class="normal">225</span>
+<span class="normal">226</span>
+<span class="normal">227</span>
+<span class="normal">228</span>
+<span class="normal">229</span>
+<span class="normal">230</span>
+<span class="normal">231</span>
+<span class="normal">232</span>
+<span class="normal">233</span>
+<span class="normal">234</span>
+<span class="normal">235</span>
+<span class="normal">236</span>
+<span class="normal">237</span>
+<span class="normal">238</span>
+<span class="normal">239</span>
+<span class="normal">240</span>
+<span class="normal">241</span>
+<span class="normal">242</span>
+<span class="normal">243</span>
+<span class="normal">244</span>
+<span class="normal">245</span>
+<span class="normal">246</span>
+<span class="normal">247</span>
+<span class="normal">248</span>
+<span class="normal">249</span>
+<span class="normal">250</span>
+<span class="normal">251</span>
+<span class="normal">252</span>
+<span class="normal">253</span>
+<span class="normal">254</span>
+<span class="normal">255</span>
+<span class="normal">256</span>
+<span class="normal">257</span>
+<span class="normal">258</span>
+<span class="normal">259</span>
+<span class="normal">260</span>
+<span class="normal">261</span>
+<span class="normal">262</span>
+<span class="normal">263</span>
+<span class="normal">264</span>
+<span class="normal">265</span>
+<span class="normal">266</span>
+<span class="normal">267</span>
+<span class="normal">268</span>
+<span class="normal">269</span>
+<span class="normal">270</span>
+<span class="normal">271</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">BandpassFilterConfig</span><span class="p">(</span><span class="n">BaseModel2DTM</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Configuration for the bandpass filter.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    enabled : bool</span>
+<span class="sd">        If True, apply a bandpass filter to correlation during template</span>
+<span class="sd">        matching. Default is False.</span>
+<span class="sd">    low_freq_cutoff : Optional[float]</span>
+<span class="sd">        Low pass filter cutoff frequency. Default is None, which is no low</span>
+<span class="sd">        pass filter.</span>
+<span class="sd">    high_freq_cutoff : Optional[float]</span>
+<span class="sd">        High pass filter cutoff frequency. Default is None, which is no high</span>
+<span class="sd">        pass filter.</span>
+<span class="sd">    falloff : Optional[float]</span>
+<span class="sd">        Falloff factor for bandpass filter. Default is 0.0, which is no</span>
+<span class="sd">        falloff.</span>
+
+<span class="sd">    Methods</span>
+<span class="sd">    -------</span>
+<span class="sd">    from_spatial_resolution(low_resolution, high_resolution, pixel_size, **kwargs)</span>
+<span class="sd">        Helper method to instantiate a bandpass filter from spatial resolutions and</span>
+<span class="sd">        a pixel size.</span>
+<span class="sd">    calculate_bandpass_filter(output_shape)</span>
+<span class="sd">        Helper function for bandpass filter based on the desired output shape. This</span>
+<span class="sd">        method returns a filter for a RFFT&#39;d and unshifted (zero-frequency component</span>
+<span class="sd">        at the top-left corner) image.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">enabled</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="n">low_freq_cutoff</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Annotated</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="n">Field</span><span class="p">(</span><span class="n">ge</span><span class="o">=</span><span class="mf">0.0</span><span class="p">)]]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">high_freq_cutoff</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Annotated</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="n">Field</span><span class="p">(</span><span class="n">ge</span><span class="o">=</span><span class="mf">0.0</span><span class="p">)]]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">falloff</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Annotated</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="n">Field</span><span class="p">(</span><span class="n">ge</span><span class="o">=</span><span class="mf">0.0</span><span class="p">)]]</span> <span class="o">=</span> <span class="kc">None</span>
+
+    <span class="nd">@classmethod</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">from_spatial_resolution</span><span class="p">(</span>
+        <span class="bp">cls</span><span class="p">,</span>
+        <span class="n">low_resolution</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+        <span class="n">high_resolution</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+        <span class="n">pixel_size</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+        <span class="o">**</span><span class="n">kwargs</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;BandpassFilterConfig&quot;</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Helper method to instantiate a bandpass filter from spatial resolutions.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        low_resolution : float</span>
+<span class="sd">            Low resolution cutoff frequency in Angstroms.</span>
+<span class="sd">        high_resolution : float</span>
+<span class="sd">            High resolution cutoff frequency in Angstroms.</span>
+<span class="sd">        pixel_size : float</span>
+<span class="sd">            Pixel size in Angstroms.</span>
+<span class="sd">        **kwargs</span>
+<span class="sd">            Additional keyword arguments to pass to the constructor method.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        BandpassFilterConfig</span>
+<span class="sd">            Bandpass filter configuration object.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">low_freq_cutoff</span> <span class="o">=</span> <span class="n">pixel_size</span> <span class="o">/</span> <span class="n">low_resolution</span>
+        <span class="n">high_freq_cutoff</span> <span class="o">=</span> <span class="n">pixel_size</span> <span class="o">/</span> <span class="n">high_resolution</span>
+
+        <span class="k">return</span> <span class="bp">cls</span><span class="p">(</span>
+            <span class="n">low_freq_cutoff</span><span class="o">=</span><span class="n">low_freq_cutoff</span><span class="p">,</span>
+            <span class="n">high_freq_cutoff</span><span class="o">=</span><span class="n">high_freq_cutoff</span><span class="p">,</span>
+            <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
+        <span class="p">)</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">calculate_bandpass_filter</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">output_shape</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Helper function for bandpass filter based on the desired output shape.</span>
+
+<span class="sd">        Note that the output will be in terms of an RFFT&#39;d and unshifted (zero-frequency</span>
+<span class="sd">        component at the top-left corner) image.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        output_shape : tuple[int, ...]</span>
+<span class="sd">            Desired output shape of the bandpass filter in Fourier space. This is the</span>
+<span class="sd">            filter shape in Fourier space *not* real space (like in the</span>
+<span class="sd">            torch_fourier_filter package).</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        torch.Tensor</span>
+<span class="sd">            The bandpass filter for the desired output shape.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># Handle case where bandpass filter is disabled</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">enabled</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">output_shape</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+
+        <span class="c1"># Account for None values</span>
+        <span class="n">low</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">low_freq_cutoff</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">low_freq_cutoff</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="mf">0.0</span>
+        <span class="n">high</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">high_freq_cutoff</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">high_freq_cutoff</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="mf">1.0</span>
+        <span class="n">falloff</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">falloff</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">falloff</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="mf">0.0</span>
+
+        <span class="c1"># Convert to real-space shape for function call</span>
+        <span class="n">output_shape</span> <span class="o">=</span> <span class="n">output_shape</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="p">(</span><span class="n">output_shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="mi">1</span><span class="p">),)</span>
+
+        <span class="k">return</span> <span class="n">bandpass_filter</span><span class="p">(</span>
+            <span class="n">low</span><span class="o">=</span><span class="n">low</span><span class="p">,</span>
+            <span class="n">high</span><span class="o">=</span><span class="n">high</span><span class="p">,</span>
+            <span class="n">falloff</span><span class="o">=</span><span class="n">falloff</span><span class="p">,</span>
+            <span class="n">image_shape</span><span class="o">=</span><span class="n">output_shape</span><span class="p">,</span>
+            <span class="n">rfft</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+            <span class="n">fftshift</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+        <span class="p">)</span>
+</code></pre></div></td></tr></table></div>
+              </details>
+
+
+
+  <div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="leopard_em.pydantic_models.config.correlation_filters.BandpassFilterConfig.calculate_bandpass_filter" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">calculate_bandpass_filter</span><span class="p">(</span><span class="n">output_shape</span><span class="p">)</span></code>
+
+</h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Helper function for bandpass filter based on the desired output shape.</p>
+<p>Note that the output will be in terms of an RFFT'd and unshifted (zero-frequency
+component at the top-left corner) image.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>output_shape</code>
+            </td>
+            <td>
+                  <code><span title="tuple">tuple</span>[<span title="int">int</span>, ...]</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Desired output shape of the bandpass filter in Fourier space. This is the
+filter shape in Fourier space <em>not</em> real space (like in the
+torch_fourier_filter package).</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="torch.Tensor">Tensor</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The bandpass filter for the desired output shape.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+            <details class="quote">
+              <summary>Source code in <code>src/leopard_em/pydantic_models/config/correlation_filters.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">234</span>
+<span class="normal">235</span>
+<span class="normal">236</span>
+<span class="normal">237</span>
+<span class="normal">238</span>
+<span class="normal">239</span>
+<span class="normal">240</span>
+<span class="normal">241</span>
+<span class="normal">242</span>
+<span class="normal">243</span>
+<span class="normal">244</span>
+<span class="normal">245</span>
+<span class="normal">246</span>
+<span class="normal">247</span>
+<span class="normal">248</span>
+<span class="normal">249</span>
+<span class="normal">250</span>
+<span class="normal">251</span>
+<span class="normal">252</span>
+<span class="normal">253</span>
+<span class="normal">254</span>
+<span class="normal">255</span>
+<span class="normal">256</span>
+<span class="normal">257</span>
+<span class="normal">258</span>
+<span class="normal">259</span>
+<span class="normal">260</span>
+<span class="normal">261</span>
+<span class="normal">262</span>
+<span class="normal">263</span>
+<span class="normal">264</span>
+<span class="normal">265</span>
+<span class="normal">266</span>
+<span class="normal">267</span>
+<span class="normal">268</span>
+<span class="normal">269</span>
+<span class="normal">270</span>
+<span class="normal">271</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">calculate_bandpass_filter</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">output_shape</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Helper function for bandpass filter based on the desired output shape.</span>
+
+<span class="sd">    Note that the output will be in terms of an RFFT&#39;d and unshifted (zero-frequency</span>
+<span class="sd">    component at the top-left corner) image.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    output_shape : tuple[int, ...]</span>
+<span class="sd">        Desired output shape of the bandpass filter in Fourier space. This is the</span>
+<span class="sd">        filter shape in Fourier space *not* real space (like in the</span>
+<span class="sd">        torch_fourier_filter package).</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    torch.Tensor</span>
+<span class="sd">        The bandpass filter for the desired output shape.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># Handle case where bandpass filter is disabled</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">enabled</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">output_shape</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">torch</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+
+    <span class="c1"># Account for None values</span>
+    <span class="n">low</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">low_freq_cutoff</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">low_freq_cutoff</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="mf">0.0</span>
+    <span class="n">high</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">high_freq_cutoff</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">high_freq_cutoff</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="mf">1.0</span>
+    <span class="n">falloff</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">falloff</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">falloff</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="mf">0.0</span>
+
+    <span class="c1"># Convert to real-space shape for function call</span>
+    <span class="n">output_shape</span> <span class="o">=</span> <span class="n">output_shape</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="p">(</span><span class="n">output_shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="mi">1</span><span class="p">),)</span>
+
+    <span class="k">return</span> <span class="n">bandpass_filter</span><span class="p">(</span>
+        <span class="n">low</span><span class="o">=</span><span class="n">low</span><span class="p">,</span>
+        <span class="n">high</span><span class="o">=</span><span class="n">high</span><span class="p">,</span>
+        <span class="n">falloff</span><span class="o">=</span><span class="n">falloff</span><span class="p">,</span>
+        <span class="n">image_shape</span><span class="o">=</span><span class="n">output_shape</span><span class="p">,</span>
+        <span class="n">rfft</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="n">fftshift</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+    <span class="p">)</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="leopard_em.pydantic_models.config.correlation_filters.BandpassFilterConfig.from_spatial_resolution" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">from_spatial_resolution</span><span class="p">(</span><span class="n">low_resolution</span><span class="p">,</span> <span class="n">high_resolution</span><span class="p">,</span> <span class="n">pixel_size</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-classmethod"><code>classmethod</code></small>
+  </span>
+
+</h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Helper method to instantiate a bandpass filter from spatial resolutions.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>low_resolution</code>
+            </td>
+            <td>
+                  <code><span title="float">float</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Low resolution cutoff frequency in Angstroms.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>high_resolution</code>
+            </td>
+            <td>
+                  <code><span title="float">float</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>High resolution cutoff frequency in Angstroms.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>pixel_size</code>
+            </td>
+            <td>
+                  <code><span title="float">float</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Pixel size in Angstroms.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>**kwargs</code>
+            </td>
+            <td>
+                  <code><span title="dict">dict</span>[<span title="str">str</span>, <span title="typing.Any">Any</span>]</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Additional keyword arguments to pass to the constructor method.</p>
+              </div>
+            </td>
+            <td>
+                  <code>{}</code>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="BandpassFilterConfig (leopard_em.pydantic_models.config.correlation_filters.BandpassFilterConfig)" href="#leopard_em.pydantic_models.config.correlation_filters.BandpassFilterConfig">BandpassFilterConfig</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Bandpass filter configuration object.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+            <details class="quote">
+              <summary>Source code in <code>src/leopard_em/pydantic_models/config/correlation_filters.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">199</span>
+<span class="normal">200</span>
+<span class="normal">201</span>
+<span class="normal">202</span>
+<span class="normal">203</span>
+<span class="normal">204</span>
+<span class="normal">205</span>
+<span class="normal">206</span>
+<span class="normal">207</span>
+<span class="normal">208</span>
+<span class="normal">209</span>
+<span class="normal">210</span>
+<span class="normal">211</span>
+<span class="normal">212</span>
+<span class="normal">213</span>
+<span class="normal">214</span>
+<span class="normal">215</span>
+<span class="normal">216</span>
+<span class="normal">217</span>
+<span class="normal">218</span>
+<span class="normal">219</span>
+<span class="normal">220</span>
+<span class="normal">221</span>
+<span class="normal">222</span>
+<span class="normal">223</span>
+<span class="normal">224</span>
+<span class="normal">225</span>
+<span class="normal">226</span>
+<span class="normal">227</span>
+<span class="normal">228</span>
+<span class="normal">229</span>
+<span class="normal">230</span>
+<span class="normal">231</span>
+<span class="normal">232</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@classmethod</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">from_spatial_resolution</span><span class="p">(</span>
+    <span class="bp">cls</span><span class="p">,</span>
+    <span class="n">low_resolution</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">high_resolution</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="n">pixel_size</span><span class="p">:</span> <span class="nb">float</span><span class="p">,</span>
+    <span class="o">**</span><span class="n">kwargs</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="s2">&quot;BandpassFilterConfig&quot;</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Helper method to instantiate a bandpass filter from spatial resolutions.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    low_resolution : float</span>
+<span class="sd">        Low resolution cutoff frequency in Angstroms.</span>
+<span class="sd">    high_resolution : float</span>
+<span class="sd">        High resolution cutoff frequency in Angstroms.</span>
+<span class="sd">    pixel_size : float</span>
+<span class="sd">        Pixel size in Angstroms.</span>
+<span class="sd">    **kwargs</span>
+<span class="sd">        Additional keyword arguments to pass to the constructor method.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    BandpassFilterConfig</span>
+<span class="sd">        Bandpass filter configuration object.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">low_freq_cutoff</span> <span class="o">=</span> <span class="n">pixel_size</span> <span class="o">/</span> <span class="n">low_resolution</span>
+    <span class="n">high_freq_cutoff</span> <span class="o">=</span> <span class="n">pixel_size</span> <span class="o">/</span> <span class="n">high_resolution</span>
+
+    <span class="k">return</span> <span class="bp">cls</span><span class="p">(</span>
+        <span class="n">low_freq_cutoff</span><span class="o">=</span><span class="n">low_freq_cutoff</span><span class="p">,</span>
+        <span class="n">high_freq_cutoff</span><span class="o">=</span><span class="n">high_freq_cutoff</span><span class="p">,</span>
+        <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
+    <span class="p">)</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="leopard_em.pydantic_models.config.correlation_filters.PhaseRandomizationFilterConfig" class="doc doc-heading">
+            <code>PhaseRandomizationFilterConfig</code>
+
+
+</h2>
+
+
+    <div class="doc doc-contents ">
+            <p class="doc doc-class-bases">
+              Bases: <code><a class="autorefs autorefs-internal" title="BaseModel2DTM (leopard_em.pydantic_models.custom_types.BaseModel2DTM)" href="../../custom_types/#leopard_em.pydantic_models.custom_types.BaseModel2DTM">BaseModel2DTM</a></code></p>
+
+
+        <p>Configuration for phase randomization filter.</p>
+<p>NOTE: Something is not working with the underlying torch_fourier_filter code
+for phase randomization.</p>
+
+
+<p><span class="doc-section-title">Attributes:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td><code><span title="leopard_em.pydantic_models.config.correlation_filters.PhaseRandomizationFilterConfig.enabled">enabled</span></code></td>
+            <td>
+                  <code><span title="bool">bool</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If True, apply a phase randomization filter to the input image. Default
+is False.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="leopard_em.pydantic_models.config.correlation_filters.PhaseRandomizationFilterConfig.cuton">cuton</span></code></td>
+            <td>
+                  <code><span title="float">float</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Spatial resolution, in terms of Nyquist, above which to randomize the phase.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+<p><span class="doc-section-title">Methods:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+            <tr class="doc-section-item">
+              <td><code><a class="autorefs autorefs-internal" title="calculate_phase_randomization_filter(ref_img_rfft) (leopard_em.pydantic_models.config.correlation_filters.PhaseRandomizationFilterConfig.calculate_phase_randomization_filter)" href="#leopard_em.pydantic_models.config.correlation_filters.PhaseRandomizationFilterConfig.calculate_phase_randomization_filter">calculate_phase_randomization_filter</a></code></td>
+              <td>
+                <div class="doc-md-description">
+                  <p>Helper function for the phase randomization filter based on the input reference
+image and held configuration parameters.</p>
+                </div>
+              </td>
+            </tr>
+      </tbody>
+    </table>
+
+
+
+
+
+
+
+              <details class="quote">
+                <summary>Source code in <code>src/leopard_em/pydantic_models/config/correlation_filters.py</code></summary>
+                <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">111</span>
+<span class="normal">112</span>
+<span class="normal">113</span>
+<span class="normal">114</span>
+<span class="normal">115</span>
+<span class="normal">116</span>
+<span class="normal">117</span>
+<span class="normal">118</span>
+<span class="normal">119</span>
+<span class="normal">120</span>
+<span class="normal">121</span>
+<span class="normal">122</span>
+<span class="normal">123</span>
+<span class="normal">124</span>
+<span class="normal">125</span>
+<span class="normal">126</span>
+<span class="normal">127</span>
+<span class="normal">128</span>
+<span class="normal">129</span>
+<span class="normal">130</span>
+<span class="normal">131</span>
+<span class="normal">132</span>
+<span class="normal">133</span>
+<span class="normal">134</span>
+<span class="normal">135</span>
+<span class="normal">136</span>
+<span class="normal">137</span>
+<span class="normal">138</span>
+<span class="normal">139</span>
+<span class="normal">140</span>
+<span class="normal">141</span>
+<span class="normal">142</span>
+<span class="normal">143</span>
+<span class="normal">144</span>
+<span class="normal">145</span>
+<span class="normal">146</span>
+<span class="normal">147</span>
+<span class="normal">148</span>
+<span class="normal">149</span>
+<span class="normal">150</span>
+<span class="normal">151</span>
+<span class="normal">152</span>
+<span class="normal">153</span>
+<span class="normal">154</span>
+<span class="normal">155</span>
+<span class="normal">156</span>
+<span class="normal">157</span>
+<span class="normal">158</span>
+<span class="normal">159</span>
+<span class="normal">160</span>
+<span class="normal">161</span>
+<span class="normal">162</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">PhaseRandomizationFilterConfig</span><span class="p">(</span><span class="n">BaseModel2DTM</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Configuration for phase randomization filter.</span>
+
+<span class="sd">    NOTE: Something is not working with the underlying torch_fourier_filter code</span>
+<span class="sd">    for phase randomization.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    enabled : bool</span>
+<span class="sd">        If True, apply a phase randomization filter to the input image. Default</span>
+<span class="sd">        is False.</span>
+<span class="sd">    cuton : float</span>
+<span class="sd">        Spatial resolution, in terms of Nyquist, above which to randomize the phase.</span>
+
+<span class="sd">    Methods</span>
+<span class="sd">    -------</span>
+<span class="sd">    calculate_phase_randomization_filter(ref_img_rfft)</span>
+<span class="sd">        Helper function for the phase randomization filter based on the input reference</span>
+<span class="sd">        image and held configuration parameters.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">enabled</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
+    <span class="n">cuton</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="n">Annotated</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="n">Field</span><span class="p">(</span><span class="n">ge</span><span class="o">=</span><span class="mf">0.0</span><span class="p">)]]</span> <span class="o">=</span> <span class="kc">None</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">calculate_phase_randomization_filter</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">ref_img_rfft</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Helper function for phase randomization filter based on the reference image.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        ref_img_rfft : torch.Tensor</span>
+<span class="sd">            The reference image to use as a template for phase randomization. This</span>
+<span class="sd">            should be RFFT&#39;d and unshifted (zero-frequency component at the top-left</span>
+<span class="sd">            corner).</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">output_shape</span> <span class="o">=</span> <span class="n">ref_img_rfft</span><span class="o">.</span><span class="n">shape</span>
+
+        <span class="c1"># Handle case where phase randomization filter is disabled</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">enabled</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">output_shape</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">ref_img_rfft</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
+
+        <span class="c1"># Fix for underlying shape bug in torch_fourier_filter</span>
+        <span class="n">output_shape</span> <span class="o">=</span> <span class="n">output_shape</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="p">(</span><span class="n">output_shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="mi">1</span><span class="p">),)</span>
+
+        <span class="k">return</span> <span class="n">phase_randomize</span><span class="p">(</span>
+            <span class="n">dft</span><span class="o">=</span><span class="n">ref_img_rfft</span><span class="p">,</span>
+            <span class="n">image_shape</span><span class="o">=</span><span class="n">output_shape</span><span class="p">,</span>
+            <span class="n">rfft</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+            <span class="n">fftshift</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+            <span class="n">cuton</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">cuton</span><span class="p">,</span>
+        <span class="p">)</span>
+</code></pre></div></td></tr></table></div>
+              </details>
+
+
+
+  <div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="leopard_em.pydantic_models.config.correlation_filters.PhaseRandomizationFilterConfig.calculate_phase_randomization_filter" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">calculate_phase_randomization_filter</span><span class="p">(</span><span class="n">ref_img_rfft</span><span class="p">)</span></code>
+
+</h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Helper function for phase randomization filter based on the reference image.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>ref_img_rfft</code>
+            </td>
+            <td>
+                  <code><span title="torch.Tensor">Tensor</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The reference image to use as a template for phase randomization. This
+should be RFFT'd and unshifted (zero-frequency component at the top-left
+corner).</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+            <details class="quote">
+              <summary>Source code in <code>src/leopard_em/pydantic_models/config/correlation_filters.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">135</span>
+<span class="normal">136</span>
+<span class="normal">137</span>
+<span class="normal">138</span>
+<span class="normal">139</span>
+<span class="normal">140</span>
+<span class="normal">141</span>
+<span class="normal">142</span>
+<span class="normal">143</span>
+<span class="normal">144</span>
+<span class="normal">145</span>
+<span class="normal">146</span>
+<span class="normal">147</span>
+<span class="normal">148</span>
+<span class="normal">149</span>
+<span class="normal">150</span>
+<span class="normal">151</span>
+<span class="normal">152</span>
+<span class="normal">153</span>
+<span class="normal">154</span>
+<span class="normal">155</span>
+<span class="normal">156</span>
+<span class="normal">157</span>
+<span class="normal">158</span>
+<span class="normal">159</span>
+<span class="normal">160</span>
+<span class="normal">161</span>
+<span class="normal">162</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">calculate_phase_randomization_filter</span><span class="p">(</span>
+    <span class="bp">self</span><span class="p">,</span> <span class="n">ref_img_rfft</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Helper function for phase randomization filter based on the reference image.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    ref_img_rfft : torch.Tensor</span>
+<span class="sd">        The reference image to use as a template for phase randomization. This</span>
+<span class="sd">        should be RFFT&#39;d and unshifted (zero-frequency component at the top-left</span>
+<span class="sd">        corner).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">output_shape</span> <span class="o">=</span> <span class="n">ref_img_rfft</span><span class="o">.</span><span class="n">shape</span>
+
+    <span class="c1"># Handle case where phase randomization filter is disabled</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">enabled</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">output_shape</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">ref_img_rfft</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
+
+    <span class="c1"># Fix for underlying shape bug in torch_fourier_filter</span>
+    <span class="n">output_shape</span> <span class="o">=</span> <span class="n">output_shape</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="p">(</span><span class="n">output_shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="mi">1</span><span class="p">),)</span>
+
+    <span class="k">return</span> <span class="n">phase_randomize</span><span class="p">(</span>
+        <span class="n">dft</span><span class="o">=</span><span class="n">ref_img_rfft</span><span class="p">,</span>
+        <span class="n">image_shape</span><span class="o">=</span><span class="n">output_shape</span><span class="p">,</span>
+        <span class="n">rfft</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="n">fftshift</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+        <span class="n">cuton</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">cuton</span><span class="p">,</span>
+    <span class="p">)</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="leopard_em.pydantic_models.config.correlation_filters.PreprocessingFilters" class="doc doc-heading">
+            <code>PreprocessingFilters</code>
+
+
+</h2>
+
+
+    <div class="doc doc-contents ">
+            <p class="doc doc-class-bases">
+              Bases: <code><a class="autorefs autorefs-internal" title="BaseModel2DTM (leopard_em.pydantic_models.custom_types.BaseModel2DTM)" href="../../custom_types/#leopard_em.pydantic_models.custom_types.BaseModel2DTM">BaseModel2DTM</a></code></p>
+
+
+        <p>Configuration class for all preprocessing filters.</p>
+
+
+<p><span class="doc-section-title">Attributes:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td><code><span title="leopard_em.pydantic_models.config.correlation_filters.PreprocessingFilters.whitening_filter_config">whitening_filter_config</span></code></td>
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="WhiteningFilterConfig (leopard_em.pydantic_models.config.correlation_filters.WhiteningFilterConfig)" href="#leopard_em.pydantic_models.config.correlation_filters.WhiteningFilterConfig">WhiteningFilterConfig</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Configuration for the whitening filter.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="leopard_em.pydantic_models.config.correlation_filters.PreprocessingFilters.bandpass_filter_config">bandpass_filter_config</span></code></td>
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="BandpassFilterConfig (leopard_em.pydantic_models.config.correlation_filters.BandpassFilterConfig)" href="#leopard_em.pydantic_models.config.correlation_filters.BandpassFilterConfig">BandpassFilterConfig</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Configuration for the bandpass filter.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="leopard_em.pydantic_models.config.correlation_filters.PreprocessingFilters.phase_randomization_filter_config">phase_randomization_filter_config</span></code></td>
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="PhaseRandomizationFilterConfig (leopard_em.pydantic_models.config.correlation_filters.PhaseRandomizationFilterConfig)" href="#leopard_em.pydantic_models.config.correlation_filters.PhaseRandomizationFilterConfig">PhaseRandomizationFilterConfig</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Configuration for the phase randomization filter.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="leopard_em.pydantic_models.config.correlation_filters.PreprocessingFilters.arbitrary_curve_filter_config">arbitrary_curve_filter_config</span></code></td>
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="ArbitraryCurveFilterConfig (leopard_em.pydantic_models.config.correlation_filters.ArbitraryCurveFilterConfig)" href="#leopard_em.pydantic_models.config.correlation_filters.ArbitraryCurveFilterConfig">ArbitraryCurveFilterConfig</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Configuration for the arbitrary curve filter.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+<p><span class="doc-section-title">Methods:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+            <tr class="doc-section-item">
+              <td><code><span title="leopard_em.pydantic_models.config.correlation_filters.PreprocessingFilters.combined_filter">combined_filter</span></code></td>
+              <td>
+                <div class="doc-md-description">
+                  <p>Calculate and combine all Fourier filters into a single filter.</p>
+                </div>
+              </td>
+            </tr>
+      </tbody>
+    </table>
+
+
+
+
+
+
+
+              <details class="quote">
+                <summary>Source code in <code>src/leopard_em/pydantic_models/config/correlation_filters.py</code></summary>
+                <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">339</span>
+<span class="normal">340</span>
+<span class="normal">341</span>
+<span class="normal">342</span>
+<span class="normal">343</span>
+<span class="normal">344</span>
+<span class="normal">345</span>
+<span class="normal">346</span>
+<span class="normal">347</span>
+<span class="normal">348</span>
+<span class="normal">349</span>
+<span class="normal">350</span>
+<span class="normal">351</span>
+<span class="normal">352</span>
+<span class="normal">353</span>
+<span class="normal">354</span>
+<span class="normal">355</span>
+<span class="normal">356</span>
+<span class="normal">357</span>
+<span class="normal">358</span>
+<span class="normal">359</span>
+<span class="normal">360</span>
+<span class="normal">361</span>
+<span class="normal">362</span>
+<span class="normal">363</span>
+<span class="normal">364</span>
+<span class="normal">365</span>
+<span class="normal">366</span>
+<span class="normal">367</span>
+<span class="normal">368</span>
+<span class="normal">369</span>
+<span class="normal">370</span>
+<span class="normal">371</span>
+<span class="normal">372</span>
+<span class="normal">373</span>
+<span class="normal">374</span>
+<span class="normal">375</span>
+<span class="normal">376</span>
+<span class="normal">377</span>
+<span class="normal">378</span>
+<span class="normal">379</span>
+<span class="normal">380</span>
+<span class="normal">381</span>
+<span class="normal">382</span>
+<span class="normal">383</span>
+<span class="normal">384</span>
+<span class="normal">385</span>
+<span class="normal">386</span>
+<span class="normal">387</span>
+<span class="normal">388</span>
+<span class="normal">389</span>
+<span class="normal">390</span>
+<span class="normal">391</span>
+<span class="normal">392</span>
+<span class="normal">393</span>
+<span class="normal">394</span>
+<span class="normal">395</span>
+<span class="normal">396</span>
+<span class="normal">397</span>
+<span class="normal">398</span>
+<span class="normal">399</span>
+<span class="normal">400</span>
+<span class="normal">401</span>
+<span class="normal">402</span>
+<span class="normal">403</span>
+<span class="normal">404</span>
+<span class="normal">405</span>
+<span class="normal">406</span>
+<span class="normal">407</span>
+<span class="normal">408</span>
+<span class="normal">409</span>
+<span class="normal">410</span>
+<span class="normal">411</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">PreprocessingFilters</span><span class="p">(</span><span class="n">BaseModel2DTM</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Configuration class for all preprocessing filters.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    whitening_filter_config : WhiteningFilterConfig</span>
+<span class="sd">        Configuration for the whitening filter.</span>
+<span class="sd">    bandpass_filter_config : BandpassFilterConfig</span>
+<span class="sd">        Configuration for the bandpass filter.</span>
+<span class="sd">    phase_randomization_filter_config : PhaseRandomizationFilterConfig</span>
+<span class="sd">        Configuration for the phase randomization filter.</span>
+<span class="sd">    arbitrary_curve_filter_config : ArbitraryCurveFilterConfig</span>
+<span class="sd">        Configuration for the arbitrary curve filter.</span>
+
+<span class="sd">    Methods</span>
+<span class="sd">    -------</span>
+<span class="sd">    combined_filter(ref_img_rfft, output_shape)</span>
+<span class="sd">        Calculate and combine all Fourier filters into a single filter.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">whitening_filter</span><span class="p">:</span> <span class="n">WhiteningFilterConfig</span> <span class="o">=</span> <span class="n">WhiteningFilterConfig</span><span class="p">()</span>
+    <span class="n">bandpass_filter</span><span class="p">:</span> <span class="n">BandpassFilterConfig</span> <span class="o">=</span> <span class="n">BandpassFilterConfig</span><span class="p">()</span>
+    <span class="n">phase_randomization_filter</span><span class="p">:</span> <span class="n">PhaseRandomizationFilterConfig</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">PhaseRandomizationFilterConfig</span><span class="p">()</span>
+    <span class="p">)</span>
+    <span class="n">arbitrary_curve_filter</span><span class="p">:</span> <span class="n">ArbitraryCurveFilterConfig</span> <span class="o">=</span> <span class="n">ArbitraryCurveFilterConfig</span><span class="p">()</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">get_combined_filter</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">ref_img_rfft</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">output_shape</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Combine all filters into a single filter.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        ref_img_rfft : torch.Tensor</span>
+<span class="sd">            Reference image to use for calculating the filters.</span>
+<span class="sd">        output_shape : tuple[int, ...]</span>
+<span class="sd">            Desired output shape of the combined filter in Fourier space. This is the</span>
+<span class="sd">            filter shape in Fourier space *not* real space (like in the</span>
+<span class="sd">            torch_fourier_filter package).</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        torch.Tensor</span>
+<span class="sd">            The combined filter for the desired output shape.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="c1"># NOTE: Phase randomization filter is not currently enabled</span>
+        <span class="c1"># pr_config = self.phase_randomization_filter</span>
+        <span class="n">wf_config</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">whitening_filter</span>
+        <span class="n">bf_config</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">bandpass_filter</span>
+        <span class="n">ac_config</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">arbitrary_curve_filter</span>
+
+        <span class="c1"># Calculate each of the filters in turn</span>
+        <span class="c1"># phase_randomization_filter = pr_config.calculate_phase_randomization_filter(</span>
+        <span class="c1">#     ref_img_rfft=ref_img_rfft</span>
+        <span class="c1"># )</span>
+        <span class="n">whitening_filter_tensor</span> <span class="o">=</span> <span class="n">wf_config</span><span class="o">.</span><span class="n">calculate_whitening_filter</span><span class="p">(</span>
+            <span class="n">ref_img_rfft</span><span class="o">=</span><span class="n">ref_img_rfft</span><span class="p">,</span> <span class="n">output_shape</span><span class="o">=</span><span class="n">output_shape</span>
+        <span class="p">)</span>
+        <span class="n">bandpass_filter_tensor</span> <span class="o">=</span> <span class="n">bf_config</span><span class="o">.</span><span class="n">calculate_bandpass_filter</span><span class="p">(</span>
+            <span class="n">output_shape</span><span class="o">=</span><span class="n">output_shape</span>
+        <span class="p">)</span>
+        <span class="n">arbitrary_curve_filter_tensor</span> <span class="o">=</span> <span class="n">ac_config</span><span class="o">.</span><span class="n">calculate_arbitrary_curve_filter</span><span class="p">(</span>
+            <span class="n">output_shape</span><span class="o">=</span><span class="n">output_shape</span>
+        <span class="p">)</span>
+
+        <span class="n">combined_filter</span> <span class="o">=</span> <span class="p">(</span>
+            <span class="n">whitening_filter_tensor</span>
+            <span class="o">*</span> <span class="n">bandpass_filter_tensor</span>
+            <span class="o">*</span> <span class="n">arbitrary_curve_filter_tensor</span>
+        <span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">combined_filter</span>
+</code></pre></div></td></tr></table></div>
+              </details>
+
+
+
+  <div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="leopard_em.pydantic_models.config.correlation_filters.PreprocessingFilters.get_combined_filter" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">get_combined_filter</span><span class="p">(</span><span class="n">ref_img_rfft</span><span class="p">,</span> <span class="n">output_shape</span><span class="p">)</span></code>
+
+</h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Combine all filters into a single filter.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>ref_img_rfft</code>
+            </td>
+            <td>
+                  <code><span title="torch.Tensor">Tensor</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Reference image to use for calculating the filters.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>output_shape</code>
+            </td>
+            <td>
+                  <code><span title="tuple">tuple</span>[<span title="int">int</span>, ...]</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Desired output shape of the combined filter in Fourier space. This is the
+filter shape in Fourier space <em>not</em> real space (like in the
+torch_fourier_filter package).</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="torch.Tensor">Tensor</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The combined filter for the desired output shape.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+            <details class="quote">
+              <summary>Source code in <code>src/leopard_em/pydantic_models/config/correlation_filters.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">366</span>
+<span class="normal">367</span>
+<span class="normal">368</span>
+<span class="normal">369</span>
+<span class="normal">370</span>
+<span class="normal">371</span>
+<span class="normal">372</span>
+<span class="normal">373</span>
+<span class="normal">374</span>
+<span class="normal">375</span>
+<span class="normal">376</span>
+<span class="normal">377</span>
+<span class="normal">378</span>
+<span class="normal">379</span>
+<span class="normal">380</span>
+<span class="normal">381</span>
+<span class="normal">382</span>
+<span class="normal">383</span>
+<span class="normal">384</span>
+<span class="normal">385</span>
+<span class="normal">386</span>
+<span class="normal">387</span>
+<span class="normal">388</span>
+<span class="normal">389</span>
+<span class="normal">390</span>
+<span class="normal">391</span>
+<span class="normal">392</span>
+<span class="normal">393</span>
+<span class="normal">394</span>
+<span class="normal">395</span>
+<span class="normal">396</span>
+<span class="normal">397</span>
+<span class="normal">398</span>
+<span class="normal">399</span>
+<span class="normal">400</span>
+<span class="normal">401</span>
+<span class="normal">402</span>
+<span class="normal">403</span>
+<span class="normal">404</span>
+<span class="normal">405</span>
+<span class="normal">406</span>
+<span class="normal">407</span>
+<span class="normal">408</span>
+<span class="normal">409</span>
+<span class="normal">410</span>
+<span class="normal">411</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">get_combined_filter</span><span class="p">(</span>
+    <span class="bp">self</span><span class="p">,</span> <span class="n">ref_img_rfft</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">output_shape</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Combine all filters into a single filter.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    ref_img_rfft : torch.Tensor</span>
+<span class="sd">        Reference image to use for calculating the filters.</span>
+<span class="sd">    output_shape : tuple[int, ...]</span>
+<span class="sd">        Desired output shape of the combined filter in Fourier space. This is the</span>
+<span class="sd">        filter shape in Fourier space *not* real space (like in the</span>
+<span class="sd">        torch_fourier_filter package).</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    torch.Tensor</span>
+<span class="sd">        The combined filter for the desired output shape.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># NOTE: Phase randomization filter is not currently enabled</span>
+    <span class="c1"># pr_config = self.phase_randomization_filter</span>
+    <span class="n">wf_config</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">whitening_filter</span>
+    <span class="n">bf_config</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">bandpass_filter</span>
+    <span class="n">ac_config</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">arbitrary_curve_filter</span>
+
+    <span class="c1"># Calculate each of the filters in turn</span>
+    <span class="c1"># phase_randomization_filter = pr_config.calculate_phase_randomization_filter(</span>
+    <span class="c1">#     ref_img_rfft=ref_img_rfft</span>
+    <span class="c1"># )</span>
+    <span class="n">whitening_filter_tensor</span> <span class="o">=</span> <span class="n">wf_config</span><span class="o">.</span><span class="n">calculate_whitening_filter</span><span class="p">(</span>
+        <span class="n">ref_img_rfft</span><span class="o">=</span><span class="n">ref_img_rfft</span><span class="p">,</span> <span class="n">output_shape</span><span class="o">=</span><span class="n">output_shape</span>
+    <span class="p">)</span>
+    <span class="n">bandpass_filter_tensor</span> <span class="o">=</span> <span class="n">bf_config</span><span class="o">.</span><span class="n">calculate_bandpass_filter</span><span class="p">(</span>
+        <span class="n">output_shape</span><span class="o">=</span><span class="n">output_shape</span>
+    <span class="p">)</span>
+    <span class="n">arbitrary_curve_filter_tensor</span> <span class="o">=</span> <span class="n">ac_config</span><span class="o">.</span><span class="n">calculate_arbitrary_curve_filter</span><span class="p">(</span>
+        <span class="n">output_shape</span><span class="o">=</span><span class="n">output_shape</span>
+    <span class="p">)</span>
+
+    <span class="n">combined_filter</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">whitening_filter_tensor</span>
+        <span class="o">*</span> <span class="n">bandpass_filter_tensor</span>
+        <span class="o">*</span> <span class="n">arbitrary_curve_filter_tensor</span>
+    <span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">combined_filter</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="leopard_em.pydantic_models.config.correlation_filters.WhiteningFilterConfig" class="doc doc-heading">
+            <code>WhiteningFilterConfig</code>
+
+
+</h2>
+
+
+    <div class="doc doc-contents ">
+            <p class="doc doc-class-bases">
+              Bases: <code><a class="autorefs autorefs-internal" title="BaseModel2DTM (leopard_em.pydantic_models.custom_types.BaseModel2DTM)" href="../../custom_types/#leopard_em.pydantic_models.custom_types.BaseModel2DTM">BaseModel2DTM</a></code></p>
+
+
+        <p>Configuration for the whitening filter.</p>
+
+
+<p><span class="doc-section-title">Attributes:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td><code><span title="leopard_em.pydantic_models.config.correlation_filters.WhiteningFilterConfig.enabled">enabled</span></code></td>
+            <td>
+                  <code><span title="bool">bool</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If True, apply a whitening filter to the input image and template projections.
+Default is True.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="leopard_em.pydantic_models.config.correlation_filters.WhiteningFilterConfig.num_freq_bins">num_freq_bins</span></code></td>
+            <td>
+                  <code><span title="typing.Optional">Optional</span>[<span title="int">int</span>]</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Number of frequency bins (in 1D) to use when calculating the power spectrum.
+Default is None which automatically determines the number of bins based on the
+input image size.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="leopard_em.pydantic_models.config.correlation_filters.WhiteningFilterConfig.max_freq">max_freq</span></code></td>
+            <td>
+                  <code><span title="typing.Optional">Optional</span>[<span title="float">float</span>]</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Maximum frequency, in terms of Nyquist frequency, to use when calculating the
+whitening filter. Default is 0.5 with values pixels above 0.5 being set to 1.0
+in the filter (i.e. no frequency scaling).</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td><code><span title="leopard_em.pydantic_models.config.correlation_filters.WhiteningFilterConfig.do_power_spectrum">do_power_spectrum</span></code></td>
+            <td>
+                  <code><span title="typing.Optional">Optional</span>[<span title="bool">bool</span>]</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If True, calculate the power spectral density from the power of the
+input image. Default is True. If False, then the power spectral density is
+calculated from the amplitude of the input image.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+<p><span class="doc-section-title">Methods:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+            <tr class="doc-section-item">
+              <td><code><a class="autorefs autorefs-internal" title="calculate_whitening_filter(ref_img_rfft, output_shape=None, output_rfft=True, output_fftshift=False) (leopard_em.pydantic_models.config.correlation_filters.WhiteningFilterConfig.calculate_whitening_filter)" href="#leopard_em.pydantic_models.config.correlation_filters.WhiteningFilterConfig.calculate_whitening_filter">calculate_whitening_filter</a></code></td>
+              <td>
+                <div class="doc-md-description">
+                  <p>Helper function for the whitening filter based on the input reference image and
+held configuration parameters.</p>
+                </div>
+              </td>
+            </tr>
+      </tbody>
+    </table>
+
+
+
+
+
+
+
+              <details class="quote">
+                <summary>Source code in <code>src/leopard_em/pydantic_models/config/correlation_filters.py</code></summary>
+                <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"> 16</span>
+<span class="normal"> 17</span>
+<span class="normal"> 18</span>
+<span class="normal"> 19</span>
+<span class="normal"> 20</span>
+<span class="normal"> 21</span>
+<span class="normal"> 22</span>
+<span class="normal"> 23</span>
+<span class="normal"> 24</span>
+<span class="normal"> 25</span>
+<span class="normal"> 26</span>
+<span class="normal"> 27</span>
+<span class="normal"> 28</span>
+<span class="normal"> 29</span>
+<span class="normal"> 30</span>
+<span class="normal"> 31</span>
+<span class="normal"> 32</span>
+<span class="normal"> 33</span>
+<span class="normal"> 34</span>
+<span class="normal"> 35</span>
+<span class="normal"> 36</span>
+<span class="normal"> 37</span>
+<span class="normal"> 38</span>
+<span class="normal"> 39</span>
+<span class="normal"> 40</span>
+<span class="normal"> 41</span>
+<span class="normal"> 42</span>
+<span class="normal"> 43</span>
+<span class="normal"> 44</span>
+<span class="normal"> 45</span>
+<span class="normal"> 46</span>
+<span class="normal"> 47</span>
+<span class="normal"> 48</span>
+<span class="normal"> 49</span>
+<span class="normal"> 50</span>
+<span class="normal"> 51</span>
+<span class="normal"> 52</span>
+<span class="normal"> 53</span>
+<span class="normal"> 54</span>
+<span class="normal"> 55</span>
+<span class="normal"> 56</span>
+<span class="normal"> 57</span>
+<span class="normal"> 58</span>
+<span class="normal"> 59</span>
+<span class="normal"> 60</span>
+<span class="normal"> 61</span>
+<span class="normal"> 62</span>
+<span class="normal"> 63</span>
+<span class="normal"> 64</span>
+<span class="normal"> 65</span>
+<span class="normal"> 66</span>
+<span class="normal"> 67</span>
+<span class="normal"> 68</span>
+<span class="normal"> 69</span>
+<span class="normal"> 70</span>
+<span class="normal"> 71</span>
+<span class="normal"> 72</span>
+<span class="normal"> 73</span>
+<span class="normal"> 74</span>
+<span class="normal"> 75</span>
+<span class="normal"> 76</span>
+<span class="normal"> 77</span>
+<span class="normal"> 78</span>
+<span class="normal"> 79</span>
+<span class="normal"> 80</span>
+<span class="normal"> 81</span>
+<span class="normal"> 82</span>
+<span class="normal"> 83</span>
+<span class="normal"> 84</span>
+<span class="normal"> 85</span>
+<span class="normal"> 86</span>
+<span class="normal"> 87</span>
+<span class="normal"> 88</span>
+<span class="normal"> 89</span>
+<span class="normal"> 90</span>
+<span class="normal"> 91</span>
+<span class="normal"> 92</span>
+<span class="normal"> 93</span>
+<span class="normal"> 94</span>
+<span class="normal"> 95</span>
+<span class="normal"> 96</span>
+<span class="normal"> 97</span>
+<span class="normal"> 98</span>
+<span class="normal"> 99</span>
+<span class="normal">100</span>
+<span class="normal">101</span>
+<span class="normal">102</span>
+<span class="normal">103</span>
+<span class="normal">104</span>
+<span class="normal">105</span>
+<span class="normal">106</span>
+<span class="normal">107</span>
+<span class="normal">108</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">WhiteningFilterConfig</span><span class="p">(</span><span class="n">BaseModel2DTM</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Configuration for the whitening filter.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    enabled : bool</span>
+<span class="sd">        If True, apply a whitening filter to the input image and template projections.</span>
+<span class="sd">        Default is True.</span>
+<span class="sd">    num_freq_bins : Optional[int]</span>
+<span class="sd">        Number of frequency bins (in 1D) to use when calculating the power spectrum.</span>
+<span class="sd">        Default is None which automatically determines the number of bins based on the</span>
+<span class="sd">        input image size.</span>
+<span class="sd">    max_freq : Optional[float]</span>
+<span class="sd">        Maximum frequency, in terms of Nyquist frequency, to use when calculating the</span>
+<span class="sd">        whitening filter. Default is 0.5 with values pixels above 0.5 being set to 1.0</span>
+<span class="sd">        in the filter (i.e. no frequency scaling).</span>
+<span class="sd">    do_power_spectrum : Optional[bool]</span>
+<span class="sd">        If True, calculate the power spectral density from the power of the</span>
+<span class="sd">        input image. Default is True. If False, then the power spectral density is</span>
+<span class="sd">        calculated from the amplitude of the input image.</span>
+
+<span class="sd">    Methods</span>
+<span class="sd">    -------</span>
+<span class="sd">    calculate_whitening_filter(ref_img_rfft, output_shape, output_rfft, output_fftshift)</span>
+<span class="sd">        Helper function for the whitening filter based on the input reference image and</span>
+<span class="sd">        held configuration parameters.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">enabled</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span>
+    <span class="n">num_freq_bins</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+    <span class="n">max_freq</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.5</span>  <span class="c1"># in terms of Nyquist frequency</span>
+    <span class="n">do_power_spectrum</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">bool</span><span class="p">]</span> <span class="o">=</span> <span class="kc">True</span>
+
+    <span class="k">def</span><span class="w"> </span><span class="nf">calculate_whitening_filter</span><span class="p">(</span>
+        <span class="bp">self</span><span class="p">,</span>
+        <span class="n">ref_img_rfft</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+        <span class="n">output_shape</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+        <span class="n">output_rfft</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+        <span class="n">output_fftshift</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Helper function for the whitening filter based on the input reference image.</span>
+
+<span class="sd">        NOTE: This function is a wrapper around the `whitening_filter` function from</span>
+<span class="sd">        the `torch_fourier_filter` package. It expects the input image to be RFFT&#39;d</span>
+<span class="sd">        and unshifted (zero-frequency component at the top-left corner). The output</span>
+<span class="sd">        can be of any shape, but the default is to return a filer of the same input</span>
+<span class="sd">        shape.</span>
+
+<span class="sd">        Parameters</span>
+<span class="sd">        ----------</span>
+<span class="sd">        ref_img_rfft : torch.Tensor</span>
+<span class="sd">            The reference image (RFFT&#39;d and unshifted) to calculate the whitening</span>
+<span class="sd">            filter from.</span>
+<span class="sd">        output_shape : Optional[tuple[int, ...]]</span>
+<span class="sd">            Desired output shape of the whitening filter. This is the filter shape in</span>
+<span class="sd">            Fourier space *not* real space (like in the torch_fourier_filter package).</span>
+<span class="sd">            Default is None, which is the same as the input shape.</span>
+<span class="sd">        output_rfft : Optional[bool]</span>
+<span class="sd">            If True, filter corresponds to a Fourier transform using the RFFT.</span>
+<span class="sd">            Default is None, which is the same as the &#39;rfft&#39; parameter.</span>
+<span class="sd">        output_fftshift : Optional[bool]</span>
+<span class="sd">            If True, filter corresponds to a Fourier transform followed</span>
+<span class="sd">            by an fftshift. Default is None, which is the same as the &#39;fftshift&#39;</span>
+<span class="sd">            parameter.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        torch.Tensor</span>
+<span class="sd">            The whitening filter with frequencies calculated from the input reference</span>
+<span class="sd">            image.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="k">if</span> <span class="n">output_shape</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">output_shape</span> <span class="o">=</span> <span class="n">ref_img_rfft</span><span class="o">.</span><span class="n">shape</span>
+
+        <span class="c1"># Handle case where whitening filter is disabled</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">enabled</span><span class="p">:</span>
+            <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">output_shape</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">ref_img_rfft</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
+
+        <span class="c1"># Convert to real-space shape for function call</span>
+        <span class="n">output_shape</span> <span class="o">=</span> <span class="n">output_shape</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="p">(</span><span class="n">output_shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="mi">1</span><span class="p">),)</span>
+
+        <span class="k">return</span> <span class="n">whitening_filter</span><span class="p">(</span>
+            <span class="n">image_dft</span><span class="o">=</span><span class="n">ref_img_rfft</span><span class="p">,</span>
+            <span class="n">rfft</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+            <span class="n">fftshift</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+            <span class="n">dim</span><span class="o">=</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">),</span>
+            <span class="n">num_freq_bins</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">num_freq_bins</span><span class="p">,</span>
+            <span class="n">max_freq</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">max_freq</span><span class="p">,</span>
+            <span class="n">do_power_spectrum</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">do_power_spectrum</span><span class="p">,</span>
+            <span class="n">output_shape</span><span class="o">=</span><span class="n">output_shape</span><span class="p">,</span>
+            <span class="n">output_rfft</span><span class="o">=</span><span class="n">output_rfft</span><span class="p">,</span>
+            <span class="n">output_fftshift</span><span class="o">=</span><span class="n">output_fftshift</span><span class="p">,</span>
+        <span class="p">)</span>
+</code></pre></div></td></tr></table></div>
+              </details>
+
+
+
+  <div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="leopard_em.pydantic_models.config.correlation_filters.WhiteningFilterConfig.calculate_whitening_filter" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">calculate_whitening_filter</span><span class="p">(</span><span class="n">ref_img_rfft</span><span class="p">,</span> <span class="n">output_shape</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">output_rfft</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">output_fftshift</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span></code>
+
+</h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Helper function for the whitening filter based on the input reference image.</p>
+<p>NOTE: This function is a wrapper around the <code>whitening_filter</code> function from
+the <code>torch_fourier_filter</code> package. It expects the input image to be RFFT'd
+and unshifted (zero-frequency component at the top-left corner). The output
+can be of any shape, but the default is to return a filer of the same input
+shape.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>ref_img_rfft</code>
+            </td>
+            <td>
+                  <code><span title="torch.Tensor">Tensor</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The reference image (RFFT'd and unshifted) to calculate the whitening
+filter from.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>output_shape</code>
+            </td>
+            <td>
+                  <code><span title="typing.Optional">Optional</span>[<span title="tuple">tuple</span>[<span title="int">int</span>, ...]]</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Desired output shape of the whitening filter. This is the filter shape in
+Fourier space <em>not</em> real space (like in the torch_fourier_filter package).
+Default is None, which is the same as the input shape.</p>
+              </div>
+            </td>
+            <td>
+                  <code>None</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>output_rfft</code>
+            </td>
+            <td>
+                  <code><span title="typing.Optional">Optional</span>[<span title="bool">bool</span>]</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If True, filter corresponds to a Fourier transform using the RFFT.
+Default is None, which is the same as the 'rfft' parameter.</p>
+              </div>
+            </td>
+            <td>
+                  <code>True</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>output_fftshift</code>
+            </td>
+            <td>
+                  <code><span title="typing.Optional">Optional</span>[<span title="bool">bool</span>]</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If True, filter corresponds to a Fourier transform followed
+by an fftshift. Default is None, which is the same as the 'fftshift'
+parameter.</p>
+              </div>
+            </td>
+            <td>
+                  <code>False</code>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="torch.Tensor">Tensor</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The whitening filter with frequencies calculated from the input reference
+image.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+            <details class="quote">
+              <summary>Source code in <code>src/leopard_em/pydantic_models/config/correlation_filters.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"> 49</span>
+<span class="normal"> 50</span>
+<span class="normal"> 51</span>
+<span class="normal"> 52</span>
+<span class="normal"> 53</span>
+<span class="normal"> 54</span>
+<span class="normal"> 55</span>
+<span class="normal"> 56</span>
+<span class="normal"> 57</span>
+<span class="normal"> 58</span>
+<span class="normal"> 59</span>
+<span class="normal"> 60</span>
+<span class="normal"> 61</span>
+<span class="normal"> 62</span>
+<span class="normal"> 63</span>
+<span class="normal"> 64</span>
+<span class="normal"> 65</span>
+<span class="normal"> 66</span>
+<span class="normal"> 67</span>
+<span class="normal"> 68</span>
+<span class="normal"> 69</span>
+<span class="normal"> 70</span>
+<span class="normal"> 71</span>
+<span class="normal"> 72</span>
+<span class="normal"> 73</span>
+<span class="normal"> 74</span>
+<span class="normal"> 75</span>
+<span class="normal"> 76</span>
+<span class="normal"> 77</span>
+<span class="normal"> 78</span>
+<span class="normal"> 79</span>
+<span class="normal"> 80</span>
+<span class="normal"> 81</span>
+<span class="normal"> 82</span>
+<span class="normal"> 83</span>
+<span class="normal"> 84</span>
+<span class="normal"> 85</span>
+<span class="normal"> 86</span>
+<span class="normal"> 87</span>
+<span class="normal"> 88</span>
+<span class="normal"> 89</span>
+<span class="normal"> 90</span>
+<span class="normal"> 91</span>
+<span class="normal"> 92</span>
+<span class="normal"> 93</span>
+<span class="normal"> 94</span>
+<span class="normal"> 95</span>
+<span class="normal"> 96</span>
+<span class="normal"> 97</span>
+<span class="normal"> 98</span>
+<span class="normal"> 99</span>
+<span class="normal">100</span>
+<span class="normal">101</span>
+<span class="normal">102</span>
+<span class="normal">103</span>
+<span class="normal">104</span>
+<span class="normal">105</span>
+<span class="normal">106</span>
+<span class="normal">107</span>
+<span class="normal">108</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">calculate_whitening_filter</span><span class="p">(</span>
+    <span class="bp">self</span><span class="p">,</span>
+    <span class="n">ref_img_rfft</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
+    <span class="n">output_shape</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+    <span class="n">output_rfft</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
+    <span class="n">output_fftshift</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Helper function for the whitening filter based on the input reference image.</span>
+
+<span class="sd">    NOTE: This function is a wrapper around the `whitening_filter` function from</span>
+<span class="sd">    the `torch_fourier_filter` package. It expects the input image to be RFFT&#39;d</span>
+<span class="sd">    and unshifted (zero-frequency component at the top-left corner). The output</span>
+<span class="sd">    can be of any shape, but the default is to return a filer of the same input</span>
+<span class="sd">    shape.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    ref_img_rfft : torch.Tensor</span>
+<span class="sd">        The reference image (RFFT&#39;d and unshifted) to calculate the whitening</span>
+<span class="sd">        filter from.</span>
+<span class="sd">    output_shape : Optional[tuple[int, ...]]</span>
+<span class="sd">        Desired output shape of the whitening filter. This is the filter shape in</span>
+<span class="sd">        Fourier space *not* real space (like in the torch_fourier_filter package).</span>
+<span class="sd">        Default is None, which is the same as the input shape.</span>
+<span class="sd">    output_rfft : Optional[bool]</span>
+<span class="sd">        If True, filter corresponds to a Fourier transform using the RFFT.</span>
+<span class="sd">        Default is None, which is the same as the &#39;rfft&#39; parameter.</span>
+<span class="sd">    output_fftshift : Optional[bool]</span>
+<span class="sd">        If True, filter corresponds to a Fourier transform followed</span>
+<span class="sd">        by an fftshift. Default is None, which is the same as the &#39;fftshift&#39;</span>
+<span class="sd">        parameter.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">    torch.Tensor</span>
+<span class="sd">        The whitening filter with frequencies calculated from the input reference</span>
+<span class="sd">        image.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="n">output_shape</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="n">output_shape</span> <span class="o">=</span> <span class="n">ref_img_rfft</span><span class="o">.</span><span class="n">shape</span>
+
+    <span class="c1"># Handle case where whitening filter is disabled</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">enabled</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">ones</span><span class="p">(</span><span class="n">output_shape</span><span class="p">,</span> <span class="n">dtype</span><span class="o">=</span><span class="n">ref_img_rfft</span><span class="o">.</span><span class="n">dtype</span><span class="p">)</span>
+
+    <span class="c1"># Convert to real-space shape for function call</span>
+    <span class="n">output_shape</span> <span class="o">=</span> <span class="n">output_shape</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">+</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="p">(</span><span class="n">output_shape</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span> <span class="o">-</span> <span class="mi">1</span><span class="p">),)</span>
+
+    <span class="k">return</span> <span class="n">whitening_filter</span><span class="p">(</span>
+        <span class="n">image_dft</span><span class="o">=</span><span class="n">ref_img_rfft</span><span class="p">,</span>
+        <span class="n">rfft</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+        <span class="n">fftshift</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+        <span class="n">dim</span><span class="o">=</span><span class="p">(</span><span class="o">-</span><span class="mi">2</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">),</span>
+        <span class="n">num_freq_bins</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">num_freq_bins</span><span class="p">,</span>
+        <span class="n">max_freq</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">max_freq</span><span class="p">,</span>
+        <span class="n">do_power_spectrum</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">do_power_spectrum</span><span class="p">,</span>
+        <span class="n">output_shape</span><span class="o">=</span><span class="n">output_shape</span><span class="p">,</span>
+        <span class="n">output_rfft</span><span class="o">=</span><span class="n">output_rfft</span><span class="p">,</span>
+        <span class="n">output_fftshift</span><span class="o">=</span><span class="n">output_fftshift</span><span class="p">,</span>
+    <span class="p">)</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    <script id="__config" type="application/json">{"base": "../../../../..", "features": [], "search": "../../../../../assets/javascripts/workers/search.f8cc74c7.min.js", "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}}</script>
+    
+    
+      <script src="../../../../../assets/javascripts/bundle.f1b6f286.min.js"></script>
+      
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.4/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script>
+      
+    
+  </body>
+</html>

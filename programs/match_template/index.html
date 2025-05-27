@@ -6,12 +6,12 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Description of the match template program">
+        <meta name="description" content="Description of the match template program and its configuration">
       
       
       
       
-        <link rel="prev" href="../..">
+        <link rel="prev" href="../overview/">
       
       
         <link rel="next" href="../refine_template/">
@@ -44,6 +44,8 @@
         <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
       
     
+    
+      <link rel="stylesheet" href="../../assets/_mkdocstrings.css">
     
     <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
     
@@ -211,6 +213,159 @@
       
   
   
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  <span class="md-ellipsis">
+    Examples
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            Examples
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/01_basic_configuration/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Configuring Pydantic models in Python
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/02_extract_peak_info/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Extracting results from the template matching search
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/03_compare_scoring_metrics/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Comparing 2DTM scoring metrics
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/04_plotting_2dtm_results" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Plotting match template results
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/05_structure_reprojection/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Structure projections on an Image
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
     
   
   
@@ -223,10 +378,10 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
         
           
-          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
             
   
   <span class="md-ellipsis">
@@ -238,12 +393,34 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
-          <label class="md-nav__title" for="__nav_2">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3">
             <span class="md-nav__icon md-icon"></span>
             Programs
           </label>
           <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../overview/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Overview
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
             
               
                 
@@ -265,7 +442,7 @@
           
   
   <span class="md-ellipsis">
-    Match Template
+    Match Template details
     
   </span>
   
@@ -277,7 +454,7 @@
         
   
   <span class="md-ellipsis">
-    Match Template
+    Match Template details
     
   </span>
   
@@ -361,6 +538,30 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Configuring the pre-processing filters">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#whitening-filter" class="md-nav__link">
+    <span class="md-ellipsis">
+      Whitening filter
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bandpass-filter" class="md-nav__link">
+    <span class="md-ellipsis">
+      Bandpass filter
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
         
           <li class="md-nav__item">
@@ -430,7 +631,51 @@
         
   
   <span class="md-ellipsis">
-    Refine Template
+    Refine Template details
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../optimize_template/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Optimize Template details
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../constrained_search/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Constrained Search details
     
   </span>
   
@@ -475,6 +720,27 @@
   
   
   
+    <li class="md-nav__item">
+      <a href="../../contributing/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Contributing
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
     
     
     
@@ -483,14 +749,14 @@
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
         
           
-          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
             
   
   <span class="md-ellipsis">
-    Examples
+    API Reference
     
   </span>
   
@@ -498,10 +764,98 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
-          <label class="md-nav__title" for="__nav_4">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
             <span class="md-nav__icon md-icon"></span>
-            Examples
+            API Reference
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6_1" >
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../autoapi/leopard_em/" class="md-nav__link ">
+              
+  
+  <span class="md-ellipsis">
+    leopard_em
+    
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_6_1" id="__nav_6_1_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_6_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6_1">
+            <span class="md-nav__icon md-icon"></span>
+            leopard_em
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6_1_1" >
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../autoapi/leopard_em/analysis/" class="md-nav__link ">
+              
+  
+  <span class="md-ellipsis">
+    analysis
+    
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_6_1_1" id="__nav_6_1_1_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_6_1_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6_1_1">
+            <span class="md-nav__icon md-icon"></span>
+            analysis
           </label>
           <ul class="md-nav__list" data-md-scrollfix>
             
@@ -512,16 +866,968 @@
   
   
     <li class="md-nav__item">
-      <a href="../../examples/basic_configuration/" class="md-nav__link">
+      <a href="../../autoapi/leopard_em/analysis/gev_fit_metric/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
-    Template Matching Configurations
+    gev_fit_metric
     
   </span>
   
 
       </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/analysis/match_template_peaks/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    match_template_peaks
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/analysis/pvalue_metric/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    pvalue_metric
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/analysis/utils/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    utils
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/analysis/zscore_metric/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    zscore_metric
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6_1_2" >
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../autoapi/leopard_em/backend/" class="md-nav__link ">
+              
+  
+  <span class="md-ellipsis">
+    backend
+    
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_6_1_2" id="__nav_6_1_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_6_1_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6_1_2">
+            <span class="md-nav__icon md-icon"></span>
+            backend
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/backend/core_match_template/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    core_match_template
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/backend/core_refine_template/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    core_refine_template
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/backend/process_results/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    process_results
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/backend/utils/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    utils
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6_1_3" >
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../autoapi/leopard_em/pydantic_models/" class="md-nav__link ">
+              
+  
+  <span class="md-ellipsis">
+    pydantic_models
+    
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_6_1_3" id="__nav_6_1_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_6_1_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6_1_3">
+            <span class="md-nav__icon md-icon"></span>
+            pydantic_models
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6_1_3_1" >
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../autoapi/leopard_em/pydantic_models/config/" class="md-nav__link ">
+              
+  
+  <span class="md-ellipsis">
+    config
+    
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_6_1_3_1" id="__nav_6_1_3_1_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="4" aria-labelledby="__nav_6_1_3_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6_1_3_1">
+            <span class="md-nav__icon md-icon"></span>
+            config
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/pydantic_models/config/computational_config/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    computational_config
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/pydantic_models/config/correlation_filters/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    correlation_filters
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/pydantic_models/config/defocus_search/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    defocus_search
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/pydantic_models/config/orientation_search/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    orientation_search
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/pydantic_models/config/pixel_size_search/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    pixel_size_search
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/pydantic_models/custom_types/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    custom_types
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6_1_3_3" >
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../autoapi/leopard_em/pydantic_models/data_structures/" class="md-nav__link ">
+              
+  
+  <span class="md-ellipsis">
+    data_structures
+    
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_6_1_3_3" id="__nav_6_1_3_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="4" aria-labelledby="__nav_6_1_3_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6_1_3_3">
+            <span class="md-nav__icon md-icon"></span>
+            data_structures
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/pydantic_models/data_structures/optics_group/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    optics_group
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/pydantic_models/data_structures/particle_stack/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    particle_stack
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/pydantic_models/formats/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    formats
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6_1_3_5" >
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../autoapi/leopard_em/pydantic_models/managers/" class="md-nav__link ">
+              
+  
+  <span class="md-ellipsis">
+    managers
+    
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_6_1_3_5" id="__nav_6_1_3_5_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="4" aria-labelledby="__nav_6_1_3_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6_1_3_5">
+            <span class="md-nav__icon md-icon"></span>
+            managers
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/pydantic_models/managers/constrained_search_manager/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    constrained_search_manager
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/pydantic_models/managers/match_template_manager/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    match_template_manager
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/pydantic_models/managers/optimize_template_manager/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    optimize_template_manager
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/pydantic_models/managers/refine_template_manager/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    refine_template_manager
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6_1_3_6" >
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../autoapi/leopard_em/pydantic_models/results/" class="md-nav__link ">
+              
+  
+  <span class="md-ellipsis">
+    results
+    
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_6_1_3_6" id="__nav_6_1_3_6_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="4" aria-labelledby="__nav_6_1_3_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6_1_3_6">
+            <span class="md-nav__icon md-icon"></span>
+            results
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/pydantic_models/results/match_template_result/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    match_template_result
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/pydantic_models/utils/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    utils
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6_1_4" >
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../autoapi/leopard_em/utils/" class="md-nav__link ">
+              
+  
+  <span class="md-ellipsis">
+    utils
+    
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_6_1_4" id="__nav_6_1_4_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_6_1_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6_1_4">
+            <span class="md-nav__icon md-icon"></span>
+            utils
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/utils/cross_correlation/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    cross_correlation
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/utils/data_io/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    data_io
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/utils/fourier_slice/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    fourier_slice
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
     </li>
   
 
@@ -622,6 +1928,30 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Configuring the pre-processing filters">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#whitening-filter" class="md-nav__link">
+    <span class="md-ellipsis">
+      Whitening filter
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#bandpass-filter" class="md-nav__link">
+    <span class="md-ellipsis">
+      Bandpass filter
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
         
           <li class="md-nav__item">
@@ -688,136 +2018,179 @@
 
 
 <h1 id="the-match-template-program">The match template program</h1>
-<p>The match template program takes in a micrograph and a simulated reference structure along with search parameters to find locations in the image which agree with expected 2D projections of this reference structure.
-Notably, the match template program simultaneously find the orientations of these particles as well as the depth of the particle within the sample.</p>
+<p>The match template program takes in a micrograph and a simulated reference structure along with search parameters to find locations in the micrograph which agree with expected 2D projections of this reference structure.
+Notably, the match template program simultaneously finds the location and orientations of these particles as well as the depth of the particle within the sample.</p>
+<div class="admonition info">
+<p class="admonition-title">GPU usage with match template</p>
+<p>The match template program is GPU-intensive, and there is the <code>ORIENTATION_BATCH_SIZE</code> parameter within the <code>run_match_template.py</code> script to help manage GPU resources.
+If you encounter a CUDA out of memory error try decreasing the <code>ORIENTATION_BATCH_SIZE</code> parameter.</p>
+</div>
 <h2 id="configuration-options">Configuration options</h2>
-<p>A default config file for the match template program is available <a href="https://raw.githubusercontent.com/Lucaslab-Berkeley/Leopard-EM/refs/heads/main/match_template_example_config.yaml">here on the GitHub page</a>.
-This file is separated into multiple "blocks" each configuring distinct portions of the program discussed briefly below.
-Defining and exporting these configurations in terms of Python objects is detailed in <a href="../../examples/basic_configuration/">Match Template Configuration</a></p>
+<p>A default config file for the match template program is available <a href="https://raw.githubusercontent.com/Lucaslab-Berkeley/Leopard-EM/refs/heads/main/programs/match_template/match_template_example_config.yaml">here on the GitHub page</a>.
+This file is separated into multiple "blocks" each configuring distinct portions of the program discussed briefly below.</p>
+<!-- Defining and exporting these configurations in terms of Python objects is detailed in [Match Template Configuration](../examples/basic_configuration.ipynb) -->
+
 <h3 id="top-level-micrograph-and-template-paths">Top-level micrograph and template paths</h3>
-<p>The first two fields in the configuration are paths to the 3D reference template and 2D micrograph saved as MRC files.
-Update these paths based on your system/experiment.</p>
-<pre><code class="language-yaml">template_volume_path: /some/path/to/template.mrc
-micrograph_path:      /some/path/to/micrograph.mrc
-</code></pre>
-<p>Note the reference template should be simulated under the same conditions as the experimental micrograph (e.g. total exposure).
+<p>The first two fields in the configuration are define where the simulated 3D reference template and 2D micrograph files are located.
+These are both saved in the mrc file format, and the paths need to be updated to match your system and experiment.
+Configurations are made on a per-micrograph basis, that is, a new configuration file should be made for each micrograph in your dataset.</p>
+<div class="highlight"><pre><span></span><code><span class="nt">template_volume_path</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/some/path/to/template.mrc</span>
+<span class="nt">micrograph_path</span><span class="p">:</span><span class="w">      </span><span class="l l-Scalar l-Scalar-Plain">/some/path/to/micrograph.mrc</span>
+</code></pre></div>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>The reference template should be simulated under the same conditions as the experimental micrograph (pixel size, cumulative electron exposure, etc.).
 A 3D volume can be simulated from a PDB structure using the <a href="https://github.com/teamtomo/ttsim3d">TeamTomo ttsim3d</a> Python package.</p>
+</div>
 <h3 id="output-result-files">Output result files</h3>
-<p>The next block is the <code>match_template_result</code> configuration which defined the output paths for the match template program results.
-Note that these paths need to be writable by the user executing the program, and the <code>match_template_result</code> needs to be set to <code>true</code> if you are overwriting pre-existing result files.</p>
-<pre><code class="language-yaml">match_template_result:
-  allow_file_overwrite: true
-  mip_path:                   /some/path/to/output_mip.mrc
-  scaled_mip_path:            /some/path/to/output_scaled_mip.mrc
-  orientation_psi_path:       /some/path/to/output_orientation_psi.mrc
-  orientation_theta_path:     /some/path/to/output_orientation_theta.mrc
-  orientation_phi_path:       /some/path/to/output_orientation_phi.mrc
-  relative_defocus_path:      /some/path/to/output_relative_defocus.mrc
-  correlation_average_path:   /some/path/to/output_correlation_average.mrc
-  correlation_variance_path:  /some/path/to/output_correlation_variance.mrc
-</code></pre>
+<p>The next block is the <code>match_template_result</code> configuration which defines where to save match template results to disk
+Note that these paths need to be writable by the user executing the program, and the <code>match_template_result.allow_file_overwrite</code> field needs to be set to <code>true</code> if you are overwriting pre-existing result files.
+Otherwise the match template program will not proceed if the files already exist.</p>
+<div class="highlight"><pre><span></span><code><span class="nt">match_template_result</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">allow_file_overwrite</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">  </span><span class="nt">mip_path</span><span class="p">:</span><span class="w">                   </span><span class="l l-Scalar l-Scalar-Plain">/some/path/to/output_mip.mrc</span>
+<span class="w">  </span><span class="nt">scaled_mip_path</span><span class="p">:</span><span class="w">            </span><span class="l l-Scalar l-Scalar-Plain">/some/path/to/output_scaled_mip.mrc</span>
+<span class="w">  </span><span class="nt">orientation_psi_path</span><span class="p">:</span><span class="w">       </span><span class="l l-Scalar l-Scalar-Plain">/some/path/to/output_orientation_psi.mrc</span>
+<span class="w">  </span><span class="nt">orientation_theta_path</span><span class="p">:</span><span class="w">     </span><span class="l l-Scalar l-Scalar-Plain">/some/path/to/output_orientation_theta.mrc</span>
+<span class="w">  </span><span class="nt">orientation_phi_path</span><span class="p">:</span><span class="w">       </span><span class="l l-Scalar l-Scalar-Plain">/some/path/to/output_orientation_phi.mrc</span>
+<span class="w">  </span><span class="nt">relative_defocus_path</span><span class="p">:</span><span class="w">      </span><span class="l l-Scalar l-Scalar-Plain">/some/path/to/output_relative_defocus.mrc</span>
+<span class="w">  </span><span class="nt">correlation_average_path</span><span class="p">:</span><span class="w">   </span><span class="l l-Scalar l-Scalar-Plain">/some/path/to/output_correlation_average.mrc</span>
+<span class="w">  </span><span class="nt">correlation_variance_path</span><span class="p">:</span><span class="w">  </span><span class="l l-Scalar l-Scalar-Plain">/some/path/to/output_correlation_variance.mrc</span>
+</code></pre></div>
 <p>Results are saved as MRC files with positions <script type="math/tex"> (x, y) </script> corresponding to positions in the image.
 See <a href="../../data_formats/">Data Formats</a> for more information.</p>
 <h3 id="optics-group-for-micrograph-parameters">Optics group for micrograph parameters</h3>
-<p>Constructing the projective filters requires knowledge of what microscope parameters were used to collect the micrograph, namely the defocus of the image.
-These microscope parameters are collected under the <code>optics_group</code> block with the most common parameters listed below.</p>
-<pre><code class="language-yaml">optics_group:
-  label: some_label
-  voltage: 300.0
-  pixel_size: 1.06   # in Angstroms
-  defocus_u: 5200.0  # in Angstroms
-  defocus_v: 4950.0  # in Angstroms
-  astigmatism_angle: 25.0  # in degrees
-  spherical_aberration: 2.7  # in millimeters
-  amplitude_contrast_ratio: 0.07
-  ctf_B_factor: 60.0  # in Angstroms^2
-</code></pre>
-<p>Note the <code>label</code> field is currently unused, but could be integrated in the future to differentiate between multiple micrographs and/or refined optical parameters.</p>
+<p>Constructing the appropriate projective filters requires the microscope parameters used to collect the micrograph, namely the defocus of the image.
+These microscope parameters are collected under the <code>optics_group</code> block with the most commonly modified parameters listed below.</p>
+<div class="highlight"><pre><span></span><code><span class="nt">optics_group</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">label</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">some_label</span>
+<span class="w">  </span><span class="nt">voltage</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">300.0</span>
+<span class="w">  </span><span class="nt">pixel_size</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1.06</span><span class="w">   </span><span class="c1"># in Angstroms</span>
+<span class="w">  </span><span class="nt">defocus_u</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5200.0</span><span class="w">  </span><span class="c1"># in Angstroms</span>
+<span class="w">  </span><span class="nt">defocus_v</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">4950.0</span><span class="w">  </span><span class="c1"># in Angstroms</span>
+<span class="w">  </span><span class="nt">astigmatism_angle</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">25.0</span><span class="w">  </span><span class="c1"># in degrees</span>
+<span class="w">  </span><span class="nt">spherical_aberration</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2.7</span><span class="w">  </span><span class="c1"># in millimeters</span>
+<span class="w">  </span><span class="nt">amplitude_contrast_ratio</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.07</span>
+<span class="w">  </span><span class="nt">ctf_B_factor</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">60.0</span><span class="w">  </span><span class="c1"># in Angstroms^2</span>
+</code></pre></div>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>The <code>label</code> field is currently unused and can be set to any string, but may be integrated into other workflows in the future to differentiate between multiple micrograph and/or refined optical parameters.</p>
+</div>
 <h3 id="defocus-search-space-configuration">Defocus search space configuration</h3>
-<p>Defining the defocus search space is configured using the <code>defocus_search_config</code> block which defines the minimum, maximum, and step size of defocus values searched over in units of Angstroms.</p>
-<pre><code class="language-yaml">defocus_search_config:
-  defocus_max:  1200.0  # in Angstroms, relative to the defocus_u and defocus_v values
-  defocus_min: -1200.0  # in Angstroms, relative to the defocus_u and defocus_v values
-  defocus_step: 200.0   # in Angstroms
-  enabled: true
-</code></pre>
-<p>Note that these defocus values are relative to <code>optics_group.defocus_u</code> and <code>optics_group.defocus_v</code> values.
-Also, the defocus search can be turned off by changing <code>enabled: true</code> to <code>enabled: false</code>.</p>
+<p>Defining the defocus search space is configured using the <code>defocus_search_config</code> block which defines the exact relative defocus values searched over in units of Angstroms.
+For example, to search defocus values ranging across -120 to +120 nm relative to the fitted CTF defocus values in <code>optics_group</code>, use the following configuration.</p>
+<div class="highlight"><pre><span></span><code><span class="nt">defocus_search_config</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">defocus_max</span><span class="p">:</span><span class="w">  </span><span class="l l-Scalar l-Scalar-Plain">1200.0</span><span class="w">  </span><span class="c1"># in Angstroms, relative to the defocus_u and defocus_v values</span>
+<span class="w">  </span><span class="nt">defocus_min</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">-1200.0</span><span class="w">  </span><span class="c1"># in Angstroms, relative to the defocus_u and defocus_v values</span>
+<span class="w">  </span><span class="nt">defocus_step</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">200.0</span><span class="w">   </span><span class="c1"># in Angstroms</span>
+<span class="w">  </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</code></pre></div>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>The defocus search can be turned off by changed the <code>enabled</code> field from <code>true</code> to <code>false</code>. This will run the 2DTM search at a single defocus plane corresponding to the fitted CTF defocus values.</p>
+</div>
 <h3 id="orientation-search-space-configuration">Orientation search space configuration</h3>
-<p>Defining the orientation search space is configured using the <code>orientation_search_config</code> block which defines the orientation sampling parameters.
-We find that an in-plane step size of 1.5 degrees and out-of-plane step size of 2.5 degrees with a uniform base grid works well when searching for ribosomes, but other sized structures may need these parameters adjusted.
-There is also the <code>"heapix"</code> option for the <code>base_grid_method</code> field which uses the <a href="https://healpix.jpl.nasa.gov">HEALPix</a> discretization of the sphere to sample orientation space.
-Also, the underlying <a href="https://github.com/teamtomo/torch-so3">torch-so3 package</a> supports multiple particles symmetries but we are working to port that into the Leopard-EM package; currently only C1 symmetry is used.</p>
-<pre><code class="language-yaml">orientation_search_config:
-  base_grid_method: uniform
-  in_plane_step: 1.5      # in degrees
-  out_of_plane_step: 2.5  # in degrees
-
-</code></pre>
+<p>How points in orientation space (SO(3) space) are sampled is configured using the the <code>orientation_search_config</code> block.
+At its most basic, only three parameters need considered: <code>base_grid_method</code>, <code>psi_step</code>, and <code>theta_step</code>.
+The <code>uniform</code> grid sampling method uses the Hopf Fibration from the <a href="https://github.com/teamtomo/torch-so3">torch-so3 package</a> to generate a uniformly distributed set of points across SO(3) space and should be the first method you try when running a 2DTM search.
+There is also <code>healpix</code> option which uses a <a href="https://healpix.jpl.nasa.gov">HEALPix</a> discretization of the sphere to sample orientation space.</p>
+<p>The other two fields define how finely orientation space is sampled with lower angular values corresponding to a larger number of samples.
+The <code>psi_step</code> field controls how many degrees are between two consecutive <strong>in-plane</strong> rotations while <code>theta_step</code> corresponds to the step size for <strong>out-of-plane</strong> rotations.</p>
+<details class="info">
+<summary>A note on default angular sampling parameters</summary>
+<p>We have empirically found an angular sampling of <code>psi_step: 1.5</code> and <code>theta_step: 2.5</code> works well for maximizing 60S ribosomal subunit detections <em>in situ</em>. These values do not come from some underlying theory. Increasing angular sampling from these parameters in the 60S case does not lead to more particle detections, but it does raise the computational cost and 2DTM noise floor. Decreasing angular sampling leads to particle "misses" which is undesirable.</p>
+<p>If you are searching for a structure other than the 60S ribosome, then an alternate set of angular sampling parameters may work better. Finding these parameters may require some trial and error, and the search parameters must also strike a balance between computational cost, minimizing the noise floor, and maximizing sensitivity.</p>
+</details>
+<p>Below, we show the <code>orientation_search_config</code> with the above parameters</p>
+<div class="highlight"><pre><span></span><code><span class="nt">orientation_search_config</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">base_grid_method</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">uniform</span>
+<span class="w">  </span><span class="nt">psi_step</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1.5</span><span class="w">    </span><span class="c1"># in degrees</span>
+<span class="w">  </span><span class="nt">theta_step</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2.5</span><span class="w">  </span><span class="c1"># in degrees</span>
+</code></pre></div>
 <h3 id="configuring-the-pre-processing-filters">Configuring the pre-processing filters</h3>
-<p>We also include some configuration options for pre-processing Fourier filters applied to both the image and template.
-Below, we briefly discuss the parameter choices for the whitening and band-pass filters -- the two most common filter types; there are two additional pre-processing filters (phase-randomization and arbitrary curve) discussed <a href="../../examples/basic_configuration/">here</a>.
+<p>Pre-processing filters are applied to both the image and template in Fourier space.
+Below, we briefly discuss the parameter choices for the whitening and band-pass filters, the two most commonly used 2DTM filters. There are two additional pre-processing filters, phase-randomization &amp; arbitrary curve, whose configuration is discussed <a href="../../examples/01_basic_configuration/">here</a>.
 In most cases, the default values should suffice, but nevertheless the knobs to tweak how calculations are performed are included for completeness' sake.</p>
+<h4 id="whitening-filter">Whitening filter</h4>
 <p>The whitening filter, with parameters defined under <code>preprocessing_filters.whitening_filter</code>, flattens the 1D power spectrum of the image so each frequency component contributes equally to the cross-corelation; the same filter is applied to template projections.
 The whitening filter is enabled by default and necessary to compensate for the the strong low-frequency components of <em>in situ</em> cryo-EM images,<sup id="fnref:1"><a class="footnote-ref" href="#fn:1">1</a></sup> but the filter can be disabled by changing <code>enabled: true</code> to <code>enabled: false</code>.
-Changing the <code>do_power_spectrum</code> to <code>false</code> will calculate the whitening filter based on the amplitude spectrum instead of the power spectrum.
-The <code>whitening_filter.max_freq</code> field defines the maximum frequency considered (in terms of Nyquist) when calculating the whitening filter; the default of <code>0.5</code> should perform well in most cases.
+Changing the <code>do_power_spectrum</code> to <code>false</code> will calculate the whitening filter based on the amplitude spectrum instead of the power spectrum, but we don't observe a major difference when swapping this parameter.</p>
+<p>The <code>whitening_filter.max_freq</code> field defines the maximum spatial frequency considered (in terms of Nyquist) when calculating the whitening filter; the default of <code>0.5</code> should perform well in most cases.
 Similarly, keeping the default <code>num_freq_bins: null</code> will choose the number of frequency bins automatically based on input image shape.
-Values between 500-2,000 are generally good.</p>
+Values between 500-2,000 are generally good for typical cryo-EM images with ~4,000 pixels along each dimension.</p>
+<h4 id="bandpass-filter">Bandpass filter</h4>
 <p>Bandpass filtering is disabled by default but can be turned on by changing <code>enabled: false</code> to <code>enabled: true</code>.
 Note that the <code>high_freq_cutoff</code> and <code>low_freq_cutoff</code> fields are both defined in terms of the Nyquist frequency with values of <code>null</code> corresponding to no cutoff.
 For example, <code>high_freq_cutoff: 0.5</code> and <code>low_freq_cutoff: null</code> would correspond to a low-pass filter to the Nyquist frequency of the image.
-Filtering to a specific resolution in terms of Angstroms means doing some basic math to populate these fields.</p>
-<pre><code class="language-yaml">preprocessing_filters:
-  whitening_filter:
-    enabled: true
-    do_power_spectrum: true
-    max_freq: 0.5  # In terms of Nyquist frequency
-    num_freq_bins: null
-  bandpass_filter:
-    enabled: false
-    falloff: null
-    high_freq_cutoff: null  # Both high/low in terms of Nyquist frequency
-    low_freq_cutoff: null   # e.g. low-pass to 3 Å @ 1.06 Å/px would be 1.06/3 = 0.353
-</code></pre>
+Filtering to a specific resolution in terms of Angstroms means doing some math before populating the fields.</p>
+<div class="highlight"><pre><span></span><code><span class="nt">preprocessing_filters</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">whitening_filter</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">    </span><span class="nt">do_power_spectrum</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">    </span><span class="nt">max_freq</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.5</span><span class="w">  </span><span class="c1"># In terms of Nyquist frequency</span>
+<span class="w">    </span><span class="nt">num_freq_bins</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">null</span>
+<span class="w">  </span><span class="nt">bandpass_filter</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
+<span class="w">    </span><span class="nt">falloff</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">null</span>
+<span class="w">    </span><span class="nt">high_freq_cutoff</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">null</span><span class="w">  </span><span class="c1"># Both high/low in terms of Nyquist frequency</span>
+<span class="w">    </span><span class="nt">low_freq_cutoff</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">null</span><span class="w">   </span><span class="c1"># e.g. low-pass to 3 Å @ 1.06 Å/px would be 1.06/3 = 0.353</span>
+</code></pre></div>
 <h3 id="configuring-gpus-for-a-match-template-run">Configuring GPUs for a match template run</h3>
 <p>The final block of the match template configuration file is used to choose which GPUs will run on.
-The <code>num_cpus</code> field can currently be ignored and just set to <code>1</code>.
+The <code>num_cpus</code> field can currently be ignored and just set to <code>1</code>; this may be updated in the future to correspond to the number of CPU threads the search runs on.
 The <code>gpu_ids</code> field is a list of integers defining which GPU device index(s) the program will target.
-Configuring the search to be run on the first two GPUs is shown below.</p>
-<pre><code class="language-yaml">computational_config:
-  gpu_ids:
-  - 0
-  - 1
-  num_cpus: 1
-</code></pre>
+The example below will distribute work equally between the zeroth and first GPU device which need discoverable by PyTorch.</p>
+<div class="highlight"><pre><span></span><code><span class="nt">computational_config</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">gpu_ids</span><span class="p">:</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0</span>
+<span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
+<span class="w">  </span><span class="nt">num_cpus</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span><span class="w">  </span><span class="c1"># Currently unused</span>
+</code></pre></div>
+<div class="admonition warning">
+<p class="admonition-title">RuntimeError: CUDA error: invalid device ordinal</p>
+<p>If you encounter the error <code>RuntimeError: CUDA error: invalid device ordinal</code>, then you've probably listed more GPU devices than are on your machine!
+Check how many GPUs you have (for example with <code>nvidia-smi</code>) and update the <code>gpu_ids</code> field accordingly.</p>
+</div>
 <h2 id="running-the-match-template-program">Running the match template program</h2>
 <p>Once you've configured a YAML file, running the match template program is fairly simple.
-We have an example script, <a href="https://github.com/Lucaslab-Berkeley/Leopard-EM/blob/main/src/programs/match_template.py"><code>src/programs/match_template.py</code></a>, which processes a single micrograph against a single reference template.
-Again, you will need to simulate a 3D electron scattering potential from a PDB file (for example with the <a href="https://github.com/teamtomo/ttsim3d">ttsim3d</a> package) before running the script.</p>
+We have an example script, <a href="https://github.com/Lucaslab-Berkeley/Leopard-EM/blob/main/programs/match_template/run_match_template.py"><code>Leopard-EM/programs/run_match_template.py</code></a>, which processes a single micrograph against a single reference template.
+In addition to the YAML configuration path, there are the additional constant variables <code>DATAFRAME_OUTPUT_PATH</code> and <code>ORIENTATION_BATCH_SIZE</code> listed near the top of the Python script.
+The latter variable should be adjusted based on available GPU memory while the former defines where an output csv file containing located particles should be saved.</p>
+<p>We have not specified any arguments in the line 54 of this script: <code>df = mt_manager.results_to_dataframe()</code>.
+You can have more control over the peak extraction by specifying a <code>locate_peak_kwargs</code> dictionary which can control the desired number of false positives in the search or pick particles given a pre-defined z-score cutoff.
+For example,</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Select peaks bases on a number of false positives</span>
+<span class="n">df</span> <span class="o">=</span> <span class="n">mt_manager</span><span class="o">.</span><span class="n">results_to_dataframe</span><span class="p">(</span><span class="n">locate_peaks_kwargs</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;false_positives&quot;</span><span class="p">:</span> <span class="mf">1.0</span><span class="p">})</span>
+
+
+<span class="c1"># Uses a pre-defined z-score cutoff for peak calling</span>
+<span class="n">df</span> <span class="o">=</span> <span class="n">mt_manager</span><span class="o">.</span><span class="n">results_to_dataframe</span><span class="p">(</span><span class="n">locate_peaks_kwargs</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;z_score_cutoff&quot;</span><span class="p">:</span> <span class="mf">7.8</span><span class="p">})</span>
+</code></pre></div>
+<p>Currently, Leopard-EM uses a false-positive rate of 1 per micrograph by default to differentiate between true particles and background.</p>
 <h3 id="match-template-output-files">Match template output files</h3>
-<p>The above script will output the statistics maps over the image for the search as well as a Pandas DataFrame with compacted information on found particles.
+<p>The provided program script will output the statistics maps over the image for the search as well as a Pandas DataFrame with compacted information on found particles.
 These data can be passed onto downstream analysis, for example the refine template program.
-More detail about these data is on the <a href="../../data_formats/">data formats page</a>.</p>
+More detail about these data and their formats is on the <a href="../../data_formats/">Leopard-EM data formats page</a>.</p>
 <h2 id="mathematical-description">Mathematical description</h2>
-<p>Described succinctly using mathematics, the match template constructs the orientational search space, <script type="math/tex"> \mathbf{R} = \{ R_1, R_2, \dots, R_n\} </script>, and relative defocus search space, <script type="math/tex"> \mathbf{Q} = \{ \Delta f_1, \Delta f_2, \dots, \Delta f_m\} </script>, to generate the CTF-convolved projections searched over:</p>
+<p>Described succinctly using mathematics, the match template constructs the orientational search space, <script type="math/tex"> \mathbf{R} = \{ R_1, R_2, \dots, R_n\} </script>, and relative defocus search space, <script type="math/tex"> \mathbf{Q} = \{ \Delta f_1, \Delta f_2, \dots, \Delta f_m\} </script>, to generate the CTF-convolved projections of a reference template:</p>
 <p>
 <script type="math/tex; mode=display">
 \mathbf{P} = \mathbf{Q} \times \mathbf{R} = \{ p_{11}, \dots, p_{n1}, \dots, p_{nm} \}
 </script>
 </p>
-<p>The "best" projection, based on cross-correlation with the cryo-EM image <script type="math/tex"> I </script>, is found,</p>
+<p>The "best" projection, based on cross-correlation with the cryo-EM image <script type="math/tex"> I </script> (which is the same shape as the projection), is found,</p>
 <p>
 <script type="math/tex; mode=display">
 \begin{align}
-    \tilde{p}_{ij} = \argmax_{p \in \mathbf{P}} \left(p \cdot I \right)
+    \tilde{p}_{ij} = \text{argmax}_{p \in \mathbf{P}} \left(p \cdot I \right)
 \end{align}
 </script>
 </p>
 <p>where the indexes <script type="math/tex"> i </script> and <script type="math/tex"> j </script> correspond to the orientation and relative defocus which generated the "best" projection.
 Orientations of the best projection are returned as Euler angles <script type="math/tex"> (\phi, \theta, \psi) </script> in the ZYZ format.
-Note that this search is done simultaneous for all positions,  <script type="math/tex"> (x, y) </script> within the image using the convolution theorem, but here we focus on a single location in the image.
-The match template program also returns the Maximum Intensity Projection (MIP) which is the cross-correlation score of the best projection as well as a z-score on a per-pixel level.</p>
+Note that in practice, this search is done simultaneous for all positions, <script type="math/tex"> (x, y) </script>, within an image much larger than the projection using the convolution theorem, but here we focus on a single location in the image.</p>
+<p>The match template program also returns the Maximum Intensity Projection (MIP) which is the cross-correlation score of the best projection as well as a z-score (also called "scaled mip") on a per-pixel level.</p>
 <p>
 <script type="math/tex; mode=display">
 \begin{align}
@@ -828,7 +2201,7 @@ The match template program also returns the Maximum Intensity Projection (MIP) w
 \end{align}
 </script>
 </p>
-<p>There are other steps, namely Fourier filtering, which are discussed further in the theory portion of the documentation.</p>
+<p>There are other steps, namely Fourier filtering, which will be discussed in a later theory section of the documentation.</p>
 <div class="footnote">
 <hr />
 <ol>
