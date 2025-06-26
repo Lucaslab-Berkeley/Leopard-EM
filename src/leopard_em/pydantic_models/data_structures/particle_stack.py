@@ -311,7 +311,7 @@ class ParticleStack(BaseModel2DTM):
 
     def construct_image_stack(
         self,
-        pos_reference: Literal["center", "top-left"] = "center",
+        pos_reference: Literal["center", "top-left"] = "top-left",
         handle_bounds: Literal["pad", "error"] = "pad",
         padding_mode: Literal["constant", "reflect", "replicate"] = "constant",
         padding_value: float = 0.0,
@@ -325,9 +325,12 @@ class ParticleStack(BaseModel2DTM):
         Parameters
         ----------
         pos_reference : Literal["center", "top-left"], optional
-            The reference point for the positions, by default "center". If "center", the
-            boxes extracted will be image[y - box_size // 2 : y + box_size // 2, ...].
+            The reference point for the positions, by default "top-left". If "center",
+            the boxes extracted will be
+            image[y - box_size // 2 : y + box_size // 2, ...].
             If "top-left", the boxes will be image[y : y + box_size, ...].
+            Leopard-EM uses the "top-left" reference position, and unless you know data
+            was processed in a different way you should not change this value.
         handle_bounds : Literal["pad", "clip", "error"], optional
             How to handle the bounds of the image, by default "pad". If "pad", the image
             will be padded with the padding value based on the padding mode. If "error",
@@ -405,7 +408,7 @@ class ParticleStack(BaseModel2DTM):
             "theta",
             "phi",
         ],
-        pos_reference: Literal["center", "top-left"] = "center",
+        pos_reference: Literal["center", "top-left"] = "top-left",
         handle_bounds: Literal["pad", "error"] = "pad",
         padding_mode: Literal["constant", "reflect", "replicate"] = "constant",
         padding_value: float = 0.0,
@@ -421,9 +424,14 @@ class ParticleStack(BaseModel2DTM):
             "correlation_variance", "defocus", "psi", "theta", "phi"]
             The statistic to extract from the DataFrame.
         pos_reference : Literal["center", "top-left"], optional
-            The reference point for the positions, by default "center". If "center", the
-            boxes extracted will be image[y - box_size // 2 : y + box_size // 2, ...].
-            If "top-left", the boxes will be image[y : y + box_size, ...].
+            The reference point for the positions, by default "top-left". If "center",
+            the boxes extracted will be
+            image[y - (box_size - orig_template_size) // 2 :
+                  y + (box_size - orig_template_size // 2, ...].
+            If "top-left", the boxes will be
+            image[y : y + box_size - orig_template_size, ...].
+            Leopard-EM uses the "top-left" reference position, and unless you know data
+            was processed in a different way you should not change this value.
         handle_bounds : Literal["pad", "clip", "error"], optional
             How to handle the bounds of the image, by default "pad". If "pad", the image
             will be padded with the padding value based on the padding mode. If "error",
@@ -438,7 +446,6 @@ class ParticleStack(BaseModel2DTM):
         padding_value : float, optional
             The value to use for padding when `padding_mode` is "constant", by default
             0.0.
-
 
         Returns
         -------
