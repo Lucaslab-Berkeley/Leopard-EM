@@ -3,6 +3,7 @@
 # Following pylint error ignored because torc.fft.* is not recognized as callable
 # pylint: disable=E1102
 
+import math
 from multiprocessing import set_start_method
 
 import roma
@@ -346,7 +347,7 @@ def _core_match_template_single_gpu(
     ### Setup iterator object with tqdm for progress bar ###
     ########################################################
 
-    num_batches = euler_angles.shape[0] // orientation_batch_size
+    num_batches = math.ceil(euler_angles.shape[0] / orientation_batch_size)
     orientation_batch_iterator = tqdm.tqdm(
         range(num_batches),
         desc=f"Progress on device: {device.index}",

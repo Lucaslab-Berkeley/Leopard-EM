@@ -3,6 +3,7 @@
 # Following pylint error ignored because torc.fft.* is not recognized as callable
 # pylint: disable=E1102
 
+import math
 from typing import Literal
 
 import roma
@@ -607,7 +608,7 @@ def _core_refine_template_single_thread(
     combined_projective_filter = projective_filter[None, None, ...] * ctf_filters
 
     # Iterate over the Euler angle offsets in batches
-    num_batches = euler_angle_offsets.shape[0] // orientation_batch_size
+    num_batches = math.ceil(euler_angle_offsets.shape[0] / orientation_batch_size)
 
     tqdm_iter = tqdm.tqdm(
         range(num_batches),
