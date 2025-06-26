@@ -296,6 +296,10 @@ def _core_match_template_single_gpu(
     device = image_dft.device
     image_shape_real = (image_dft.shape[0], image_dft.shape[1] * 2 - 2)  # adj. for RFFT
 
+    # TODO: Add own parameter controlling the number of streams
+    streams = [torch.cuda.Stream(device=device) for _ in range(orientation_batch_size)]
+    # events = [torch.cuda.Event() for _ in range(orientation_batch_size)]
+
     ################################################
     ### Initialize the tracked output statistics ###
     ################################################
@@ -378,6 +382,7 @@ def _core_match_template_single_gpu(
             template_dft=template_dft,
             rotation_matrices=rot_matrix,
             projective_filters=projective_filters,
+            streams=streams,
         )
 
         # Update the tracked statistics through compiled function
@@ -422,6 +427,7 @@ def _do_bached_orientation_cross_correlate(
     template_dft: torch.Tensor,
     rotation_matrices: torch.Tensor,
     projective_filters: torch.Tensor,
+    streams: list[torch.cuda.Stream],
 ) -> torch.Tensor:
     """Batched projection and cross-correlation with fixed (batched) filters.
 
@@ -443,6 +449,9 @@ def _do_bached_orientation_cross_correlate(
     projective_filters : torch.Tensor
         Multiplied 'ctf_filters' with 'whitening_filter_template'. Has shape
         (defocus_batch, h, w // 2 + 1). Is RFFT and not fftshifted.
+    streams : list[torch.cuda.Stream]
+        List of CUDA streams to use for parallel computation. Each stream will
+        handle a separate cross-correlation
 
     Returns
     -------
@@ -455,37 +464,89 @@ def _do_bached_orientation_cross_correlate(
     projection_shape_real = (template_dft.shape[1], template_dft.shape[2] * 2 - 2)
     image_shape_real = (image_dft.shape[0], image_dft.shape[1] * 2 - 2)
 
-    # Extract central slice(s) from the template volume
-    fourier_slice = extract_central_slices_rfft_3d(
-        volume_rfft=template_dft,
-        image_shape=(projection_shape_real[0],) * 3,  # NOTE: requires cubic template
-        rotation_matrices=rotation_matrices,
-    )
-    fourier_slice = torch.fft.ifftshift(fourier_slice, dim=(-2,))
-    fourier_slice[..., 0, 0] = 0 + 0j  # zero out the DC component (mean zero)
-    fourier_slice *= -1  # flip contrast
+    num_orientations = rotation_matrices.shape[0]
+    num_Cs = projective_filters.shape[0]
+    num_defocus = projective_filters.shape[1]
 
-    # Apply the projective filters on a new batch dimension
-    fourier_slice = fourier_slice[None, None, ...] * projective_filters[:, :, None, ...]
-    # Inverse Fourier transform into real space and normalize
-    projections = torch.fft.irfftn(fourier_slice, dim=(-2, -1))
-    projections = torch.fft.ifftshift(projections, dim=(-2, -1))
-    projections = normalize_template_projection_compiled(
-        projections,
-        projection_shape_real,
-        image_shape_real,
+    cross_correlation = torch.empty(
+        size=(num_Cs, num_defocus, num_orientations) + image_shape_real,
+        dtype=DEFAULT_STATISTIC_DTYPE,
+        device=image_dft.device,
     )
 
-    # Padded forward Fourier transform for cross-correlation
-    projections_dft = torch.fft.rfftn(projections, dim=(-2, -1), s=image_shape_real)
-    projections_dft[..., 0, 0] = 0 + 0j  # zero out the DC component (mean zero)
+    # Iterate over the orientations
+    for i in range(num_orientations):
+        # Use the streams to parallelize the computation
+        stream = streams[i % len(streams)]
+        with torch.cuda.stream(stream):
+            fourier_slice = extract_central_slices_rfft_3d(
+                volume_rfft=template_dft,
+                image_shape=(projection_shape_real[0],) * 3,
+                rotation_matrices=rotation_matrices[i],
+            )
+            fourier_slice[0, 0] = 0 + 0j  # zero out the DC component (mean zero)
+            fourier_slice *= -1  # flip contrast
+            
+            # Iterate over the different pixel sizes (Cs) and defocus values for this
+            # particular orientation
+            for j in range(num_defocus):
+                for k in range(num_Cs):
+                    fourier_slice_filtered = fourier_slice * projective_filters[k, j]
+                    projection = torch.fft.irfft2(fourier_slice_filtered)
+                    projection = torch.fft.ifftshift(projection, dim=(-2, -1))
+                    projection = normalize_template_projection_compiled(
+                        projection,
+                        projection_shape_real,
+                        image_shape_real,
+                    )
+                    
+                    # Padded forward Fourier transform for cross-correlation
+                    projection_dft = torch.fft.rfft2(projection, s=image_shape_real)
+                    projection_dft[0, 0] = 0 + 0j  # zero out the DC component (mean zero)
+                    
+                    # Cross correlation step by element-wise multiplication
+                    projection_dft = image_dft * projection_dft.conj()
+                    # tmp = torch.fft.irfft2(projection_dft, s=image_shape_real)
+                    torch.fft.irfft2(projection_dft, s=image_shape_real, out=cross_correlation[k, j, i])
+                    
+    # Wait for all streams to finish
+    for stream in streams:
+        stream.synchronize()
 
-    # Cross correlation step by element-wise multiplication
-    projections_dft = image_dft[None, None, None, ...] * projections_dft.conj()
-    cross_correlation = torch.fft.irfftn(projections_dft, dim=(-2, -1))
-
-    # shape is (n_Cs n_defoc n_orientations, H, W)
     return cross_correlation
+
+
+    # # Extract central slice(s) from the template volume
+    # fourier_slice = extract_central_slices_rfft_3d(
+    #     volume_rfft=template_dft,
+    #     image_shape=(projection_shape_real[0],) * 3,  # NOTE: requires cubic template
+    #     rotation_matrices=rotation_matrices,
+    # )
+    # fourier_slice = torch.fft.ifftshift(fourier_slice, dim=(-2,))
+    # fourier_slice[..., 0, 0] = 0 + 0j  # zero out the DC component (mean zero)
+    # fourier_slice *= -1  # flip contrast
+
+    # # Apply the projective filters on a new batch dimension
+    # fourier_slice = fourier_slice[None, None, ...] * projective_filters[:, :, None, ...]
+    # # Inverse Fourier transform into real space and normalize
+    # projections = torch.fft.irfftn(fourier_slice, dim=(-2, -1))
+    # projections = torch.fft.ifftshift(projections, dim=(-2, -1))
+    # projections = normalize_template_projection_compiled(
+    #     projections,
+    #     projection_shape_real,
+    #     image_shape_real,
+    # )
+
+    # # Padded forward Fourier transform for cross-correlation
+    # projections_dft = torch.fft.rfftn(projections, dim=(-2, -1), s=image_shape_real)
+    # projections_dft[..., 0, 0] = 0 + 0j  # zero out the DC component (mean zero)
+
+    # # Cross correlation step by element-wise multiplication
+    # projections_dft = image_dft[None, None, None, ...] * projections_dft.conj()
+    # cross_correlation = torch.fft.irfftn(projections_dft, dim=(-2, -1))
+
+    # # shape is (num_Cs, num_defocus, num_orientations, H, W)
+    # return cross_correlation
 
 
 def _do_bached_orientation_cross_correlate_cpu(
