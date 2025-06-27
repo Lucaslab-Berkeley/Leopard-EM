@@ -126,7 +126,7 @@ All these parameters are discussed in more detail on the [match template program
 ### Configuring GPUs for a match template run
 
 Template refinement can run across multiple GPUs and is controlled in the same way as match template.
-Note that the `num_cpus` field is currently unused and can just be set to one.
+Note that the `num_cpus` field is currently unused for the refine template program and can just be set to one.
 Like [configuring GPUs for a match template run](match_template.md#configuring-gpus-for-a-match-template-run), GPUs are targeted by their device index.
 The following configuration will run `refine_template` on GPU zero.
 

@@ -637,11 +637,14 @@ def _core_refine_template_single_thread(
 
         # Calculate the cross-correlation
         if particle_image_dft.device.type == "cuda":
+            # NOTE: Here we are setting to only a single stream, but this can easily
+            # be extended to multiple streams if needed.
             cross_correlation = _do_bached_orientation_cross_correlate(
                 image_dft=particle_image_dft,
                 template_dft=template_dft,
                 rotation_matrices=rot_matrix_batch,
                 projective_filters=combined_projective_filter,
+                streams=[torch.cuda.Stream(device=particle_image_dft.device)],
             )
         else:
             cross_correlation = _do_bached_orientation_cross_correlate_cpu(
@@ -656,7 +659,10 @@ def _core_refine_template_single_thread(
         # Scale cross_correlation to be "z-score"-like
         z_score = (cross_correlation - corr_mean) / corr_std
 
-        # shape xc is (Npx, Ndefoc, Norientations, y, x)
+        # shape xc is (num_Cs, num_defocus, num_orientations, y, x)
+        # where num_Cs is the number of different pixel size offsets,
+        # num_defocus is the number of defocus offsets,
+        # and num_orientations is the number of Euler angle offsets.
         # Update the best refined statistics (only if max is greater than previous)
         if z_score.max() > max_z_score:
             max_cc = cross_correlation.max()
