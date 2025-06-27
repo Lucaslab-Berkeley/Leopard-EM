@@ -511,7 +511,7 @@ def _do_bached_orientation_cross_correlate(
     image_shape_real = (image_dft.shape[0], image_dft.shape[1] * 2 - 2)
 
     num_orientations = rotation_matrices.shape[0]
-    num_Cs = projective_filters.shape[0]
+    num_Cs = projective_filters.shape[0]  # pylint: disable=invalid-name
     num_defocus = projective_filters.shape[1]
 
     cross_correlation = torch.empty(
