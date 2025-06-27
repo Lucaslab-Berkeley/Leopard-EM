@@ -45,7 +45,7 @@ class ComputationalConfig(BaseModel):
             Annotated[list[str], Field(min_length=1)],
         ]
     ] = [0]
-    num_cpus: NonNegativeInt = 1
+    num_cpus: Annotated[int, Field(ge=1)] = 1
 
     @property
     def gpu_devices(self) -> list[torch.device]:

@@ -161,8 +161,10 @@ preprocessing_filters:
 ### Configuring GPUs for a match template run
 
 The final block of the match template configuration file is used to choose which GPUs will run on.
-The `num_cpus` field can currently be ignored and just set to `1`; this may be updated in the future to correspond to the number of CPU threads the search runs on.
+The `num_cpus` field is used to control how many concurrent streams the `match_template` program will run on for each device.
+Values between 1 and 8 are generally advised, but mileage may vary on your system.
 The `gpu_ids` field is a list of integers defining which GPU device index(s) the program will target.
+A value of `gpu_ids: "all"` is a special case which will target all GPUs on the machine (note that only single-node execution is currently supported).
 The example below will distribute work equally between the zeroth and first GPU device which need discoverable by PyTorch.
 
 ```yaml
@@ -170,7 +172,7 @@ computational_config:
   gpu_ids:
   - 0
   - 1
-  num_cpus: 1  # Currently unused
+  num_cpus: 4  # 4 streams x 2 devices = 8 total streams
 ```
 
 !!! warning "RuntimeError: CUDA error: invalid device ordinal"

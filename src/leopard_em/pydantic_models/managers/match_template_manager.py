@@ -234,7 +234,9 @@ class MatchTemplateManager(BaseModel2DTM):
         """
         core_kwargs = self.make_backend_core_function_kwargs()
         results = core_match_template(
-            **core_kwargs, orientation_batch_size=orientation_batch_size
+            **core_kwargs,
+            orientation_batch_size=orientation_batch_size,
+            num_cuda_streams=self.computational_config.num_cpus,
         )
 
         # Place results into the `MatchTemplateResult` object and save it.
