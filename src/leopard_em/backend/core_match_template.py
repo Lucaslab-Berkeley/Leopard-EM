@@ -494,7 +494,7 @@ def _do_bached_orientation_cross_correlate(
         (num_orientations, 3, 3).
     projective_filters : torch.Tensor
         Multiplied 'ctf_filters' with 'whitening_filter_template'. Has shape
-        (num_Cs, num_defocus h, w // 2 + 1). Is RFFT and not fftshifted.
+        (num_Cs, num_defocus, h, w // 2 + 1). Is RFFT and not fftshifted.
     streams : list[torch.cuda.Stream]
         List of CUDA streams to use for parallel computation. Each stream will
         handle a separate cross-correlation.
