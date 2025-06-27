@@ -359,6 +359,7 @@ def _core_match_template_single_gpu(
         total=num_batches,
         dynamic_ncols=True,
         position=device.index,
+        mininterval=1,  # Slow down to reduce number of lines written
     )
 
     total_projections = (
@@ -474,19 +475,23 @@ def _do_bached_orientation_cross_correlate(
         device=image_dft.device,
     )
 
+    # Do a batched Fourier slice extraction for all the orientations at once.
+    fourier_slices = extract_central_slices_rfft_3d(
+        volume_rfft=template_dft,
+        image_shape=(projection_shape_real[0],) * 3,
+        rotation_matrices=rotation_matrices,
+    )
+    fourier_slices = torch.fft.ifftshift(fourier_slices, dim=(-2,))
+    fourier_slices[..., 0, 0] = 0 + 0j  # zero out the DC component (mean zero)
+    fourier_slices *= -1  # flip contrast
+
     # Iterate over the orientations
     for i in range(num_orientations):
-        # Use the streams to parallelize the computation
+        # Use the streams to expose more parallelism
         stream = streams[i % len(streams)]
         with torch.cuda.stream(stream):
-            fourier_slice = extract_central_slices_rfft_3d(
-                volume_rfft=template_dft,
-                image_shape=(projection_shape_real[0],) * 3,
-                rotation_matrices=rotation_matrices[i],
-            )
-            fourier_slice[0, 0] = 0 + 0j  # zero out the DC component (mean zero)
-            fourier_slice *= -1  # flip contrast
-            
+            fourier_slice = fourier_slices[i]
+
             # Iterate over the different pixel sizes (Cs) and defocus values for this
             # particular orientation
             for j in range(num_defocus):
@@ -499,22 +504,24 @@ def _do_bached_orientation_cross_correlate(
                         projection_shape_real,
                         image_shape_real,
                     )
-                    
+
                     # Padded forward Fourier transform for cross-correlation
                     projection_dft = torch.fft.rfft2(projection, s=image_shape_real)
-                    projection_dft[0, 0] = 0 + 0j  # zero out the DC component (mean zero)
-                    
+                    projection_dft[0, 0] = 0 + 0j
+
                     # Cross correlation step by element-wise multiplication
                     projection_dft = image_dft * projection_dft.conj()
-                    # tmp = torch.fft.irfft2(projection_dft, s=image_shape_real)
-                    torch.fft.irfft2(projection_dft, s=image_shape_real, out=cross_correlation[k, j, i])
-                    
+                    torch.fft.irfft2(
+                        projection_dft,
+                        s=image_shape_real,
+                        out=cross_correlation[k, j, i],
+                    )
+
     # Wait for all streams to finish
     for stream in streams:
         stream.synchronize()
 
     return cross_correlation
-
 
     # # Extract central slice(s) from the template volume
     # fourier_slice = extract_central_slices_rfft_3d(
