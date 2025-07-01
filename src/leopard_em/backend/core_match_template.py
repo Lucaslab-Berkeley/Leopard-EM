@@ -396,6 +396,10 @@ def _core_match_template_single_gpu(
     ### Setup iterator object with tqdm for progress bar ###
     ########################################################
 
+    total_projections = (
+        euler_angles.shape[0] * defocus_values.shape[0] * pixel_values.shape[0]
+    )
+
     num_batches = math.ceil(euler_angles.shape[0] / orientation_batch_size)
     orientation_batch_iterator = tqdm.tqdm(
         range(num_batches),
@@ -405,10 +409,9 @@ def _core_match_template_single_gpu(
         dynamic_ncols=True,
         position=device.index,
         mininterval=1,  # Slow down to reduce number of lines written
-    )
-
-    total_projections = (
-        euler_angles.shape[0] * defocus_values.shape[0] * pixel_values.shape[0]
+        smoothing=0.05,
+        unit="corr",
+        unit_scale=total_projections / num_batches,
     )
 
     ##################################

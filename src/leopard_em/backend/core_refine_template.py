@@ -409,6 +409,8 @@ def _core_refine_template_single_gpu(
         leave=True,
         position=device_id,
         dynamic_ncols=True,
+        unit="particle",
+        smoothing=0.1,
     )
 
     # Iterate over each particle in the stack to get the refined statistics
@@ -620,7 +622,10 @@ def _core_refine_template_single_thread(
     combined_projective_filter = projective_filter[None, None, ...] * ctf_filters
 
     # Iterate over the Euler angle offsets in batches
+    # The tqdm iterator is over batches, but we want to report cross-correlations/sec.
+    # We therefore scale by the number of cross-correlations per batch.
     num_batches = math.ceil(euler_angle_offsets.shape[0] / batch_size)
+    cross_corr_per_batch = len(defocus_offsets) * len(pixel_size_offsets) * batch_size
 
     tqdm_iter = tqdm.tqdm(
         range(num_batches),
@@ -628,6 +633,8 @@ def _core_refine_template_single_thread(
         desc=f"Refining particle {particle_index} on device {device_id}",
         leave=False,
         position=device_id + torch.cuda.device_count(),
+        unit="corr",
+        unit_scale=cross_corr_per_batch,
     )
 
     for i in tqdm_iter:
