@@ -9,6 +9,7 @@ from leopard_em.backend.utils import (
 )
 
 
+# pylint: disable=too-many-locals,E1102
 def do_streamed_orientation_cross_correlate(
     image_dft: torch.Tensor,
     template_dft: torch.Tensor,
@@ -121,6 +122,7 @@ def do_streamed_orientation_cross_correlate(
     return cross_correlation
 
 
+# pylint: disable=E1102
 def do_batched_orientation_cross_correlate(
     image_dft: torch.Tensor,
     template_dft: torch.Tensor,
@@ -216,6 +218,7 @@ def do_batched_orientation_cross_correlate(
     return cross_correlation
 
 
+# pylint: disable=E1102
 def do_batched_orientation_cross_correlate_cpu(
     image_dft: torch.Tensor,
     template_dft: torch.Tensor,
