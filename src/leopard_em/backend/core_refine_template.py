@@ -11,9 +11,9 @@ import torch
 import tqdm
 from torch_fourier_slice import extract_central_slices_rfft_3d
 
-from leopard_em.backend.core_match_template import (
-    _do_batched_orientation_cross_correlate,
-    _do_batched_orientation_cross_correlate_cpu,
+from leopard_em.backend.cross_correlation import (
+    do_batched_orientation_cross_correlate,
+    do_batched_orientation_cross_correlate_cpu,
 )
 from leopard_em.backend.utils import (
     normalize_template_projection,
@@ -658,14 +658,14 @@ def _core_refine_template_single_thread(
         if particle_image_dft.device.type == "cuda":
             # NOTE: Here we are setting to only a single stream, but this can easily
             # be extended to multiple streams if needed.
-            cross_correlation = _do_batched_orientation_cross_correlate(
+            cross_correlation = do_batched_orientation_cross_correlate(
                 image_dft=particle_image_dft,
                 template_dft=template_dft,
                 rotation_matrices=rot_matrix_batch,
                 projective_filters=combined_projective_filter,
             )
         else:
-            cross_correlation = _do_batched_orientation_cross_correlate_cpu(
+            cross_correlation = do_batched_orientation_cross_correlate_cpu(
                 image_dft=particle_image_dft,
                 template_dft=template_dft,
                 rotation_matrices=rot_matrix_batch,

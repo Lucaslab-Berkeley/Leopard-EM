@@ -3,12 +3,12 @@
 We currently have three main methods for cross-correlation, each which perform better/
 worse depending on the specifics of the image shape, template shape, search space size,
 etc:
-  - _do_streamed_orientation_cross_correlate: Computes a grid of 2D cross-correlations
+  - do_streamed_orientation_cross_correlate: Computes a grid of 2D cross-correlations
     each over a different CUDA stream (all cross-correlations are 2D, but many
     different correlations are computed).
-  - _do_batched_orientation_cross_correlate: Computes a grid of 2D cross-correlations
+  - do_batched_orientation_cross_correlate: Computes a grid of 2D cross-correlations
     in sets of batches based on number of orientations all on the same CUDA stream.
-  - _do_batched_orientation_cross_correlate_cpu: CPU version of the batched
+  - do_batched_orientation_cross_correlate_cpu: CPU version of the batched
     cross-correlation (does not use compiled torch functions).
 
 Although the execution model of these three methods are different, the should all return
@@ -23,9 +23,9 @@ import torch
 from scipy.ndimage import gaussian_filter
 from torch_fourier_filter.ctf import calculate_ctf_2d
 
-from leopard_em.backend.core_match_template import (
-    _do_batched_orientation_cross_correlate,
-    _do_streamed_orientation_cross_correlate,
+from leopard_em.backend.cross_correlation import (
+    do_batched_orientation_cross_correlate,
+    do_streamed_orientation_cross_correlate,
 )
 from leopard_em.pydantic_models.utils import get_cs_range
 
@@ -107,8 +107,8 @@ def test_stream_and_batch_cross_correlate_consistency(sample_input_data):
     """Test that the streamed and batched cross-correlation methods return the same."""
     cross_correlate_kwargs = sample_input_data
 
-    batched_result = _do_batched_orientation_cross_correlate(**cross_correlate_kwargs)
-    streamed_result = _do_streamed_orientation_cross_correlate(
+    batched_result = do_batched_orientation_cross_correlate(**cross_correlate_kwargs)
+    streamed_result = do_streamed_orientation_cross_correlate(
         streams=[torch.cuda.Stream() for _ in range(NUM_STREAMS)],
         **cross_correlate_kwargs,
     )
