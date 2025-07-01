@@ -309,6 +309,12 @@ class ParticleStack(BaseModel2DTM):
 
         self._df = tmp_df
 
+    def _get_position_reference_columns(self) -> tuple[str, str]:
+        """Get the position reference columns based on the DataFrame."""
+        y_col = "refined_pos_y" if "refined_pos_y" in self._df.columns else "pos_y"
+        x_col = "refined_pos_x" if "refined_pos_x" in self._df.columns else "pos_x"
+        return y_col, x_col
+
     def construct_image_stack(
         self,
         pos_reference: Literal["center", "top-left"] = "top-left",
@@ -318,9 +324,9 @@ class ParticleStack(BaseModel2DTM):
     ) -> torch.Tensor:
         """Construct stack of images from the DataFrame (updates image_stack in-place).
 
-        This method preferentially selects refined position columns (refined_pos_x_img,
-        refined_pos_y_img) if they are present in the DataFrame, falling back to
-        unrefined positions (pos_x_img, pos_y_img) otherwise.
+        This method preferentially selects refined position columns by default
+        (refined_pos_x, refined_pos_y) if they are present in the DataFrame, falling
+        back to unrefined positions (pos_x, pos_y) otherwise.
 
         Parameters
         ----------
@@ -328,6 +334,8 @@ class ParticleStack(BaseModel2DTM):
             The reference point for the positions, by default "top-left". If "center",
             the boxes extracted will be
             image[y - box_size // 2 : y + box_size // 2, ...].
+            Columns in the dataframe which are used as position references are always
+            pos_x and pos_y, or refined_pos_x and refined_pos_y if available.
             If "top-left", the boxes will be image[y : y + box_size, ...].
             Leopard-EM uses the "top-left" reference position, and unless you know data
             was processed in a different way you should not change this value.
@@ -351,6 +359,9 @@ class ParticleStack(BaseModel2DTM):
         torch.Tensor
             The stack of images, this is the internal 'image_stack' attribute.
         """
+        # Determine which position columns to use (refined if available)
+        y_col, x_col = self._get_position_reference_columns()
+
         # Create an empty tensor to store the image stack
         image_stack = torch.zeros((self.num_particles, *self.extracted_box_size))
 
@@ -361,21 +372,17 @@ class ParticleStack(BaseModel2DTM):
         for img_path, indexes in image_index_groups.items():
             img = load_mrc_image(img_path)
 
-            # with reference to center pixel
-            # Determine which position columns to use (refined if available)
-            y_col = (
-                "refined_pos_y_img"
-                if "refined_pos_y_img" in self._df.columns
-                else "pos_y_img"
-            )
-            x_col = (
-                "refined_pos_x_img"
-                if "refined_pos_x_img" in self._df.columns
-                else "pos_x_img"
-            )
-
             pos_y = self._df.loc[indexes, y_col].to_numpy()
             pos_x = self._df.loc[indexes, x_col].to_numpy()
+
+            # NOTE: If using "top-left" reference, we need to shift both x and y
+            # by half the different of the original template shape and extracted box
+            # so that the padding around the particle is symmetric.
+            if pos_reference == "top-left":
+                h, w = self.original_template_size
+                box_h, box_w = self.extracted_box_size
+                pos_y -= (box_h - h) // 2
+                pos_x -= (box_w - w) // 2
 
             pos_y = torch.tensor(pos_y)
             pos_x = torch.tensor(pos_x)
@@ -455,6 +462,7 @@ class ParticleStack(BaseModel2DTM):
             the original template size.
         """
         stat_col = f"{stat}_path"
+        y_col, x_col = self._get_position_reference_columns()
 
         if stat_col not in self._df.columns:
             raise ValueError(f"Statistic '{stat}' not found in the DataFrame.")
@@ -473,14 +481,8 @@ class ParticleStack(BaseModel2DTM):
 
             # with reference to the exact pixel of the statistic (top-left)
             # need to account for relative extracted box size
-            pos_y = self._df.loc[
-                indexes,
-                "refined_pos_y" if "refined_pos_y" in self._df.columns else "pos_y",
-            ].to_numpy()
-            pos_x = self._df.loc[
-                indexes,
-                "refined_pos_x" if "refined_pos_x" in self._df.columns else "pos_x",
-            ].to_numpy()
+            pos_y = self._df.loc[indexes, y_col].to_numpy()
+            pos_x = self._df.loc[indexes, x_col].to_numpy()
             pos_y = torch.tensor(pos_y)
             pos_x = torch.tensor(pos_x)
             pos_y -= (image_h - h) // 2
