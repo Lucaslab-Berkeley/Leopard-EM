@@ -49,7 +49,7 @@ class RefineTemplateManager(BaseModel2DTM):
         Initialize the refine template manager.
     make_backend_core_function_kwargs(self) -> dict[str, Any]
         Create the kwargs for the backend refine_template core function.
-    run_refine_template(self, orientation_batch_size: int = 64) -> None
+    run_refine_template(self, correlation_batch_size: int = 64) -> None
         Run the refine template program.
     """
 
@@ -117,7 +117,7 @@ class RefineTemplateManager(BaseModel2DTM):
         )
 
     def run_refine_template(
-        self, output_dataframe_path: str, orientation_batch_size: int = 64
+        self, output_dataframe_path: str, correlation_batch_size: int = 32
     ) -> None:
         """Run the refine template program and saves the resultant DataFrame to csv.
 
@@ -125,19 +125,19 @@ class RefineTemplateManager(BaseModel2DTM):
         ----------
         output_dataframe_path : str
             Path to save the refined particle data.
-        orientation_batch_size : int
-            Number of orientations to process at once. Defaults to 64.
+        correlation_batch_size : int
+            Number of cross-correlations to process in one batch, defaults to 32.
         """
         backend_kwargs = self.make_backend_core_function_kwargs()
 
-        result = self.get_refine_result(backend_kwargs, orientation_batch_size)
+        result = self.get_refine_result(backend_kwargs, correlation_batch_size)
 
         self.refine_result_to_dataframe(
             output_dataframe_path=output_dataframe_path, result=result
         )
 
     def get_refine_result(
-        self, backend_kwargs: dict, orientation_batch_size: int = 64
+        self, backend_kwargs: dict, correlation_batch_size: int = 64
     ) -> dict[str, np.ndarray]:
         """Get refine template result.
 
@@ -145,7 +145,7 @@ class RefineTemplateManager(BaseModel2DTM):
         ----------
         backend_kwargs : dict
             Keyword arguments for the backend processing
-        orientation_batch_size : int
+        correlation_batch_size : int
             Number of orientations to process at once. Defaults to 64.
 
         Returns
@@ -153,21 +153,12 @@ class RefineTemplateManager(BaseModel2DTM):
         dict[str, np.ndarray]
             The result of the refine template program.
         """
-        # Adjust batch size if orientation search is disabled
-        if not self.orientation_refinement_config.enabled:
-            orientation_batch_size = 1
-        elif (
-            self.orientation_refinement_config.euler_angles_offsets.shape[0]
-            < orientation_batch_size
-        ):
-            orientation_batch_size = (
-                self.orientation_refinement_config.euler_angles_offsets.shape[0]
-            )
-
         # pylint: disable=duplicate-code
         result: dict[str, np.ndarray] = {}
         result = core_refine_template(
-            batch_size=orientation_batch_size, **backend_kwargs
+            batch_size=correlation_batch_size,
+            num_cuda_streams=self.computational_config.num_cpus,
+            **backend_kwargs,
         )
         result = {k: v.cpu().numpy() for k, v in result.items()}
 
