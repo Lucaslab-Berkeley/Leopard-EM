@@ -475,9 +475,15 @@ def _do_streamed_orientation_cross_correlate(
     projective_filters: torch.Tensor,
     streams: list[torch.cuda.Stream],
 ) -> torch.Tensor:
-    """Batched projection and cross-correlation with fixed (batched) filters.
+    """Calculates a grid of 2D cross-correlations over multiple CUDA streams.
 
-    Note that this function returns a cross-correlogram with "same" mode (i.e. the
+    NOTE: This function is more performant than a batched 2D cross-correlation with
+    shape (N, H, W) when the kernel (template) is much smaller than the image (e.g.
+    kernel is 512x512 and image is 4096x4096). Each cross-correlation is computed
+    individually and stored in a batched tensor for the grid of orientations, defoci,
+    and pixel size values.
+
+    NOTE: this function returns a cross-correlogram with "same" mode (i.e. the
     same size as the input image). See numpy correlate docs for more information.
 
     Parameters
@@ -582,13 +588,13 @@ def _do_batched_orientation_cross_correlate(
 ) -> torch.Tensor:
     """Batched projection and cross-correlation with fixed (batched) filters.
 
-    Note that this function returns a cross-correlogram with "same" mode (i.e. the
-    same size as the input image). See numpy correlate docs for more information.
-
     NOTE: This function is similar to `_do_streamed_orientation_cross_correlate` but
     it computes cross-correlation batches over the orientation space. For example, if
     there are 32 orientations to process and 10 different defocus values, then there
     would be a total of 10 batched-32 cross-correlations computed.
+
+    NOTE: that this function returns a cross-correlogram with "same" mode (i.e. the
+    same size as the input image). See numpy correlate docs for more information.
 
     Parameters
     ----------
