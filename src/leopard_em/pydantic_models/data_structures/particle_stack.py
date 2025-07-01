@@ -309,6 +309,12 @@ class ParticleStack(BaseModel2DTM):
 
         self._df = tmp_df
 
+    def _get_position_reference_columns(self) -> tuple[str, str]:
+        """Get the position reference columns based on the DataFrame."""
+        y_col = "refined_pos_y" if "refined_pos_y" in self._df.columns else "pos_y"
+        x_col = "refined_pos_x" if "refined_pos_x" in self._df.columns else "pos_x"
+        return y_col, x_col
+
     def construct_image_stack(
         self,
         pos_reference: Literal["center", "top-left"] = "top-left",
@@ -354,8 +360,7 @@ class ParticleStack(BaseModel2DTM):
             The stack of images, this is the internal 'image_stack' attribute.
         """
         # Determine which position columns to use (refined if available)
-        y_col = "refined_pos_y" if "refined_pos_y" in self._df.columns else "pos_y"
-        x_col = "refined_pos_x" if "refined_pos_x" in self._df.columns else "pos_x"
+        y_col, x_col = self._get_position_reference_columns()
 
         # Create an empty tensor to store the image stack
         image_stack = torch.zeros((self.num_particles, *self.extracted_box_size))
@@ -457,9 +462,7 @@ class ParticleStack(BaseModel2DTM):
             the original template size.
         """
         stat_col = f"{stat}_path"
-        # Determine which position columns to use (refined if available)
-        y_col = "refined_pos_y" if "refined_pos_y" in self._df.columns else "pos_y"
-        x_col = "refined_pos_x" if "refined_pos_x" in self._df.columns else "pos_x"
+        y_col, x_col = self._get_position_reference_columns()
 
         if stat_col not in self._df.columns:
             raise ValueError(f"Statistic '{stat}' not found in the DataFrame.")
