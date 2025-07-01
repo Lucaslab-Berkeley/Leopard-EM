@@ -384,6 +384,8 @@ class ParticleStack(BaseModel2DTM):
                 pos_y -= (box_h - h) // 2
                 pos_x -= (box_w - w) // 2
 
+            # No other manipulation is needed for "center".
+
             pos_y = torch.tensor(pos_y)
             pos_x = torch.tensor(pos_x)
 
@@ -483,10 +485,23 @@ class ParticleStack(BaseModel2DTM):
             # need to account for relative extracted box size
             pos_y = self._df.loc[indexes, y_col].to_numpy()
             pos_x = self._df.loc[indexes, x_col].to_numpy()
+
             pos_y = torch.tensor(pos_y)
             pos_x = torch.tensor(pos_x)
-            pos_y -= (image_h - h) // 2
-            pos_x -= (image_w - w) // 2
+
+            # NOTE: If using "top-left" reference, we need to shift both x and y
+            # by half the different of the original template shape and extracted box
+            # so that the padding around the statistic peak is symmetric.
+            if pos_reference == "top-left":
+                pos_y -= (image_h - h) // 2
+                pos_x -= (image_w - w) // 2
+
+            # NOTE: If using "center" reference, we need to shift both x and y down
+            # and right since we are extracting a much smaller boxed region for
+            # valid cropping.
+            if pos_reference == "center":
+                pos_y += h // 2 - 1
+                pos_x += w // 2 - 1
 
             cropped_stat_maps = get_cropped_image_regions(
                 stat_map,
