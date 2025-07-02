@@ -68,11 +68,11 @@ def get_cropped_image_regions(
         The box extends from (y, x) to (y + height, x + width).
 
         Example:
-            :  (y, x) *----- width -----+
-            :         |                 |
-            :         |               height
-            :         |                 |
-            :         +-----------------+
+            :         (y, x) *------ width -----+
+            :                |                  |
+            :                |                height
+            :                |                  |
+            :                +------------------+
 
     Parameters
     ----------
