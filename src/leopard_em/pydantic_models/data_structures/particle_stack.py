@@ -412,8 +412,8 @@ class ParticleStack(BaseModel2DTM):
             :                |                                  |
             :                |            +=== box_w ===+       |
             :                |            |             |       |
-            :                |            |     ....    |
-            :           img_height        |(x, y).*.. box_h       |
+            :                |            |     ....    |       |
+            :           img_height        |(x, y).*.. box_h     |
             :                |            |     ....    |       |
             :                |            |             |       |
             :                |            +=============+       |
@@ -559,8 +559,8 @@ class ParticleStack(BaseModel2DTM):
 
         # Create an empty tensor to store the stat stack
         h, w = self.original_template_size
-        box_h, image_w = self.extracted_box_size
-        stat_stack = torch.zeros((self.num_particles, box_h - h + 1, image_w - w + 1))
+        box_h, box_w = self.extracted_box_size
+        stat_stack = torch.zeros((self.num_particles, box_h - h + 1, box_w - w + 1))
 
         # Find the indexes in the DataFrame that correspond to each unique stat map
         stat_index_groups = self._df.groupby(stat_col).groups
@@ -578,7 +578,7 @@ class ParticleStack(BaseModel2DTM):
             # by half the different of the original template shape and extracted box
             # so that the padding around the statistic peak is symmetric.
             pos_y -= (box_h - h) // 2
-            pos_x -= (image_w - w) // 2
+            pos_x -= (box_w - w) // 2
 
             pos_y = torch.tensor(pos_y)
             pos_x = torch.tensor(pos_x)
@@ -587,7 +587,7 @@ class ParticleStack(BaseModel2DTM):
                 stat_map,
                 pos_y,
                 pos_x,
-                (box_h - h + 1, image_w - w + 1),
+                (box_h - h + 1, box_w - w + 1),
                 pos_reference="top-left",
                 handle_bounds=handle_bounds,
                 padding_mode=padding_mode,

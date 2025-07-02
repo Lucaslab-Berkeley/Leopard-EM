@@ -49,7 +49,7 @@ class RefineTemplateManager(BaseModel2DTM):
         Initialize the refine template manager.
     make_backend_core_function_kwargs(self) -> dict[str, Any]
         Create the kwargs for the backend refine_template core function.
-    run_refine_template(self, correlation_batch_size: int = 64) -> None
+    run_refine_template(self, correlation_batch_size: int = 32) -> None
         Run the refine template program.
     """
 
@@ -137,7 +137,7 @@ class RefineTemplateManager(BaseModel2DTM):
         )
 
     def get_refine_result(
-        self, backend_kwargs: dict, correlation_batch_size: int = 64
+        self, backend_kwargs: dict, correlation_batch_size: int = 32
     ) -> dict[str, np.ndarray]:
         """Get refine template result.
 
@@ -146,7 +146,7 @@ class RefineTemplateManager(BaseModel2DTM):
         backend_kwargs : dict
             Keyword arguments for the backend processing
         correlation_batch_size : int
-            Number of orientations to process at once. Defaults to 64.
+            Number of orientations to process at once. Defaults to 32.
 
         Returns
         -------
