@@ -168,27 +168,35 @@ def _get_cropped_image_regions_numpy(
     Reference value is handled by the user-exposed 'get_cropped_image_regions' function.
     """
     if handle_bounds == "pad":
-        bs1 = box_size[1] // 2
-        bs0 = box_size[0] // 2
+        bs1 = box_size[1] - 1
+        bs0 = box_size[0] - 1
+        pad_kwargs = {}
+        if padding_mode == "constant":
+            pad_kwargs["constant_values"] = padding_value
         image = np.pad(
             image,
             pad_width=((bs0, bs0), (bs1, bs1)),
             mode=padding_mode,
-            constant_values=padding_value,
+            **pad_kwargs,
         )
         pos_y = pos_y + bs0
         pos_x = pos_x + bs1
 
     regions = []
     for y, x in zip(pos_y, pos_x):
-        region = image[y : y + box_size[0], x : x + box_size[1]]
-        h, w = region.shape
-        if h != box_size[0] or w != box_size[1]:
-            padded_region = np.full(box_size, padding_value, dtype=image.dtype)
-            padded_region[:h, :w] = region
-            regions.append(padded_region)
-        else:
-            regions.append(region)
+        # Check bounds and raise error if out of bounds
+        if (
+            y < 0
+            or x < 0
+            or y + box_size[0] > image.shape[0]
+            or x + box_size[1] > image.shape[1]
+        ):
+            raise IndexError(
+                f"Region bounds [{y}:{y + box_size[0]}, {x}:{x + box_size[1]}] exceed "
+                f"image dimensions {image.shape}"
+            )
+
+        regions.append(image[y : y + box_size[0], x : x + box_size[1]])
 
     cropped_images = np.stack(regions)
 
@@ -211,33 +219,37 @@ def _get_cropped_image_regions_torch(
     Reference value is handled by the user-exposed 'get_cropped_image_regions' function.
     """
     if handle_bounds == "pad":
-        bs1 = box_size[1] // 2
-        bs0 = box_size[0] // 2
+        bs1 = box_size[1] - 1
+        bs0 = box_size[0] - 1
+        pad_kwargs = {}
+        if padding_mode == "constant":
+            pad_kwargs["value"] = padding_value
+        # NOTE: Need to do unsqueeze/squeeze workaround to make torch happy with input
+        # tensor shapes. Looks like API for padding may change in the future torch...
         image = torch.nn.functional.pad(
-            image,
+            image.unsqueeze(0),
             pad=(bs1, bs1, bs0, bs0),
             mode=padding_mode,
-            value=padding_value,
-        )
+            **pad_kwargs,
+        ).squeeze(0)
         pos_y = pos_y + bs0
         pos_x = pos_x + bs1
 
     regions = []
     for y, x in zip(pos_y, pos_x):
-        # Extract region
-        region = image[y : y + box_size[0], x : x + box_size[1]]
-
-        # Check if region is smaller than expected box_size
-        h, w = region.shape
-        if h != box_size[0] or w != box_size[1]:
-            # Create a padded region with the correct dimensions
-            padded_region = torch.full(
-                box_size, padding_value, dtype=image.dtype, device=image.device
+        # Check bounds and raise error if out of bounds
+        if (
+            y < 0
+            or x < 0
+            or y + box_size[0] > image.shape[0]
+            or x + box_size[1] > image.shape[1]
+        ):
+            raise IndexError(
+                f"Region bounds [{y}:{y + box_size[0]}, {x}:{x + box_size[1]}] exceed "
+                f"image dimensions {image.shape}"
             )
-            padded_region[:h, :w] = region
-            regions.append(padded_region)
-        else:
-            regions.append(region)
+
+        regions.append(image[y : y + box_size[0], x : x + box_size[1]])
 
     # Stack all regions
     cropped_images = torch.stack(regions)
