@@ -296,12 +296,6 @@ def test_particle_stack_top_left_and_center_self_consistency():
     assert extracted_mips_tl.shape == (2, 3, 3)
     assert extracted_mips_center.shape == (2, 3, 3)
 
-    # DEBUG: Save these to numpy files
-    np.save("extracted_images_tl.npy", extracted_images_tl)
-    np.save("extracted_images_center.npy", extracted_images_center)
-    np.save("extracted_mips_tl.npy", extracted_mips_tl)
-    np.save("extracted_mips_center.npy", extracted_mips_center)
-
     # Check for self-consistency
     assert np.allclose(extracted_images_tl, extracted_images_center)
     assert np.allclose(extracted_mips_tl, extracted_mips_center)

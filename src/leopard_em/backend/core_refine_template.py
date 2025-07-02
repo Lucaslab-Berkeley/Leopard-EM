@@ -101,7 +101,7 @@ def core_refine_template(
         Keyword arguments to pass to the CTF calculation function.
     projective_filters : torch.Tensor
         Projective filters to apply to each Fourier slice particle. Shape of (N, h, w).
-    device : torch.device | list[torch.device], optional
+    device : torch.device | list[torch.device]
         Device or list of devices to use for processing.
     batch_size : int, optional
         The number of cross-correlations to process in one batch, defaults to 32.
