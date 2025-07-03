@@ -30,11 +30,16 @@ from leopard_em.utils.data_io import load_mrc_volume, load_template_tensor
 class ConstrainedSearchManager(BaseModel2DTM):
     """Model holding parameters necessary for running the constrained search program.
 
+    NOTE: The constrained search program should only be run on data from a single
+    reference micrograph. That is, if you have data from two or more micrographs, that
+    data from each micrograph needs processed separately. This restriction may be lifted
+    in the future.
+
     Attributes
     ----------
     template_volume_path : str
         Path to the template volume MRC file.
-    centre_vector : list[float]
+    center_vector : list[float]
         The centre vector of the template volume.
     particle_stack_reference : ParticleStack
         Particle stack object containing particle data reference particles.
@@ -67,7 +72,7 @@ class ConstrainedSearchManager(BaseModel2DTM):
     model_config: ClassVar = ConfigDict(arbitrary_types_allowed=True)
 
     template_volume_path: str  # In df per-particle, but ensure only one reference
-    centre_vector: list[float] = Field(default=[0.0, 0.0, 0.0])
+    center_vector: list[float] = Field(default=[0.0, 0.0, 0.0])
 
     particle_stack_reference: ParticleStack
     particle_stack_constrained: ParticleStack
@@ -92,14 +97,22 @@ class ConstrainedSearchManager(BaseModel2DTM):
         self, prefer_refined_angles: bool = True
     ) -> dict[str, Any]:
         """Create the kwargs for the backend constrained_template core function."""
+        part_stk = self.particle_stack_reference
+
+        # Checks to make sure manager is properly configured
+        # pylint: disable=protected-access
+        assert part_stk._df["micrograph_path"].nunique() == 1, (
+            "Constrained search can only be run on data from a single micrograph. "
+            "Please ensure that the particle stack contains particles from only one "
+            "micrograph."
+        )
+
         device_list = self.computational_config.gpu_devices
 
         template = load_template_tensor(
             template_volume=self.template_volume,
             template_volume_path=self.template_volume_path,
         )
-
-        part_stk = self.particle_stack_reference
 
         euler_angles = part_stk.get_euler_angles(prefer_refined_angles)
 
@@ -119,12 +132,12 @@ class ConstrainedSearchManager(BaseModel2DTM):
         )
 
         # get z diff for each particle
-        if not isinstance(self.centre_vector, torch.Tensor):
-            self.centre_vector = torch.tensor(self.centre_vector, dtype=torch.float32)
+        if not isinstance(self.center_vector, torch.Tensor):
+            self.center_vector = torch.tensor(self.center_vector, dtype=torch.float32)
         rotation_matrices = roma.rotvec_to_rotmat(
             roma.euler_to_rotvec(convention="ZYZ", angles=euler_angles)
         ).to(torch.float32)
-        rotated_vectors = rotation_matrices @ self.centre_vector
+        rotated_vectors = rotation_matrices @ self.center_vector
 
         # Get z for each particle -> tensor shape [batch_size]
         new_z_diffs = rotated_vectors[:, 2]
@@ -145,7 +158,13 @@ class ConstrainedSearchManager(BaseModel2DTM):
         )
 
         # Ger corr mean and variance
-        # I want positions of reference but vals from constrained
+        # The position of the extracted areas needs to be from the larger particle, but
+        # the mean and variance must come from the initial match template on the
+        # smaller constrained particle.
+        # Currently, we just set the searched file (as in paths below) to the first
+        # element in the constrained particle stack.
+        # NOTE: This will *not* work if the constrained particle stack contains
+        # particles from multiple reference images.
         part_stk.set_column(
             "correlation_average_path",
             self.particle_stack_constrained["correlation_average_path"][0],
@@ -154,19 +173,20 @@ class ConstrainedSearchManager(BaseModel2DTM):
             "correlation_variance_path",
             self.particle_stack_constrained["correlation_variance_path"][0],
         )
+        # Get correlation statistics
         corr_mean_stack = part_stk.construct_cropped_statistic_stack(
-            "correlation_average"
+            stat="correlation_average",
+            handle_bounds="pad",
+            padding_mode="constant",
+            padding_value=0.0,  # pad with zeros
         )
-        corr_std_stack = (
-            part_stk.construct_cropped_statistic_stack(
-                stat="correlation_variance",
-                pos_reference="center",
-                handle_bounds="pad",
-                padding_mode="constant",
-                padding_value=1e10,
-            )
-            ** 0.5
-        )  # var to std
+        corr_std_stack = part_stk.construct_cropped_statistic_stack(
+            stat="correlation_variance",
+            handle_bounds="pad",
+            padding_mode="constant",
+            padding_value=1e10,  # large to avoid out of bound pixels having inf z-score
+        )
+        corr_std_stack = corr_std_stack**0.5  # Convert variance to standard deviation
 
         return {
             "particle_stack_dft": particle_images_dft,

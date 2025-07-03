@@ -99,6 +99,10 @@ ENV/
 
 # mkdocs documentation
 /site
+/docs/generated/
+/docs/examples/60S_*.mrc
+/docs/examples/xenon_*.mrc
+/docs/examples/xenon_*.csv
 
 # mypy
 .mypy_cache/

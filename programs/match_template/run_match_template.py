@@ -19,7 +19,7 @@ DATAFRAME_OUTPUT_PATH = "/path/to/match-template-results.csv"
 # Number of orientations to cross-correlate simultaneously. Larger values may perform
 # better on GPUs with more VRAM. Tuneable parameter to ensure GPUs don't run out of
 # memory during the search
-ORIENTATION_BATCH_SIZE = 32
+ORIENTATION_BATCH_SIZE = 8
 
 ##############################################################
 ### Main function called to run the match template program ###

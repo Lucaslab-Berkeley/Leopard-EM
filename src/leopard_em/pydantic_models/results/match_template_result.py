@@ -25,11 +25,11 @@ def check_file_path_and_permissions(path: str, allow_overwrite: bool) -> None:
     """Ensures path is writable and it does not exist, if `allow_overwrite` is False."""
     # 1. Create path to file, if it does not exist
     directory = os.path.dirname(path)
-    if not os.path.exists(directory):
+    if directory and not os.path.exists(directory):
         os.makedirs(directory, exist_ok=True)
 
     # 2. Check write permissions
-    if not os.access(directory, os.W_OK):
+    if directory and not os.access(directory, os.W_OK):
         raise ValueError(
             f"Directory '{directory}' does not permit writing."
             f"Will be unable to write results to '{path}'."

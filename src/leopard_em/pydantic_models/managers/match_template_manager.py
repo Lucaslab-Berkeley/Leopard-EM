@@ -12,6 +12,7 @@ from leopard_em.backend.core_match_template import core_match_template
 from leopard_em.pydantic_models.config import (
     ComputationalConfig,
     DefocusSearchConfig,
+    MultipleOrientationConfig,
     OrientationSearchConfig,
     PreprocessingFilters,
 )
@@ -91,7 +92,7 @@ class MatchTemplateManager(BaseModel2DTM):
     template_volume_path: str
     optics_group: OpticsGroup
     defocus_search_config: DefocusSearchConfig
-    orientation_search_config: OrientationSearchConfig
+    orientation_search_config: OrientationSearchConfig | MultipleOrientationConfig
     preprocessing_filters: PreprocessingFilters
     match_template_result: MatchTemplateResult
     computational_config: ComputationalConfig
@@ -233,7 +234,9 @@ class MatchTemplateManager(BaseModel2DTM):
         """
         core_kwargs = self.make_backend_core_function_kwargs()
         results = core_match_template(
-            **core_kwargs, orientation_batch_size=orientation_batch_size
+            **core_kwargs,
+            orientation_batch_size=orientation_batch_size,
+            num_cuda_streams=self.computational_config.num_cpus,
         )
 
         # Place results into the `MatchTemplateResult` object and save it.
