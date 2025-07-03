@@ -34,7 +34,7 @@ nav:
     - Match Template Config:            examples/01_basic_configuration.ipynb
     - Peaks to DataFrame:               examples/02_extract_peak_info.ipynb
     - Comparing Scoring Metrics:        examples/03_compare_scoring_metrics.ipynb
-    - Plotting match template results:  examples/04_plotting_2dtm_results
+    - Plotting match template results:  examples/04_plotting_2dtm_results.ipynb
     - Structure re-projection plot:     examples/05_structure_reprojection.ipynb 
     # - Constrained Search: examples/constrained_search_example.yaml
   - Programs:
