@@ -11,9 +11,9 @@ import torch
 import tqdm
 from torch_fourier_slice import extract_central_slices_rfft_3d
 
-from leopard_em.backend.core_match_template import (
-    _do_bached_orientation_cross_correlate,
-    _do_bached_orientation_cross_correlate_cpu,
+from leopard_em.backend.cross_correlation import (
+    do_batched_orientation_cross_correlate,
+    do_batched_orientation_cross_correlate_cpu,
 )
 from leopard_em.backend.utils import (
     normalize_template_projection,
@@ -60,8 +60,9 @@ def core_refine_template(
     corr_std: torch.Tensor,  # (N, H - h + 1, W - w + 1)
     ctf_kwargs: dict,
     projective_filters: torch.Tensor,  # (N, h, w)
-    device: torch.device | list[torch.device] = None,
-    batch_size: int = 64,
+    device: torch.device | list[torch.device],
+    batch_size: int = 32,
+    num_cuda_streams: int = 1,
 ) -> dict[str, torch.Tensor]:
     """Core function to refine orientations and defoci of a set of particles.
 
@@ -100,20 +101,18 @@ def core_refine_template(
         Keyword arguments to pass to the CTF calculation function.
     projective_filters : torch.Tensor
         Projective filters to apply to each Fourier slice particle. Shape of (N, h, w).
-    device : torch.device | list[torch.device], optional
+    device : torch.device | list[torch.device]
         Device or list of devices to use for processing.
     batch_size : int, optional
-        The number of orientations to process at once. Default is 64.
+        The number of cross-correlations to process in one batch, defaults to 32.
+    num_cuda_streams : int, optional
+        Number of CUDA streams to use for parallel processing. Defaults to 1.
 
     Returns
     -------
     dict[str, torch.Tensor]
         Dictionary containing the refined parameters for all particles.
     """
-    # If no device specified, use the device  gpu 0
-    if device is None:
-        device = [torch.device("cuda:0")]
-
     # Convert single device to list for consistent handling
     if isinstance(device, torch.device):
         device = [device]
@@ -137,6 +136,7 @@ def core_refine_template(
         projective_filters=projective_filters,
         batch_size=batch_size,
         devices=device,
+        num_cuda_streams=num_cuda_streams,
     )
 
     results = run_multiprocess_jobs(
@@ -223,6 +223,7 @@ def construct_multi_gpu_refine_template_kwargs(
     projective_filters: torch.Tensor,
     batch_size: int,
     devices: list[torch.device],
+    num_cuda_streams: int,
 ) -> list[dict]:
     """Split particle stack between requested devices.
 
@@ -258,6 +259,8 @@ def construct_multi_gpu_refine_template_kwargs(
         Batch size for orientation processing.
     devices : list[torch.device]
         List of devices to split across.
+    num_cuda_streams : int
+        Number of CUDA streams to use per device.
 
     Returns
     -------
@@ -318,6 +321,7 @@ def construct_multi_gpu_refine_template_kwargs(
             "ctf_kwargs": ctf_kwargs,
             "projective_filters": device_projective_filters,
             "batch_size": batch_size,
+            "num_cuda_streams": num_cuda_streams,
         }
 
         kwargs_per_device.append(kwargs)
@@ -345,6 +349,7 @@ def _core_refine_template_single_gpu(
     ctf_kwargs: dict,
     projective_filters: torch.Tensor,
     batch_size: int,
+    num_cuda_streams: int = 1,
 ) -> None:
     """Run refine template on a subset of particles on a single GPU.
 
@@ -384,8 +389,12 @@ def _core_refine_template_single_gpu(
         Projective filters for particles in this subset.
     batch_size : int
         Batch size for orientation processing.
+    num_cuda_streams : int, optional
+        Number of CUDA streams to use for parallel processing. Defaults to 1.
     """
     device = particle_stack_dft.device
+    streams = [torch.cuda.Stream(device=device) for _ in range(num_cuda_streams)]
+
     num_particles, _, img_w = particle_stack_dft.shape
     _, _, template_w = template_dft.shape
     # account for RFFT
@@ -400,6 +409,8 @@ def _core_refine_template_single_gpu(
         leave=True,
         position=device_id,
         dynamic_ncols=True,
+        unit="particle",
+        smoothing=0.1,
     )
 
     # Iterate over each particle in the stack to get the refined statistics
@@ -408,25 +419,28 @@ def _core_refine_template_single_gpu(
         particle_image_dft = particle_stack_dft[i]
         particle_index = int(particle_indices[i])  # Original particle index
 
-        refined_stats = _core_refine_template_single_thread(
-            particle_image_dft=particle_image_dft,
-            particle_index=particle_index,
-            template_dft=template_dft,
-            euler_angles=euler_angles[i, :],
-            euler_angle_offsets=euler_angle_offsets,
-            defocus_u=defocus_u[i],
-            defocus_v=defocus_v[i],
-            defocus_angle=defocus_angle[i],
-            defocus_offsets=defocus_offsets,
-            pixel_size_offsets=pixel_size_offsets,
-            ctf_kwargs=ctf_kwargs,
-            corr_mean=corr_mean[i],
-            corr_std=corr_std[i],
-            projective_filter=projective_filters[i],
-            orientation_batch_size=batch_size,
-            device_id=device_id,
-        )
-        refined_statistics.append(refined_stats)
+        # Distribute different particles across streams
+        stream = streams[i % num_cuda_streams]
+        with torch.cuda.stream(stream):
+            refined_stats = _core_refine_template_single_thread(
+                particle_image_dft=particle_image_dft,
+                particle_index=particle_index,
+                template_dft=template_dft,
+                euler_angles=euler_angles[i, :],
+                euler_angle_offsets=euler_angle_offsets,
+                defocus_u=defocus_u[i],
+                defocus_v=defocus_v[i],
+                defocus_angle=defocus_angle[i],
+                defocus_offsets=defocus_offsets,
+                pixel_size_offsets=pixel_size_offsets,
+                ctf_kwargs=ctf_kwargs,
+                corr_mean=corr_mean[i],
+                corr_std=corr_std[i],
+                projective_filter=projective_filters[i],
+                batch_size=batch_size,
+                device_id=device_id,
+            )
+            refined_statistics.append(refined_stats)
 
     # For each particle, calculate the new best orientation, defocus, and position
     refined_cross_correlation = torch.tensor(
@@ -519,7 +533,7 @@ def _core_refine_template_single_thread(
     corr_std: torch.Tensor,
     ctf_kwargs: dict,
     projective_filter: torch.Tensor,
-    orientation_batch_size: int = 32,
+    batch_size: int = 32,
     device_id: int = 0,
 ) -> dict[str, float | int]:
     """Run the single-threaded core refine template function.
@@ -557,7 +571,7 @@ def _core_refine_template_single_thread(
         Keyword arguments to pass to the CTF calculation function.
     projective_filter : torch.Tensor
         Projective filters to apply to the Fourier slice particle. Shape of (h, w).
-    orientation_batch_size : int, optional
+    batch_size : int, optional
         The number of orientations to cross-correlate at once. Default is 32.
     device_id : int, optional
         The ID of the device/process. Default is 0.
@@ -608,7 +622,10 @@ def _core_refine_template_single_thread(
     combined_projective_filter = projective_filter[None, None, ...] * ctf_filters
 
     # Iterate over the Euler angle offsets in batches
-    num_batches = math.ceil(euler_angle_offsets.shape[0] / orientation_batch_size)
+    # The tqdm iterator is over batches, but we want to report cross-correlations/sec.
+    # We therefore scale by the number of cross-correlations per batch.
+    num_batches = math.ceil(euler_angle_offsets.shape[0] / batch_size)
+    cross_corr_per_batch = len(defocus_offsets) * len(pixel_size_offsets) * batch_size
 
     tqdm_iter = tqdm.tqdm(
         range(num_batches),
@@ -616,11 +633,13 @@ def _core_refine_template_single_thread(
         desc=f"Refining particle {particle_index} on device {device_id}",
         leave=False,
         position=device_id + torch.cuda.device_count(),
+        unit="corr",
+        unit_scale=cross_corr_per_batch,
     )
 
     for i in tqdm_iter:
-        start_idx = i * orientation_batch_size
-        end_idx = min((i + 1) * orientation_batch_size, euler_angle_offsets.shape[0])
+        start_idx = i * batch_size
+        end_idx = min((i + 1) * batch_size, euler_angle_offsets.shape[0])
         euler_angle_offsets_batch = euler_angle_offsets[start_idx:end_idx]
         rot_matrix_batch = roma.euler_to_rotmat(
             EULER_ANGLE_FMT,
@@ -639,15 +658,14 @@ def _core_refine_template_single_thread(
         if particle_image_dft.device.type == "cuda":
             # NOTE: Here we are setting to only a single stream, but this can easily
             # be extended to multiple streams if needed.
-            cross_correlation = _do_bached_orientation_cross_correlate(
+            cross_correlation = do_batched_orientation_cross_correlate(
                 image_dft=particle_image_dft,
                 template_dft=template_dft,
                 rotation_matrices=rot_matrix_batch,
                 projective_filters=combined_projective_filter,
-                streams=[torch.cuda.Stream(device=particle_image_dft.device)],
             )
         else:
-            cross_correlation = _do_bached_orientation_cross_correlate_cpu(
+            cross_correlation = do_batched_orientation_cross_correlate_cpu(
                 image_dft=particle_image_dft,
                 template_dft=template_dft,
                 rotation_matrices=rot_matrix_batch,

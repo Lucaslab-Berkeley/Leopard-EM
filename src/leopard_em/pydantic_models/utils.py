@@ -448,14 +448,12 @@ def setup_particle_backend_kwargs(
     # Get correlation statistics
     corr_mean_stack = particle_stack.construct_cropped_statistic_stack(
         stat="correlation_average",
-        pos_reference="top-left",
         handle_bounds="pad",
         padding_mode="constant",
         padding_value=0.0,  # pad with zeros
     )
     corr_std_stack = particle_stack.construct_cropped_statistic_stack(
         stat="correlation_variance",
-        pos_reference="top-left",
         handle_bounds="pad",
         padding_mode="constant",
         padding_value=1e10,  # large to avoid out of bound pixels having inf z-score

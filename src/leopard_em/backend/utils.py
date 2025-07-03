@@ -1,9 +1,52 @@
 """Utility and helper functions associated with the backend of Leopard-EM."""
 
+import warnings
 from multiprocessing import Manager, Process
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, TypeVar
 
 import torch
+
+F = TypeVar("F", bound=Callable[..., Any])
+
+
+def attempt_torch_compilation(target_func: F, backend: str = "inductor") -> F:
+    """Compile a function using Torch's compilation utilities.
+
+    NOTE: This function will fall back onto the original function if compilation fails
+    or is not supported. Under these circumstances, a warning is issued to inform the
+    user of the failure, but the program will continue to run with the original
+    function.
+
+    Parameters
+    ----------
+    target_func : Callable
+        The function to compile.
+    backend : str, optional
+        The backend to use for compilation (default is "inductor").
+
+    Returns
+    -------
+    Callable
+        The potentially compiled function.
+
+    Warning
+    -------
+    If compilation fails, the original function is returned without modification which
+    is useful for program consistency. If compilation is not supported, then a
+    warning is generated, and the original function is returned.
+    """
+    try:
+        compiled_func = torch.compile(target_func, backend=backend)
+        return compiled_func  # type: ignore[no-any-return]
+    except (RuntimeError, NotImplementedError) as e:
+        warnings.warn(
+            f"Failed to compile function {target_func.__name__} with"
+            f"backend {backend}: {e}. "
+            "Returning the original function instead and continuing...",
+            UserWarning,
+            stacklevel=2,
+        )
+        return target_func
 
 
 def normalize_template_projection(
@@ -250,3 +293,12 @@ def run_multiprocess_jobs(
         p.join()
 
     return dict(result_dict)
+
+
+# These are compiled normalization and stat update functions
+normalize_template_projection_compiled = attempt_torch_compilation(
+    normalize_template_projection, backend="inductor"
+)
+do_iteration_statistics_updates_compiled = attempt_torch_compilation(
+    do_iteration_statistics_updates, backend="inductor"
+)

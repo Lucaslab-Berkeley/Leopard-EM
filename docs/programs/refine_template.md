@@ -125,15 +125,23 @@ All these parameters are discussed in more detail on the [match template program
 
 ### Configuring GPUs for a match template run
 
-Template refinement can run across multiple GPUs and is controlled in the same way as match template.
-Note that the `num_cpus` field is currently unused for the refine template program and can just be set to one.
-Like [configuring GPUs for a match template run](match_template.md#configuring-gpus-for-a-match-template-run), GPUs are targeted by their device index.
+The refine template program parallelizes across multiple GPUs by splitting which particles are refined across the configured list of GPU devices.
+The `num_cpus` field controls how many concurrent streams of work are being submitted to each GPUs; in most cases, a value of `1` or `2` will saturate the GPU and give the best performance, although your mileage may vary.
+Like [configuring GPUs for a match template run](match_template.md#configuring-gpus-for-a-match-template-run), GPUs are targeted by their device index or the special string `"all"`
 The following configuration will run `refine_template` on GPU zero.
 
 ```yaml
 computational_config:
   gpu_ids: 0
   num_cpus: 1
+```
+
+The following configuration will run `refine_template` on all available GPUs with two streams per GPU.
+
+```yaml
+computational_config:
+  gpu_ids: "all"
+  num_cpus: 2
 ```
 
 ## Running the refine template program
