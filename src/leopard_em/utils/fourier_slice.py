@@ -78,7 +78,7 @@ def get_rfft_slices_from_volume(
     volume_rfft = _fftshift_3d(volume_rfft, rfft=True)
 
     # Use roma to keep angles on same device
-    rot_matrix = roma.euler_to_rotmat("zyz", (phi, theta, psi), degrees=degrees)
+    rot_matrix = roma.euler_to_rotmat("ZYZ", (phi, theta, psi), degrees=degrees)
 
     # Use torch_fourier_slice to take the Fourier slice
     fourier_slices = extract_central_slices_rfft_3d(
@@ -102,7 +102,7 @@ def get_real_space_projections_from_volume(
 ) -> torch.Tensor:
     """Real-space projections of a 3D volume.
 
-    Note that Euler angles are in 'zyz' convention.
+    Note that Euler angles are in 'ZYZ' convention.
 
     Parameters
     ----------
