@@ -26,7 +26,50 @@ def test_orientation_search_default_values():
     assert config.theta_max is None
     assert config.phi_min is None
     assert config.phi_max is None
+    assert config.symmetry == "C1"
     assert config.base_grid_method == "uniform"
+
+
+def test_orientation_search_invalid_symmetry_and_angle_ranges():
+    """
+    Test that an error is raised when both symmetry and angle ranges are provided.
+    """
+    with pytest.raises(
+        ValidationError,
+        match="Symmetry group is provided, but angle ranges are also set. ",
+    ):
+        OrientationSearchConfig(
+            symmetry="C1",
+            psi_min=0.0,
+            psi_max=360.0,
+            theta_min=0.0,
+            theta_max=180.0,
+        )
+
+    with pytest.raises(
+        ValidationError,
+        match="Either a symmetry group must be provided, or all angle ranges must",
+    ):
+        OrientationSearchConfig(
+            symmetry=None,
+            phi_min=None,
+            phi_max=None,
+            theta_min=None,
+            theta_max=None,
+            psi_min=None,
+            psi_max=None,
+        )
+
+
+def test_orientation_search_invalid_symmetry():
+    """
+    Test that an error is raised for invalid symmetry group values.
+
+    Verifies that a ValidationError is raised when an unsupported symmetry group
+    is provided.
+    """
+    with pytest.raises(ValidationError, match="Invalid symmetry format: C2v"):
+        OrientationSearchConfig(symmetry="C2v")
 
 
 def test_orientation_search_invalid_in_plane_step():

@@ -11,6 +11,7 @@ from .correlation_filters import (
 from .defocus_search import DefocusSearchConfig
 from .orientation_search import (
     ConstrainedOrientationConfig,
+    MultipleOrientationConfig,
     OrientationSearchConfig,
     RefineOrientationConfig,
 )
@@ -21,6 +22,7 @@ __all__ = [
     "BandpassFilterConfig",
     "ComputationalConfig",
     "DefocusSearchConfig",
+    "MultipleOrientationConfig",
     "OrientationSearchConfig",
     "PixelSizeSearchConfig",
     "PhaseRandomizationFilterConfig",

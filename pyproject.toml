@@ -17,7 +17,7 @@ sources = ["src"]
 [project]
 name = "leopard_em"
 dynamic = ["version"]
-description = "Location & Orientation of Particles using Two-Dimensional Template Matching"
+description = "Location & Orientation of Particles found using Two-Dimensional Template Matching"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "BSD-3-Clause" }
@@ -33,6 +33,7 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Typing :: Typed",
 ]
 # add your package dependencies here
@@ -50,8 +51,9 @@ dependencies = [
     "torch-fourier-slice>=v0.2.0",
     "torch-fourier-filter>=v0.2.3",
     "torch-so3>=v0.2.0",
-    "ttsim3d>=v0.3.0",
+    "ttsim3d>=v0.4.0",
     "lmfit",
+    "zenodo-get",
 ]
 
 [tool.hatch.metadata]
