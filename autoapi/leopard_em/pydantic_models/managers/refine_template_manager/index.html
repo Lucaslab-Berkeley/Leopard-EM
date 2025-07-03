@@ -316,11 +316,11 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../../examples/04_plotting_2dtm_results" class="md-nav__link">
+      <a href="../../../../../examples/04_plotting_2dtm_results/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
-    Plotting match template results
+    Visualizing 2DTM result
     
   </span>
   
@@ -879,6 +879,28 @@
   
   <span class="md-ellipsis">
     core_refine_template
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../backend/cross_correlation/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    cross_correlation
     
   </span>
   
@@ -2048,7 +2070,7 @@
               </td>
             </tr>
             <tr class="doc-section-item">
-              <td><code><a class="autorefs autorefs-internal" title="run_refine_template(output_dataframe_path, orientation_batch_size=64) (leopard_em.pydantic_models.managers.refine_template_manager.RefineTemplateManager.run_refine_template)" href="#leopard_em.pydantic_models.managers.refine_template_manager.RefineTemplateManager.run_refine_template">run_refine_template</a></code></td>
+              <td><code><a class="autorefs autorefs-internal" title="run_refine_template(output_dataframe_path, correlation_batch_size=32) (leopard_em.pydantic_models.managers.refine_template_manager.RefineTemplateManager.run_refine_template)" href="#leopard_em.pydantic_models.managers.refine_template_manager.RefineTemplateManager.run_refine_template">run_refine_template</a></code></td>
               <td>
                 <div class="doc-md-description">
                   <p>Run the refine template program.</p>
@@ -2300,16 +2322,7 @@
 <span class="normal">254</span>
 <span class="normal">255</span>
 <span class="normal">256</span>
-<span class="normal">257</span>
-<span class="normal">258</span>
-<span class="normal">259</span>
-<span class="normal">260</span>
-<span class="normal">261</span>
-<span class="normal">262</span>
-<span class="normal">263</span>
-<span class="normal">264</span>
-<span class="normal">265</span>
-<span class="normal">266</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">RefineTemplateManager</span><span class="p">(</span><span class="n">BaseModel2DTM</span><span class="p">):</span>
+<span class="normal">257</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">RefineTemplateManager</span><span class="p">(</span><span class="n">BaseModel2DTM</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Model holding parameters necessary for running the refine template program.</span>
 
 <span class="sd">    Attributes</span>
@@ -2338,7 +2351,7 @@
 <span class="sd">        Initialize the refine template manager.</span>
 <span class="sd">    make_backend_core_function_kwargs(self) -&gt; dict[str, Any]</span>
 <span class="sd">        Create the kwargs for the backend refine_template core function.</span>
-<span class="sd">    run_refine_template(self, orientation_batch_size: int = 64) -&gt; None</span>
+<span class="sd">    run_refine_template(self, correlation_batch_size: int = 32) -&gt; None</span>
 <span class="sd">        Run the refine template program.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
@@ -2406,7 +2419,7 @@
         <span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">run_refine_template</span><span class="p">(</span>
-        <span class="bp">self</span><span class="p">,</span> <span class="n">output_dataframe_path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">orientation_batch_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">64</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">output_dataframe_path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">correlation_batch_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">32</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Run the refine template program and saves the resultant DataFrame to csv.</span>
 
@@ -2414,19 +2427,19 @@
 <span class="sd">        ----------</span>
 <span class="sd">        output_dataframe_path : str</span>
 <span class="sd">            Path to save the refined particle data.</span>
-<span class="sd">        orientation_batch_size : int</span>
-<span class="sd">            Number of orientations to process at once. Defaults to 64.</span>
+<span class="sd">        correlation_batch_size : int</span>
+<span class="sd">            Number of cross-correlations to process in one batch, defaults to 32.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="n">backend_kwargs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">make_backend_core_function_kwargs</span><span class="p">()</span>
 
-        <span class="n">result</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_refine_result</span><span class="p">(</span><span class="n">backend_kwargs</span><span class="p">,</span> <span class="n">orientation_batch_size</span><span class="p">)</span>
+        <span class="n">result</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_refine_result</span><span class="p">(</span><span class="n">backend_kwargs</span><span class="p">,</span> <span class="n">correlation_batch_size</span><span class="p">)</span>
 
         <span class="bp">self</span><span class="o">.</span><span class="n">refine_result_to_dataframe</span><span class="p">(</span>
             <span class="n">output_dataframe_path</span><span class="o">=</span><span class="n">output_dataframe_path</span><span class="p">,</span> <span class="n">result</span><span class="o">=</span><span class="n">result</span>
         <span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">get_refine_result</span><span class="p">(</span>
-        <span class="bp">self</span><span class="p">,</span> <span class="n">backend_kwargs</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span> <span class="n">orientation_batch_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">64</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">backend_kwargs</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span> <span class="n">correlation_batch_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">32</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Get refine template result.</span>
 
@@ -2434,29 +2447,20 @@
 <span class="sd">        ----------</span>
 <span class="sd">        backend_kwargs : dict</span>
 <span class="sd">            Keyword arguments for the backend processing</span>
-<span class="sd">        orientation_batch_size : int</span>
-<span class="sd">            Number of orientations to process at once. Defaults to 64.</span>
+<span class="sd">        correlation_batch_size : int</span>
+<span class="sd">            Number of orientations to process at once. Defaults to 32.</span>
 
 <span class="sd">        Returns</span>
 <span class="sd">        -------</span>
 <span class="sd">        dict[str, np.ndarray]</span>
 <span class="sd">            The result of the refine template program.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="c1"># Adjust batch size if orientation search is disabled</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">orientation_refinement_config</span><span class="o">.</span><span class="n">enabled</span><span class="p">:</span>
-            <span class="n">orientation_batch_size</span> <span class="o">=</span> <span class="mi">1</span>
-        <span class="k">elif</span> <span class="p">(</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">orientation_refinement_config</span><span class="o">.</span><span class="n">euler_angles_offsets</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
-            <span class="o">&lt;</span> <span class="n">orientation_batch_size</span>
-        <span class="p">):</span>
-            <span class="n">orientation_batch_size</span> <span class="o">=</span> <span class="p">(</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">orientation_refinement_config</span><span class="o">.</span><span class="n">euler_angles_offsets</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
-            <span class="p">)</span>
-
         <span class="c1"># pylint: disable=duplicate-code</span>
         <span class="n">result</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
         <span class="n">result</span> <span class="o">=</span> <span class="n">core_refine_template</span><span class="p">(</span>
-            <span class="n">batch_size</span><span class="o">=</span><span class="n">orientation_batch_size</span><span class="p">,</span> <span class="o">**</span><span class="n">backend_kwargs</span>
+            <span class="n">batch_size</span><span class="o">=</span><span class="n">correlation_batch_size</span><span class="p">,</span>
+            <span class="n">num_cuda_streams</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">computational_config</span><span class="o">.</span><span class="n">num_cpus</span><span class="p">,</span>
+            <span class="o">**</span><span class="n">backend_kwargs</span><span class="p">,</span>
         <span class="p">)</span>
         <span class="n">result</span> <span class="o">=</span> <span class="p">{</span><span class="n">k</span><span class="p">:</span> <span class="n">v</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span><span class="o">.</span><span class="n">numpy</span><span class="p">()</span> <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">result</span><span class="o">.</span><span class="n">items</span><span class="p">()}</span>
 
@@ -2572,7 +2576,7 @@
 
 
 <h3 id="leopard_em.pydantic_models.managers.refine_template_manager.RefineTemplateManager.get_refine_result" class="doc doc-heading">
-            <code class="highlight language-python"><span class="n">get_refine_result</span><span class="p">(</span><span class="n">backend_kwargs</span><span class="p">,</span> <span class="n">orientation_batch_size</span><span class="o">=</span><span class="mi">64</span><span class="p">)</span></code>
+            <code class="highlight language-python"><span class="n">get_refine_result</span><span class="p">(</span><span class="n">backend_kwargs</span><span class="p">,</span> <span class="n">correlation_batch_size</span><span class="o">=</span><span class="mi">32</span><span class="p">)</span></code>
 
 </h3>
 
@@ -2611,18 +2615,18 @@
           </tr>
           <tr class="doc-section-item">
             <td>
-                <code>orientation_batch_size</code>
+                <code>correlation_batch_size</code>
             </td>
             <td>
                   <code><span title="int">int</span></code>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Number of orientations to process at once. Defaults to 64.</p>
+                <p>Number of orientations to process at once. Defaults to 32.</p>
               </div>
             </td>
             <td>
-                  <code>64</code>
+                  <code>32</code>
             </td>
           </tr>
       </tbody>
@@ -2680,17 +2684,8 @@
 <span class="normal">162</span>
 <span class="normal">163</span>
 <span class="normal">164</span>
-<span class="normal">165</span>
-<span class="normal">166</span>
-<span class="normal">167</span>
-<span class="normal">168</span>
-<span class="normal">169</span>
-<span class="normal">170</span>
-<span class="normal">171</span>
-<span class="normal">172</span>
-<span class="normal">173</span>
-<span class="normal">174</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">get_refine_result</span><span class="p">(</span>
-    <span class="bp">self</span><span class="p">,</span> <span class="n">backend_kwargs</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span> <span class="n">orientation_batch_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">64</span>
+<span class="normal">165</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">get_refine_result</span><span class="p">(</span>
+    <span class="bp">self</span><span class="p">,</span> <span class="n">backend_kwargs</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span> <span class="n">correlation_batch_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">32</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Get refine template result.</span>
 
@@ -2698,29 +2693,20 @@
 <span class="sd">    ----------</span>
 <span class="sd">    backend_kwargs : dict</span>
 <span class="sd">        Keyword arguments for the backend processing</span>
-<span class="sd">    orientation_batch_size : int</span>
-<span class="sd">        Number of orientations to process at once. Defaults to 64.</span>
+<span class="sd">    correlation_batch_size : int</span>
+<span class="sd">        Number of orientations to process at once. Defaults to 32.</span>
 
 <span class="sd">    Returns</span>
 <span class="sd">    -------</span>
 <span class="sd">    dict[str, np.ndarray]</span>
 <span class="sd">        The result of the refine template program.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
-    <span class="c1"># Adjust batch size if orientation search is disabled</span>
-    <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">orientation_refinement_config</span><span class="o">.</span><span class="n">enabled</span><span class="p">:</span>
-        <span class="n">orientation_batch_size</span> <span class="o">=</span> <span class="mi">1</span>
-    <span class="k">elif</span> <span class="p">(</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">orientation_refinement_config</span><span class="o">.</span><span class="n">euler_angles_offsets</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
-        <span class="o">&lt;</span> <span class="n">orientation_batch_size</span>
-    <span class="p">):</span>
-        <span class="n">orientation_batch_size</span> <span class="o">=</span> <span class="p">(</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">orientation_refinement_config</span><span class="o">.</span><span class="n">euler_angles_offsets</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
-        <span class="p">)</span>
-
     <span class="c1"># pylint: disable=duplicate-code</span>
     <span class="n">result</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
     <span class="n">result</span> <span class="o">=</span> <span class="n">core_refine_template</span><span class="p">(</span>
-        <span class="n">batch_size</span><span class="o">=</span><span class="n">orientation_batch_size</span><span class="p">,</span> <span class="o">**</span><span class="n">backend_kwargs</span>
+        <span class="n">batch_size</span><span class="o">=</span><span class="n">correlation_batch_size</span><span class="p">,</span>
+        <span class="n">num_cuda_streams</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">computational_config</span><span class="o">.</span><span class="n">num_cpus</span><span class="p">,</span>
+        <span class="o">**</span><span class="n">backend_kwargs</span><span class="p">,</span>
     <span class="p">)</span>
     <span class="n">result</span> <span class="o">=</span> <span class="p">{</span><span class="n">k</span><span class="p">:</span> <span class="n">v</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span><span class="o">.</span><span class="n">numpy</span><span class="p">()</span> <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">result</span><span class="o">.</span><span class="n">items</span><span class="p">()}</span>
 
@@ -2931,7 +2917,16 @@ False.</p>
 
             <details class="quote">
               <summary>Source code in <code>src/leopard_em/pydantic_models/managers/refine_template_manager.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">176</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">167</span>
+<span class="normal">168</span>
+<span class="normal">169</span>
+<span class="normal">170</span>
+<span class="normal">171</span>
+<span class="normal">172</span>
+<span class="normal">173</span>
+<span class="normal">174</span>
+<span class="normal">175</span>
+<span class="normal">176</span>
 <span class="normal">177</span>
 <span class="normal">178</span>
 <span class="normal">179</span>
@@ -3012,16 +3007,7 @@ False.</p>
 <span class="normal">254</span>
 <span class="normal">255</span>
 <span class="normal">256</span>
-<span class="normal">257</span>
-<span class="normal">258</span>
-<span class="normal">259</span>
-<span class="normal">260</span>
-<span class="normal">261</span>
-<span class="normal">262</span>
-<span class="normal">263</span>
-<span class="normal">264</span>
-<span class="normal">265</span>
-<span class="normal">266</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">refine_result_to_dataframe</span><span class="p">(</span>
+<span class="normal">257</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">refine_result_to_dataframe</span><span class="p">(</span>
     <span class="bp">self</span><span class="p">,</span> <span class="n">output_dataframe_path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">result</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Convert refine template result to dataframe.</span>
@@ -3122,7 +3108,7 @@ False.</p>
 
 
 <h3 id="leopard_em.pydantic_models.managers.refine_template_manager.RefineTemplateManager.run_refine_template" class="doc doc-heading">
-            <code class="highlight language-python"><span class="n">run_refine_template</span><span class="p">(</span><span class="n">output_dataframe_path</span><span class="p">,</span> <span class="n">orientation_batch_size</span><span class="o">=</span><span class="mi">64</span><span class="p">)</span></code>
+            <code class="highlight language-python"><span class="n">run_refine_template</span><span class="p">(</span><span class="n">output_dataframe_path</span><span class="p">,</span> <span class="n">correlation_batch_size</span><span class="o">=</span><span class="mi">32</span><span class="p">)</span></code>
 
 </h3>
 
@@ -3161,18 +3147,18 @@ False.</p>
           </tr>
           <tr class="doc-section-item">
             <td>
-                <code>orientation_batch_size</code>
+                <code>correlation_batch_size</code>
             </td>
             <td>
                   <code><span title="int">int</span></code>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Number of orientations to process at once. Defaults to 64.</p>
+                <p>Number of cross-correlations to process in one batch, defaults to 32.</p>
               </div>
             </td>
             <td>
-                  <code>64</code>
+                  <code>32</code>
             </td>
           </tr>
       </tbody>
@@ -3200,7 +3186,7 @@ False.</p>
 <span class="normal">135</span>
 <span class="normal">136</span>
 <span class="normal">137</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">run_refine_template</span><span class="p">(</span>
-    <span class="bp">self</span><span class="p">,</span> <span class="n">output_dataframe_path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">orientation_batch_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">64</span>
+    <span class="bp">self</span><span class="p">,</span> <span class="n">output_dataframe_path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">correlation_batch_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">32</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Run the refine template program and saves the resultant DataFrame to csv.</span>
 
@@ -3208,12 +3194,12 @@ False.</p>
 <span class="sd">    ----------</span>
 <span class="sd">    output_dataframe_path : str</span>
 <span class="sd">        Path to save the refined particle data.</span>
-<span class="sd">    orientation_batch_size : int</span>
-<span class="sd">        Number of orientations to process at once. Defaults to 64.</span>
+<span class="sd">    correlation_batch_size : int</span>
+<span class="sd">        Number of cross-correlations to process in one batch, defaults to 32.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="n">backend_kwargs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">make_backend_core_function_kwargs</span><span class="p">()</span>
 
-    <span class="n">result</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_refine_result</span><span class="p">(</span><span class="n">backend_kwargs</span><span class="p">,</span> <span class="n">orientation_batch_size</span><span class="p">)</span>
+    <span class="n">result</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_refine_result</span><span class="p">(</span><span class="n">backend_kwargs</span><span class="p">,</span> <span class="n">correlation_batch_size</span><span class="p">)</span>
 
     <span class="bp">self</span><span class="o">.</span><span class="n">refine_result_to_dataframe</span><span class="p">(</span>
         <span class="n">output_dataframe_path</span><span class="o">=</span><span class="n">output_dataframe_path</span><span class="p">,</span> <span class="n">result</span><span class="o">=</span><span class="n">result</span>

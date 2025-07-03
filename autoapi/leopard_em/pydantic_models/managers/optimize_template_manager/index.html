@@ -316,11 +316,11 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../../examples/04_plotting_2dtm_results" class="md-nav__link">
+      <a href="../../../../../examples/04_plotting_2dtm_results/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
-    Plotting match template results
+    Visualizing 2DTM result
     
   </span>
   
@@ -879,6 +879,28 @@
   
   <span class="md-ellipsis">
     core_refine_template
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../backend/cross_correlation/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    cross_correlation
     
   </span>
   
@@ -2405,7 +2427,7 @@
 <span class="sd">            Whether to use refined angles or not. Defaults to True.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="c1"># simulate template volume</span>
-        <span class="n">template</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">simulator</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">gpu_ids</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">computational_config</span><span class="o">.</span><span class="n">gpu_ids</span><span class="p">)</span>
+        <span class="n">template</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">simulator</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">device</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">computational_config</span><span class="o">.</span><span class="n">gpu_ids</span><span class="p">)</span>
 
         <span class="c1"># The set of &quot;best&quot; euler angles from match template search</span>
         <span class="c1"># Check if refined angles exist, otherwise use the original angles</span>
@@ -2989,7 +3011,7 @@
 <span class="sd">        Whether to use refined angles or not. Defaults to True.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="c1"># simulate template volume</span>
-    <span class="n">template</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">simulator</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">gpu_ids</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">computational_config</span><span class="o">.</span><span class="n">gpu_ids</span><span class="p">)</span>
+    <span class="n">template</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">simulator</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">device</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">computational_config</span><span class="o">.</span><span class="n">gpu_ids</span><span class="p">)</span>
 
     <span class="c1"># The set of &quot;best&quot; euler angles from match template search</span>
     <span class="c1"># Check if refined angles exist, otherwise use the original angles</span>

@@ -12,7 +12,7 @@
         <link rel="prev" href="../core_match_template/">
       
       
-        <link rel="next" href="../process_results/">
+        <link rel="next" href="../cross_correlation/">
       
       
       <link rel="icon" href="../../../../assets/images/favicon.png">
@@ -316,11 +316,11 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../examples/04_plotting_2dtm_results" class="md-nav__link">
+      <a href="../../../../examples/04_plotting_2dtm_results/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
-    Plotting match template results
+    Visualizing 2DTM result
     
   </span>
   
@@ -968,6 +968,28 @@
   
 </nav>
       
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cross_correlation/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    cross_correlation
+    
+  </span>
+  
+
+      </a>
     </li>
   
 
@@ -1878,8 +1900,7 @@
 
             <details class="quote">
               <summary>Source code in <code>src/leopard_em/backend/core_refine_template.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">29</span>
-<span class="normal">30</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">30</span>
 <span class="normal">31</span>
 <span class="normal">32</span>
 <span class="normal">33</span>
@@ -1889,7 +1910,8 @@
 <span class="normal">37</span>
 <span class="normal">38</span>
 <span class="normal">39</span>
-<span class="normal">40</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">combine_euler_angles</span><span class="p">(</span><span class="n">angle_a</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">angle_b</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+<span class="normal">40</span>
+<span class="normal">41</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">combine_euler_angles</span><span class="p">(</span><span class="n">angle_a</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span> <span class="n">angle_b</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Helper function for composing rotations defined by two sets of Euler angles.&quot;&quot;&quot;</span>
     <span class="n">rotmat_a</span> <span class="o">=</span> <span class="n">roma</span><span class="o">.</span><span class="n">euler_to_rotmat</span><span class="p">(</span>
         <span class="n">EULER_ANGLE_FMT</span><span class="p">,</span> <span class="n">angle_a</span><span class="p">,</span> <span class="n">degrees</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="n">angle_a</span><span class="o">.</span><span class="n">device</span>
@@ -1911,7 +1933,7 @@
 
 
 <h2 id="leopard_em.backend.core_refine_template.construct_multi_gpu_refine_template_kwargs" class="doc doc-heading">
-            <code class="highlight language-python"><span class="n">construct_multi_gpu_refine_template_kwargs</span><span class="p">(</span><span class="n">particle_stack_dft</span><span class="p">,</span> <span class="n">template_dft</span><span class="p">,</span> <span class="n">euler_angles</span><span class="p">,</span> <span class="n">euler_angle_offsets</span><span class="p">,</span> <span class="n">defocus_u</span><span class="p">,</span> <span class="n">defocus_v</span><span class="p">,</span> <span class="n">defocus_angle</span><span class="p">,</span> <span class="n">defocus_offsets</span><span class="p">,</span> <span class="n">pixel_size_offsets</span><span class="p">,</span> <span class="n">corr_mean</span><span class="p">,</span> <span class="n">corr_std</span><span class="p">,</span> <span class="n">ctf_kwargs</span><span class="p">,</span> <span class="n">projective_filters</span><span class="p">,</span> <span class="n">batch_size</span><span class="p">,</span> <span class="n">devices</span><span class="p">)</span></code>
+            <code class="highlight language-python"><span class="n">construct_multi_gpu_refine_template_kwargs</span><span class="p">(</span><span class="n">particle_stack_dft</span><span class="p">,</span> <span class="n">template_dft</span><span class="p">,</span> <span class="n">euler_angles</span><span class="p">,</span> <span class="n">euler_angle_offsets</span><span class="p">,</span> <span class="n">defocus_u</span><span class="p">,</span> <span class="n">defocus_v</span><span class="p">,</span> <span class="n">defocus_angle</span><span class="p">,</span> <span class="n">defocus_offsets</span><span class="p">,</span> <span class="n">pixel_size_offsets</span><span class="p">,</span> <span class="n">corr_mean</span><span class="p">,</span> <span class="n">corr_std</span><span class="p">,</span> <span class="n">ctf_kwargs</span><span class="p">,</span> <span class="n">projective_filters</span><span class="p">,</span> <span class="n">batch_size</span><span class="p">,</span> <span class="n">devices</span><span class="p">,</span> <span class="n">num_cuda_streams</span><span class="p">)</span></code>
 
 </h2>
 
@@ -2172,6 +2194,22 @@
                 <em>required</em>
             </td>
           </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>num_cuda_streams</code>
+            </td>
+            <td>
+                  <code><span title="int">int</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Number of CUDA streams to use per device.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
       </tbody>
     </table>
 
@@ -2201,8 +2239,7 @@
 
             <details class="quote">
               <summary>Source code in <code>src/leopard_em/backend/core_refine_template.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">209</span>
-<span class="normal">210</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">210</span>
 <span class="normal">211</span>
 <span class="normal">212</span>
 <span class="normal">213</span>
@@ -2317,7 +2354,12 @@
 <span class="normal">322</span>
 <span class="normal">323</span>
 <span class="normal">324</span>
-<span class="normal">325</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">construct_multi_gpu_refine_template_kwargs</span><span class="p">(</span>
+<span class="normal">325</span>
+<span class="normal">326</span>
+<span class="normal">327</span>
+<span class="normal">328</span>
+<span class="normal">329</span>
+<span class="normal">330</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">construct_multi_gpu_refine_template_kwargs</span><span class="p">(</span>
     <span class="n">particle_stack_dft</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
     <span class="n">template_dft</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
     <span class="n">euler_angles</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
@@ -2333,6 +2375,7 @@
     <span class="n">projective_filters</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
     <span class="n">batch_size</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
     <span class="n">devices</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">],</span>
+    <span class="n">num_cuda_streams</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">]:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Split particle stack between requested devices.</span>
 
@@ -2368,6 +2411,8 @@
 <span class="sd">        Batch size for orientation processing.</span>
 <span class="sd">    devices : list[torch.device]</span>
 <span class="sd">        List of devices to split across.</span>
+<span class="sd">    num_cuda_streams : int</span>
+<span class="sd">        Number of CUDA streams to use per device.</span>
 
 <span class="sd">    Returns</span>
 <span class="sd">    -------</span>
@@ -2428,6 +2473,7 @@
             <span class="s2">&quot;ctf_kwargs&quot;</span><span class="p">:</span> <span class="n">ctf_kwargs</span><span class="p">,</span>
             <span class="s2">&quot;projective_filters&quot;</span><span class="p">:</span> <span class="n">device_projective_filters</span><span class="p">,</span>
             <span class="s2">&quot;batch_size&quot;</span><span class="p">:</span> <span class="n">batch_size</span><span class="p">,</span>
+            <span class="s2">&quot;num_cuda_streams&quot;</span><span class="p">:</span> <span class="n">num_cuda_streams</span><span class="p">,</span>
         <span class="p">}</span>
 
         <span class="n">kwargs_per_device</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">kwargs</span><span class="p">)</span>
@@ -2444,7 +2490,7 @@
 
 
 <h2 id="leopard_em.backend.core_refine_template.core_refine_template" class="doc doc-heading">
-            <code class="highlight language-python"><span class="n">core_refine_template</span><span class="p">(</span><span class="n">particle_stack_dft</span><span class="p">,</span> <span class="n">template_dft</span><span class="p">,</span> <span class="n">euler_angles</span><span class="p">,</span> <span class="n">euler_angle_offsets</span><span class="p">,</span> <span class="n">defocus_offsets</span><span class="p">,</span> <span class="n">defocus_u</span><span class="p">,</span> <span class="n">defocus_v</span><span class="p">,</span> <span class="n">defocus_angle</span><span class="p">,</span> <span class="n">pixel_size_offsets</span><span class="p">,</span> <span class="n">corr_mean</span><span class="p">,</span> <span class="n">corr_std</span><span class="p">,</span> <span class="n">ctf_kwargs</span><span class="p">,</span> <span class="n">projective_filters</span><span class="p">,</span> <span class="n">device</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">batch_size</span><span class="o">=</span><span class="mi">64</span><span class="p">)</span></code>
+            <code class="highlight language-python"><span class="n">core_refine_template</span><span class="p">(</span><span class="n">particle_stack_dft</span><span class="p">,</span> <span class="n">template_dft</span><span class="p">,</span> <span class="n">euler_angles</span><span class="p">,</span> <span class="n">euler_angle_offsets</span><span class="p">,</span> <span class="n">defocus_offsets</span><span class="p">,</span> <span class="n">defocus_u</span><span class="p">,</span> <span class="n">defocus_v</span><span class="p">,</span> <span class="n">defocus_angle</span><span class="p">,</span> <span class="n">pixel_size_offsets</span><span class="p">,</span> <span class="n">corr_mean</span><span class="p">,</span> <span class="n">corr_std</span><span class="p">,</span> <span class="n">ctf_kwargs</span><span class="p">,</span> <span class="n">projective_filters</span><span class="p">,</span> <span class="n">device</span><span class="p">,</span> <span class="n">batch_size</span><span class="o">=</span><span class="mi">32</span><span class="p">,</span> <span class="n">num_cuda_streams</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span></code>
 
 </h2>
 
@@ -2693,7 +2739,7 @@ Shape of (H - h + 1, W - w + 1).</p>
               </div>
             </td>
             <td>
-                  <code>None</code>
+                <em>required</em>
             </td>
           </tr>
           <tr class="doc-section-item">
@@ -2705,11 +2751,27 @@ Shape of (H - h + 1, W - w + 1).</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>The number of orientations to process at once. Default is 64.</p>
+                <p>The number of cross-correlations to process in one batch, defaults to 32.</p>
               </div>
             </td>
             <td>
-                  <code>64</code>
+                  <code>32</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>num_cuda_streams</code>
+            </td>
+            <td>
+                  <code><span title="int">int</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Number of CUDA streams to use for parallel processing. Defaults to 1.</p>
+              </div>
+            </td>
+            <td>
+                  <code>1</code>
             </td>
           </tr>
       </tbody>
@@ -2741,8 +2803,7 @@ Shape of (H - h + 1, W - w + 1).</p>
 
             <details class="quote">
               <summary>Source code in <code>src/leopard_em/backend/core_refine_template.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"> 48</span>
-<span class="normal"> 49</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"> 49</span>
 <span class="normal"> 50</span>
 <span class="normal"> 51</span>
 <span class="normal"> 52</span>
@@ -2898,7 +2959,8 @@ Shape of (H - h + 1, W - w + 1).</p>
 <span class="normal">202</span>
 <span class="normal">203</span>
 <span class="normal">204</span>
-<span class="normal">205</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">core_refine_template</span><span class="p">(</span>
+<span class="normal">205</span>
+<span class="normal">206</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">core_refine_template</span><span class="p">(</span>
     <span class="n">particle_stack_dft</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>  <span class="c1"># (N, H, W)</span>
     <span class="n">template_dft</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>  <span class="c1"># (d, h, w)</span>
     <span class="n">euler_angles</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>  <span class="c1"># (N, 3)</span>
@@ -2912,8 +2974,9 @@ Shape of (H - h + 1, W - w + 1).</p>
     <span class="n">corr_std</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>  <span class="c1"># (N, H - h + 1, W - w + 1)</span>
     <span class="n">ctf_kwargs</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span>
     <span class="n">projective_filters</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>  <span class="c1"># (N, h, w)</span>
-    <span class="n">device</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span> <span class="o">|</span> <span class="nb">list</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-    <span class="n">batch_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">64</span><span class="p">,</span>
+    <span class="n">device</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span> <span class="o">|</span> <span class="nb">list</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">],</span>
+    <span class="n">batch_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">32</span><span class="p">,</span>
+    <span class="n">num_cuda_streams</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Core function to refine orientations and defoci of a set of particles.</span>
 
@@ -2952,20 +3015,18 @@ Shape of (H - h + 1, W - w + 1).</p>
 <span class="sd">        Keyword arguments to pass to the CTF calculation function.</span>
 <span class="sd">    projective_filters : torch.Tensor</span>
 <span class="sd">        Projective filters to apply to each Fourier slice particle. Shape of (N, h, w).</span>
-<span class="sd">    device : torch.device | list[torch.device], optional</span>
+<span class="sd">    device : torch.device | list[torch.device]</span>
 <span class="sd">        Device or list of devices to use for processing.</span>
 <span class="sd">    batch_size : int, optional</span>
-<span class="sd">        The number of orientations to process at once. Default is 64.</span>
+<span class="sd">        The number of cross-correlations to process in one batch, defaults to 32.</span>
+<span class="sd">    num_cuda_streams : int, optional</span>
+<span class="sd">        Number of CUDA streams to use for parallel processing. Defaults to 1.</span>
 
 <span class="sd">    Returns</span>
 <span class="sd">    -------</span>
 <span class="sd">    dict[str, torch.Tensor]</span>
 <span class="sd">        Dictionary containing the refined parameters for all particles.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
-    <span class="c1"># If no device specified, use the device  gpu 0</span>
-    <span class="k">if</span> <span class="n">device</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-        <span class="n">device</span> <span class="o">=</span> <span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">(</span><span class="s2">&quot;cuda:0&quot;</span><span class="p">)]</span>
-
     <span class="c1"># Convert single device to list for consistent handling</span>
     <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">device</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">):</span>
         <span class="n">device</span> <span class="o">=</span> <span class="p">[</span><span class="n">device</span><span class="p">]</span>
@@ -2989,6 +3050,7 @@ Shape of (H - h + 1, W - w + 1).</p>
         <span class="n">projective_filters</span><span class="o">=</span><span class="n">projective_filters</span><span class="p">,</span>
         <span class="n">batch_size</span><span class="o">=</span><span class="n">batch_size</span><span class="p">,</span>
         <span class="n">devices</span><span class="o">=</span><span class="n">device</span><span class="p">,</span>
+        <span class="n">num_cuda_streams</span><span class="o">=</span><span class="n">num_cuda_streams</span><span class="p">,</span>
     <span class="p">)</span>
 
     <span class="n">results</span> <span class="o">=</span> <span class="n">run_multiprocess_jobs</span><span class="p">(</span>
@@ -3247,32 +3309,7 @@ the output will be (N, H, W).</p>
 
             <details class="quote">
               <summary>Source code in <code>src/leopard_em/backend/core_refine_template.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">705</span>
-<span class="normal">706</span>
-<span class="normal">707</span>
-<span class="normal">708</span>
-<span class="normal">709</span>
-<span class="normal">710</span>
-<span class="normal">711</span>
-<span class="normal">712</span>
-<span class="normal">713</span>
-<span class="normal">714</span>
-<span class="normal">715</span>
-<span class="normal">716</span>
-<span class="normal">717</span>
-<span class="normal">718</span>
-<span class="normal">719</span>
-<span class="normal">720</span>
-<span class="normal">721</span>
-<span class="normal">722</span>
-<span class="normal">723</span>
-<span class="normal">724</span>
-<span class="normal">725</span>
-<span class="normal">726</span>
-<span class="normal">727</span>
-<span class="normal">728</span>
-<span class="normal">729</span>
-<span class="normal">730</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">730</span>
 <span class="normal">731</span>
 <span class="normal">732</span>
 <span class="normal">733</span>
@@ -3357,7 +3394,32 @@ the output will be (N, H, W).</p>
 <span class="normal">812</span>
 <span class="normal">813</span>
 <span class="normal">814</span>
-<span class="normal">815</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">cross_correlate_particle_stack</span><span class="p">(</span>
+<span class="normal">815</span>
+<span class="normal">816</span>
+<span class="normal">817</span>
+<span class="normal">818</span>
+<span class="normal">819</span>
+<span class="normal">820</span>
+<span class="normal">821</span>
+<span class="normal">822</span>
+<span class="normal">823</span>
+<span class="normal">824</span>
+<span class="normal">825</span>
+<span class="normal">826</span>
+<span class="normal">827</span>
+<span class="normal">828</span>
+<span class="normal">829</span>
+<span class="normal">830</span>
+<span class="normal">831</span>
+<span class="normal">832</span>
+<span class="normal">833</span>
+<span class="normal">834</span>
+<span class="normal">835</span>
+<span class="normal">836</span>
+<span class="normal">837</span>
+<span class="normal">838</span>
+<span class="normal">839</span>
+<span class="normal">840</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">cross_correlate_particle_stack</span><span class="p">(</span>
     <span class="n">particle_stack_dft</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>  <span class="c1"># (N, H, W)</span>
     <span class="n">template_dft</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>  <span class="c1"># (d, h, w)</span>
     <span class="n">rotation_matrices</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>  <span class="c1"># (N, 3, 3)</span>

@@ -316,11 +316,11 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../examples/04_plotting_2dtm_results" class="md-nav__link">
+      <a href="../../../../examples/04_plotting_2dtm_results/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
-    Plotting match template results
+    Visualizing 2DTM result
     
   </span>
   
@@ -954,6 +954,28 @@
   
   <span class="md-ellipsis">
     core_refine_template
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../backend/cross_correlation/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    cross_correlation
     
   </span>
   
@@ -2016,23 +2038,6 @@ be provided if <code>z_score_cutoff</code> is not provided (needed for the noise
           </tr>
           <tr class="doc-section-item">
             <td>
-                <code>num_bins</code>
-            </td>
-            <td>
-                  <code><span title="int">int</span></code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>Number of bins to use for histogram when fitting GEV distribution. Default is
-128.</p>
-              </div>
-            </td>
-            <td>
-                <em>required</em>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td>
                 <code>false_positives</code>
             </td>
             <td>
@@ -2171,10 +2176,7 @@ be provided if <code>z_score_cutoff</code> is not provided (needed for the noise
 <span class="normal">191</span>
 <span class="normal">192</span>
 <span class="normal">193</span>
-<span class="normal">194</span>
-<span class="normal">195</span>
-<span class="normal">196</span>
-<span class="normal">197</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">extract_peaks_and_statistics_gev</span><span class="p">(</span>
+<span class="normal">194</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">extract_peaks_and_statistics_gev</span><span class="p">(</span>
     <span class="n">mip</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
     <span class="n">scaled_mip</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
     <span class="n">best_psi</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">,</span>
@@ -2210,9 +2212,6 @@ be provided if <code>z_score_cutoff</code> is not provided (needed for the noise
 <span class="sd">    total_correlation_positions : int</span>
 <span class="sd">        Total number of correlation positions calculated during template matching. Must</span>
 <span class="sd">        be provided if `z_score_cutoff` is not provided (needed for the noise model).</span>
-<span class="sd">    num_bins : int, optional</span>
-<span class="sd">        Number of bins to use for histogram when fitting GEV distribution. Default is</span>
-<span class="sd">        128.</span>
 <span class="sd">    false_positives : float, optional</span>
 <span class="sd">        Number of false positives to allow in the image (over all pixels). Default is</span>
 <span class="sd">        1.0 which corresponds to a single false-positive.</span>

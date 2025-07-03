@@ -605,11 +605,11 @@
   
   
     <li class="md-nav__item">
-      <a href="../04_plotting_2dtm_results" class="md-nav__link">
+      <a href="../04_plotting_2dtm_results/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
-    Plotting match template results
+    Visualizing 2DTM result
     
   </span>
   
@@ -1164,6 +1164,28 @@
   
   <span class="md-ellipsis">
     core_refine_template
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/backend/cross_correlation/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    cross_correlation
     
   </span>
   
@@ -3596,10 +3618,11 @@ Utilizing this filter allows for fine-grained control over how spatial frequenci
 </div>
 <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
-<h2 id="computationalconfig"><strong>ComputationalConfig</strong><a class="anchor-link" href="#computationalconfig">¶</a></h2><p>The <code>ComputationalConfig</code> model currently only handles the GPU ids to use for template matching.
+<h2 id="computationalconfig"><strong>ComputationalConfig</strong><a class="anchor-link" href="#computationalconfig">¶</a></h2><p>The <code>ComputationalConfig</code> model handles the GPU ids to use for template matching as well as the number of streams to run concurrently on each device.
 The model has the following attributes:</p>
 <ul>
 <li><code>gpu_ids</code>: A list of integers representing the GPU ids to use for template matching. The default value is <code>[0]</code> which corresponds to the first GPU.</li>
+<li><code>num_cpus</code>: A positive integer corresponding to the number of streams to run concurrently on each device with a default of <code>1</code>.</li>
 </ul>
 <p>Below, we create a new instance of the <code>ComputationalConfig</code> model with the default GPU id list.</p>
 </div>

@@ -316,11 +316,11 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../../examples/04_plotting_2dtm_results" class="md-nav__link">
+      <a href="../../../../../examples/04_plotting_2dtm_results/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
-    Plotting match template results
+    Visualizing 2DTM result
     
   </span>
   
@@ -896,6 +896,28 @@
   
   
     <li class="md-nav__item">
+      <a href="../../../backend/cross_correlation/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    cross_correlation
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../../backend/process_results/" class="md-nav__link">
         
   
@@ -1106,15 +1128,6 @@
   <a href="#leopard_em.pydantic_models.config.computational_config.ComputationalConfig.gpu_devices" class="md-nav__link">
     <span class="md-ellipsis">
       gpu_devices
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#leopard_em.pydantic_models.config.computational_config.ComputationalConfig.validate_gpu_ids" class="md-nav__link">
-    <span class="md-ellipsis">
-      validate_gpu_ids
     </span>
   </a>
   
@@ -1799,15 +1812,6 @@
   
 </li>
         
-          <li class="md-nav__item">
-  <a href="#leopard_em.pydantic_models.config.computational_config.ComputationalConfig.validate_gpu_ids" class="md-nav__link">
-    <span class="md-ellipsis">
-      validate_gpu_ids
-    </span>
-  </a>
-  
-</li>
-        
       </ul>
     </nav>
   
@@ -1874,6 +1878,12 @@
 
 
         <p>Serialization of computational resources allocated for 2DTM.</p>
+<p>NOTE: The field <code>gpu_ids</code> is not validated at instantiation past being one of the
+valid types. For example, if "cuda:0" is specified but no CUDA device is available,
+the instantiation will succeed, and only upon translating <code>gpu_ids</code> to a list of
+<code>torch.device</code> objects will an error be raised. This is done to allow for
+configuration files to be loaded without requiring the actual hardware to be
+present at the time of loading.</p>
 
 
 <p><span class="doc-section-title">Attributes:</span></p>
@@ -1889,13 +1899,20 @@
           <tr class="doc-section-item">
             <td><code><span title="leopard_em.pydantic_models.config.computational_config.ComputationalConfig.gpu_ids">gpu_ids</span></code></td>
             <td>
-                  <code><span title="list">list</span>[<span title="int">int</span>]</code>
+                  <code><span title="typing.Optional">Optional</span>[<span title="typing.Union">Union</span>[<span title="int">int</span>, <span title="list">list</span>[<span title="int">int</span>], <span title="str">str</span>, <span title="list">list</span>[<span title="str">str</span>]]]</code>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Which GPU(s) to use for computation, defaults to 0 which will use device at
-index 0. A value of -2 or less corresponds to CPU device. A value of -1 will
-use all available GPUs.</p>
+                <p>Field which specifies which GPUs to use for computation. The following types
+of values are allowed:
+- A single integer, e.g. 0, which means to use GPU with ID 0.
+- A list of integers, e.g. [0, 2], which means to use GPUs with IDs 0 and 2.
+- A device specifier string, e.g. "cuda:0", which means to use GPU with ID 0.
+- A list of device specifier strings, e.g. ["cuda:0", "cuda:1"], which means to
+  use GPUs with IDs 0 and 1.
+- The specific string "all" which means to use all available GPUs identified
+  by torch.cuda.device_count().
+- The specific string "cpu" which means to use CPU.</p>
               </div>
             </td>
           </tr>
@@ -1921,10 +1938,7 @@ use all available GPUs.</p>
 
               <details class="quote">
                 <summary>Source code in <code>src/leopard_em/pydantic_models/config/computational_config.py</code></summary>
-                <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"> 9</span>
-<span class="normal">10</span>
-<span class="normal">11</span>
-<span class="normal">12</span>
+                <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">12</span>
 <span class="normal">13</span>
 <span class="normal">14</span>
 <span class="normal">15</span>
@@ -1972,39 +1986,66 @@ use all available GPUs.</p>
 <span class="normal">57</span>
 <span class="normal">58</span>
 <span class="normal">59</span>
-<span class="normal">60</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">ComputationalConfig</span><span class="p">(</span><span class="n">BaseModel</span><span class="p">):</span>
+<span class="normal">60</span>
+<span class="normal">61</span>
+<span class="normal">62</span>
+<span class="normal">63</span>
+<span class="normal">64</span>
+<span class="normal">65</span>
+<span class="normal">66</span>
+<span class="normal">67</span>
+<span class="normal">68</span>
+<span class="normal">69</span>
+<span class="normal">70</span>
+<span class="normal">71</span>
+<span class="normal">72</span>
+<span class="normal">73</span>
+<span class="normal">74</span>
+<span class="normal">75</span>
+<span class="normal">76</span>
+<span class="normal">77</span>
+<span class="normal">78</span>
+<span class="normal">79</span>
+<span class="normal">80</span>
+<span class="normal">81</span>
+<span class="normal">82</span>
+<span class="normal">83</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">ComputationalConfig</span><span class="p">(</span><span class="n">BaseModel</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Serialization of computational resources allocated for 2DTM.</span>
+
+<span class="sd">    NOTE: The field `gpu_ids` is not validated at instantiation past being one of the</span>
+<span class="sd">    valid types. For example, if &quot;cuda:0&quot; is specified but no CUDA device is available,</span>
+<span class="sd">    the instantiation will succeed, and only upon translating `gpu_ids` to a list of</span>
+<span class="sd">    `torch.device` objects will an error be raised. This is done to allow for</span>
+<span class="sd">    configuration files to be loaded without requiring the actual hardware to be</span>
+<span class="sd">    present at the time of loading.</span>
 
 <span class="sd">    Attributes</span>
 <span class="sd">    ----------</span>
-<span class="sd">    gpu_ids : list[int]</span>
-<span class="sd">        Which GPU(s) to use for computation, defaults to 0 which will use device at</span>
-<span class="sd">        index 0. A value of -2 or less corresponds to CPU device. A value of -1 will</span>
-<span class="sd">        use all available GPUs.</span>
+<span class="sd">    gpu_ids : Optional[Union[int, list[int], str, list[str]]]</span>
+<span class="sd">        Field which specifies which GPUs to use for computation. The following types</span>
+<span class="sd">        of values are allowed:</span>
+<span class="sd">        - A single integer, e.g. 0, which means to use GPU with ID 0.</span>
+<span class="sd">        - A list of integers, e.g. [0, 2], which means to use GPUs with IDs 0 and 2.</span>
+<span class="sd">        - A device specifier string, e.g. &quot;cuda:0&quot;, which means to use GPU with ID 0.</span>
+<span class="sd">        - A list of device specifier strings, e.g. [&quot;cuda:0&quot;, &quot;cuda:1&quot;], which means to</span>
+<span class="sd">          use GPUs with IDs 0 and 1.</span>
+<span class="sd">        - The specific string &quot;all&quot; which means to use all available GPUs identified</span>
+<span class="sd">          by torch.cuda.device_count().</span>
+<span class="sd">        - The specific string &quot;cpu&quot; which means to use CPU.</span>
 <span class="sd">    num_cpus : int</span>
 <span class="sd">        Total number of CPUs to use, defaults to 1.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
-    <span class="n">gpu_ids</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="nb">list</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="c1"># Type-hinting here is ensuring non-negative integers, and list of at least one</span>
+    <span class="n">gpu_ids</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span>
+        <span class="n">Union</span><span class="p">[</span>
+            <span class="nb">str</span><span class="p">,</span>
+            <span class="n">NonNegativeInt</span><span class="p">,</span>
+            <span class="n">Annotated</span><span class="p">[</span><span class="nb">list</span><span class="p">[</span><span class="n">NonNegativeInt</span><span class="p">],</span> <span class="n">Field</span><span class="p">(</span><span class="n">min_length</span><span class="o">=</span><span class="mi">1</span><span class="p">)],</span>
+            <span class="n">Annotated</span><span class="p">[</span><span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">Field</span><span class="p">(</span><span class="n">min_length</span><span class="o">=</span><span class="mi">1</span><span class="p">)],</span>
+        <span class="p">]</span>
+    <span class="p">]</span> <span class="o">=</span> <span class="p">[</span><span class="mi">0</span><span class="p">]</span>
     <span class="n">num_cpus</span><span class="p">:</span> <span class="n">Annotated</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="n">Field</span><span class="p">(</span><span class="n">ge</span><span class="o">=</span><span class="mi">1</span><span class="p">)]</span> <span class="o">=</span> <span class="mi">1</span>
-
-    <span class="nd">@field_validator</span><span class="p">(</span><span class="s2">&quot;gpu_ids&quot;</span><span class="p">)</span>  <span class="c1"># type: ignore</span>
-    <span class="k">def</span><span class="w"> </span><span class="nf">validate_gpu_ids</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">v</span><span class="p">):</span>  <span class="c1"># pylint: disable=no-self-argument</span>
-<span class="w">        </span><span class="sd">&quot;&quot;&quot;Validate input value for GPU ids.&quot;&quot;&quot;</span>
-        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">v</span><span class="p">,</span> <span class="nb">int</span><span class="p">):</span>
-            <span class="n">v</span> <span class="o">=</span> <span class="p">[</span><span class="n">v</span><span class="p">]</span>
-
-        <span class="c1"># Check if -1 appears, it is only value in list</span>
-        <span class="k">if</span> <span class="o">-</span><span class="mi">1</span> <span class="ow">in</span> <span class="n">v</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">v</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-                <span class="s2">&quot;If -1 (all GPUs) is in the list, it must be the only value.&quot;</span>
-            <span class="p">)</span>
-
-        <span class="c1"># Check if -2 appears, it is only value in list</span>
-        <span class="k">if</span> <span class="o">-</span><span class="mi">2</span> <span class="ow">in</span> <span class="n">v</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">v</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;If -2 (CPU) is in the list, it must be the only value.&quot;</span><span class="p">)</span>
-
-        <span class="k">return</span> <span class="n">v</span>
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">gpu_devices</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">]:</span>
@@ -2014,16 +2055,32 @@ use all available GPUs.</p>
 <span class="sd">        -------</span>
 <span class="sd">        list[torch.device]</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="c1"># Case where gpu_ids is integer</span>
-        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">gpu_ids</span><span class="p">,</span> <span class="nb">int</span><span class="p">):</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">gpu_ids</span> <span class="o">=</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">gpu_ids</span><span class="p">]</span>
-
-        <span class="k">if</span> <span class="o">-</span><span class="mi">1</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">gpu_ids</span><span class="p">:</span>
+        <span class="c1"># Handle special string cases first</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">gpu_ids</span> <span class="o">==</span> <span class="s2">&quot;all&quot;</span><span class="p">:</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">is_available</span><span class="p">():</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;No CUDA devices available.&quot;</span><span class="p">)</span>
             <span class="k">return</span> <span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;cuda:</span><span class="si">{</span><span class="n">i</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">device_count</span><span class="p">())]</span>
-        <span class="k">if</span> <span class="o">-</span><span class="mi">2</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">gpu_ids</span><span class="p">:</span>
+
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">gpu_ids</span> <span class="o">==</span> <span class="s2">&quot;cpu&quot;</span><span class="p">:</span>
             <span class="k">return</span> <span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">(</span><span class="s2">&quot;cpu&quot;</span><span class="p">)]</span>
 
-        <span class="k">return</span> <span class="p">[</span><span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;cuda:</span><span class="si">{</span><span class="n">gpu_id</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span> <span class="k">for</span> <span class="n">gpu_id</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">gpu_ids</span><span class="p">]</span>
+        <span class="c1"># Normalize to list for uniform processing</span>
+        <span class="n">gpu_list</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">gpu_ids</span> <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">gpu_ids</span><span class="p">,</span> <span class="nb">list</span><span class="p">)</span> <span class="k">else</span> <span class="p">[</span><span class="bp">self</span><span class="o">.</span><span class="n">gpu_ids</span><span class="p">]</span>
+
+        <span class="c1"># Process each item in the normalized list</span>
+        <span class="n">devices</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">gpu_id</span> <span class="ow">in</span> <span class="n">gpu_list</span><span class="p">:</span>
+            <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">gpu_id</span><span class="p">,</span> <span class="nb">int</span><span class="p">):</span>
+                <span class="n">devices</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;cuda:</span><span class="si">{</span><span class="n">gpu_id</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">))</span>
+            <span class="k">elif</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">gpu_id</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+                <span class="n">devices</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">(</span><span class="n">gpu_id</span><span class="p">))</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
+                    <span class="sa">f</span><span class="s2">&quot;Invalid type for gpu_ids element: </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">gpu_id</span><span class="p">)</span><span class="si">}</span><span class="s2">. &quot;</span>
+                    <span class="s2">&quot;Expected int or str.&quot;</span>
+                <span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">devices</span>
 </code></pre></div></td></tr></table></div>
               </details>
 
@@ -2083,61 +2140,6 @@ use all available GPUs.</p>
 </div>
 
 
-
-<div class="doc doc-object doc-function">
-
-
-<h3 id="leopard_em.pydantic_models.config.computational_config.ComputationalConfig.validate_gpu_ids" class="doc doc-heading">
-            <code class="highlight language-python"><span class="n">validate_gpu_ids</span><span class="p">(</span><span class="n">v</span><span class="p">)</span></code>
-
-</h3>
-
-
-    <div class="doc doc-contents ">
-
-        <p>Validate input value for GPU ids.</p>
-
-
-            <details class="quote">
-              <summary>Source code in <code>src/leopard_em/pydantic_models/config/computational_config.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">25</span>
-<span class="normal">26</span>
-<span class="normal">27</span>
-<span class="normal">28</span>
-<span class="normal">29</span>
-<span class="normal">30</span>
-<span class="normal">31</span>
-<span class="normal">32</span>
-<span class="normal">33</span>
-<span class="normal">34</span>
-<span class="normal">35</span>
-<span class="normal">36</span>
-<span class="normal">37</span>
-<span class="normal">38</span>
-<span class="normal">39</span>
-<span class="normal">40</span>
-<span class="normal">41</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@field_validator</span><span class="p">(</span><span class="s2">&quot;gpu_ids&quot;</span><span class="p">)</span>  <span class="c1"># type: ignore</span>
-<span class="k">def</span><span class="w"> </span><span class="nf">validate_gpu_ids</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">v</span><span class="p">):</span>  <span class="c1"># pylint: disable=no-self-argument</span>
-<span class="w">    </span><span class="sd">&quot;&quot;&quot;Validate input value for GPU ids.&quot;&quot;&quot;</span>
-    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">v</span><span class="p">,</span> <span class="nb">int</span><span class="p">):</span>
-        <span class="n">v</span> <span class="o">=</span> <span class="p">[</span><span class="n">v</span><span class="p">]</span>
-
-    <span class="c1"># Check if -1 appears, it is only value in list</span>
-    <span class="k">if</span> <span class="o">-</span><span class="mi">1</span> <span class="ow">in</span> <span class="n">v</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">v</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
-        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-            <span class="s2">&quot;If -1 (all GPUs) is in the list, it must be the only value.&quot;</span>
-        <span class="p">)</span>
-
-    <span class="c1"># Check if -2 appears, it is only value in list</span>
-    <span class="k">if</span> <span class="o">-</span><span class="mi">2</span> <span class="ow">in</span> <span class="n">v</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">v</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">1</span><span class="p">:</span>
-        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">&quot;If -2 (CPU) is in the list, it must be the only value.&quot;</span><span class="p">)</span>
-
-    <span class="k">return</span> <span class="n">v</span>
-</code></pre></div></td></tr></table></div>
-            </details>
-    </div>
-
-</div>
 
 
 

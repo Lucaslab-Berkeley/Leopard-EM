@@ -316,11 +316,11 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../../examples/04_plotting_2dtm_results" class="md-nav__link">
+      <a href="../../../../../examples/04_plotting_2dtm_results/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
-    Plotting match template results
+    Visualizing 2DTM result
     
   </span>
   
@@ -879,6 +879,28 @@
   
   <span class="md-ellipsis">
     core_refine_template
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../backend/cross_correlation/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    cross_correlation
     
   </span>
   
@@ -1910,6 +1932,10 @@
 
 
         <p>Model holding parameters necessary for running the constrained search program.</p>
+<p>NOTE: The constrained search program should only be run on data from a single
+reference micrograph. That is, if you have data from two or more micrographs, that
+data from each micrograph needs processed separately. This restriction may be lifted
+in the future.</p>
 
 
 <p><span class="doc-section-title">Attributes:</span></p>
@@ -2436,8 +2462,33 @@
 <span class="normal">375</span>
 <span class="normal">376</span>
 <span class="normal">377</span>
-<span class="normal">378</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">ConstrainedSearchManager</span><span class="p">(</span><span class="n">BaseModel2DTM</span><span class="p">):</span>
+<span class="normal">378</span>
+<span class="normal">379</span>
+<span class="normal">380</span>
+<span class="normal">381</span>
+<span class="normal">382</span>
+<span class="normal">383</span>
+<span class="normal">384</span>
+<span class="normal">385</span>
+<span class="normal">386</span>
+<span class="normal">387</span>
+<span class="normal">388</span>
+<span class="normal">389</span>
+<span class="normal">390</span>
+<span class="normal">391</span>
+<span class="normal">392</span>
+<span class="normal">393</span>
+<span class="normal">394</span>
+<span class="normal">395</span>
+<span class="normal">396</span>
+<span class="normal">397</span>
+<span class="normal">398</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">ConstrainedSearchManager</span><span class="p">(</span><span class="n">BaseModel2DTM</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Model holding parameters necessary for running the constrained search program.</span>
+
+<span class="sd">    NOTE: The constrained search program should only be run on data from a single</span>
+<span class="sd">    reference micrograph. That is, if you have data from two or more micrographs, that</span>
+<span class="sd">    data from each micrograph needs processed separately. This restriction may be lifted</span>
+<span class="sd">    in the future.</span>
 
 <span class="sd">    Attributes</span>
 <span class="sd">    ----------</span>
@@ -2501,14 +2552,22 @@
         <span class="bp">self</span><span class="p">,</span> <span class="n">prefer_refined_angles</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Create the kwargs for the backend constrained_template core function.&quot;&quot;&quot;</span>
+        <span class="n">part_stk</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">particle_stack_reference</span>
+
+        <span class="c1"># Checks to make sure manager is properly configured</span>
+        <span class="c1"># pylint: disable=protected-access</span>
+        <span class="k">assert</span> <span class="n">part_stk</span><span class="o">.</span><span class="n">_df</span><span class="p">[</span><span class="s2">&quot;micrograph_path&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">nunique</span><span class="p">()</span> <span class="o">==</span> <span class="mi">1</span><span class="p">,</span> <span class="p">(</span>
+            <span class="s2">&quot;Constrained search can only be run on data from a single micrograph. &quot;</span>
+            <span class="s2">&quot;Please ensure that the particle stack contains particles from only one &quot;</span>
+            <span class="s2">&quot;micrograph.&quot;</span>
+        <span class="p">)</span>
+
         <span class="n">device_list</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">computational_config</span><span class="o">.</span><span class="n">gpu_devices</span>
 
         <span class="n">template</span> <span class="o">=</span> <span class="n">load_template_tensor</span><span class="p">(</span>
             <span class="n">template_volume</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">template_volume</span><span class="p">,</span>
             <span class="n">template_volume_path</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">template_volume_path</span><span class="p">,</span>
         <span class="p">)</span>
-
-        <span class="n">part_stk</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">particle_stack_reference</span>
 
         <span class="n">euler_angles</span> <span class="o">=</span> <span class="n">part_stk</span><span class="o">.</span><span class="n">get_euler_angles</span><span class="p">(</span><span class="n">prefer_refined_angles</span><span class="p">)</span>
 
@@ -2554,7 +2613,13 @@
         <span class="p">)</span>
 
         <span class="c1"># Ger corr mean and variance</span>
-        <span class="c1"># I want positions of reference but vals from constrained</span>
+        <span class="c1"># The position of the extracted areas needs to be from the larger particle, but</span>
+        <span class="c1"># the mean and variance must come from the initial match template on the</span>
+        <span class="c1"># smaller constrained particle.</span>
+        <span class="c1"># Currently, we just set the searched file (as in paths below) to the first</span>
+        <span class="c1"># element in the constrained particle stack.</span>
+        <span class="c1"># NOTE: This will *not* work if the constrained particle stack contains</span>
+        <span class="c1"># particles from multiple reference images.</span>
         <span class="n">part_stk</span><span class="o">.</span><span class="n">set_column</span><span class="p">(</span>
             <span class="s2">&quot;correlation_average_path&quot;</span><span class="p">,</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">particle_stack_constrained</span><span class="p">[</span><span class="s2">&quot;correlation_average_path&quot;</span><span class="p">][</span><span class="mi">0</span><span class="p">],</span>
@@ -2563,19 +2628,20 @@
             <span class="s2">&quot;correlation_variance_path&quot;</span><span class="p">,</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">particle_stack_constrained</span><span class="p">[</span><span class="s2">&quot;correlation_variance_path&quot;</span><span class="p">][</span><span class="mi">0</span><span class="p">],</span>
         <span class="p">)</span>
+        <span class="c1"># Get correlation statistics</span>
         <span class="n">corr_mean_stack</span> <span class="o">=</span> <span class="n">part_stk</span><span class="o">.</span><span class="n">construct_cropped_statistic_stack</span><span class="p">(</span>
-            <span class="s2">&quot;correlation_average&quot;</span>
+            <span class="n">stat</span><span class="o">=</span><span class="s2">&quot;correlation_average&quot;</span><span class="p">,</span>
+            <span class="n">handle_bounds</span><span class="o">=</span><span class="s2">&quot;pad&quot;</span><span class="p">,</span>
+            <span class="n">padding_mode</span><span class="o">=</span><span class="s2">&quot;constant&quot;</span><span class="p">,</span>
+            <span class="n">padding_value</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span>  <span class="c1"># pad with zeros</span>
         <span class="p">)</span>
-        <span class="n">corr_std_stack</span> <span class="o">=</span> <span class="p">(</span>
-            <span class="n">part_stk</span><span class="o">.</span><span class="n">construct_cropped_statistic_stack</span><span class="p">(</span>
-                <span class="n">stat</span><span class="o">=</span><span class="s2">&quot;correlation_variance&quot;</span><span class="p">,</span>
-                <span class="n">pos_reference</span><span class="o">=</span><span class="s2">&quot;center&quot;</span><span class="p">,</span>
-                <span class="n">handle_bounds</span><span class="o">=</span><span class="s2">&quot;pad&quot;</span><span class="p">,</span>
-                <span class="n">padding_mode</span><span class="o">=</span><span class="s2">&quot;constant&quot;</span><span class="p">,</span>
-                <span class="n">padding_value</span><span class="o">=</span><span class="mf">1e10</span><span class="p">,</span>
-            <span class="p">)</span>
-            <span class="o">**</span> <span class="mf">0.5</span>
-        <span class="p">)</span>  <span class="c1"># var to std</span>
+        <span class="n">corr_std_stack</span> <span class="o">=</span> <span class="n">part_stk</span><span class="o">.</span><span class="n">construct_cropped_statistic_stack</span><span class="p">(</span>
+            <span class="n">stat</span><span class="o">=</span><span class="s2">&quot;correlation_variance&quot;</span><span class="p">,</span>
+            <span class="n">handle_bounds</span><span class="o">=</span><span class="s2">&quot;pad&quot;</span><span class="p">,</span>
+            <span class="n">padding_mode</span><span class="o">=</span><span class="s2">&quot;constant&quot;</span><span class="p">,</span>
+            <span class="n">padding_value</span><span class="o">=</span><span class="mf">1e10</span><span class="p">,</span>  <span class="c1"># large to avoid out of bound pixels having inf z-score</span>
+        <span class="p">)</span>
+        <span class="n">corr_std_stack</span> <span class="o">=</span> <span class="n">corr_std_stack</span><span class="o">**</span><span class="mf">0.5</span>  <span class="c1"># Convert variance to standard deviation</span>
 
         <span class="k">return</span> <span class="p">{</span>
             <span class="s2">&quot;particle_stack_dft&quot;</span><span class="p">:</span> <span class="n">particle_images_dft</span><span class="p">,</span>
@@ -2886,27 +2952,7 @@
 
             <details class="quote">
               <summary>Source code in <code>src/leopard_em/pydantic_models/managers/constrained_search_manager.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">215</span>
-<span class="normal">216</span>
-<span class="normal">217</span>
-<span class="normal">218</span>
-<span class="normal">219</span>
-<span class="normal">220</span>
-<span class="normal">221</span>
-<span class="normal">222</span>
-<span class="normal">223</span>
-<span class="normal">224</span>
-<span class="normal">225</span>
-<span class="normal">226</span>
-<span class="normal">227</span>
-<span class="normal">228</span>
-<span class="normal">229</span>
-<span class="normal">230</span>
-<span class="normal">231</span>
-<span class="normal">232</span>
-<span class="normal">233</span>
-<span class="normal">234</span>
-<span class="normal">235</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">235</span>
 <span class="normal">236</span>
 <span class="normal">237</span>
 <span class="normal">238</span>
@@ -2919,7 +2965,27 @@
 <span class="normal">245</span>
 <span class="normal">246</span>
 <span class="normal">247</span>
-<span class="normal">248</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">get_refine_result</span><span class="p">(</span>
+<span class="normal">248</span>
+<span class="normal">249</span>
+<span class="normal">250</span>
+<span class="normal">251</span>
+<span class="normal">252</span>
+<span class="normal">253</span>
+<span class="normal">254</span>
+<span class="normal">255</span>
+<span class="normal">256</span>
+<span class="normal">257</span>
+<span class="normal">258</span>
+<span class="normal">259</span>
+<span class="normal">260</span>
+<span class="normal">261</span>
+<span class="normal">262</span>
+<span class="normal">263</span>
+<span class="normal">264</span>
+<span class="normal">265</span>
+<span class="normal">266</span>
+<span class="normal">267</span>
+<span class="normal">268</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">get_refine_result</span><span class="p">(</span>
     <span class="bp">self</span><span class="p">,</span> <span class="n">backend_kwargs</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span> <span class="n">orientation_batch_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">64</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Get refine template result.</span>
@@ -2975,12 +3041,7 @@
 
             <details class="quote">
               <summary>Source code in <code>src/leopard_em/pydantic_models/managers/constrained_search_manager.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"> 91</span>
-<span class="normal"> 92</span>
-<span class="normal"> 93</span>
-<span class="normal"> 94</span>
-<span class="normal"> 95</span>
-<span class="normal"> 96</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"> 96</span>
 <span class="normal"> 97</span>
 <span class="normal"> 98</span>
 <span class="normal"> 99</span>
@@ -3070,18 +3131,46 @@
 <span class="normal">183</span>
 <span class="normal">184</span>
 <span class="normal">185</span>
-<span class="normal">186</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">make_backend_core_function_kwargs</span><span class="p">(</span>
+<span class="normal">186</span>
+<span class="normal">187</span>
+<span class="normal">188</span>
+<span class="normal">189</span>
+<span class="normal">190</span>
+<span class="normal">191</span>
+<span class="normal">192</span>
+<span class="normal">193</span>
+<span class="normal">194</span>
+<span class="normal">195</span>
+<span class="normal">196</span>
+<span class="normal">197</span>
+<span class="normal">198</span>
+<span class="normal">199</span>
+<span class="normal">200</span>
+<span class="normal">201</span>
+<span class="normal">202</span>
+<span class="normal">203</span>
+<span class="normal">204</span>
+<span class="normal">205</span>
+<span class="normal">206</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">make_backend_core_function_kwargs</span><span class="p">(</span>
     <span class="bp">self</span><span class="p">,</span> <span class="n">prefer_refined_angles</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Create the kwargs for the backend constrained_template core function.&quot;&quot;&quot;</span>
+    <span class="n">part_stk</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">particle_stack_reference</span>
+
+    <span class="c1"># Checks to make sure manager is properly configured</span>
+    <span class="c1"># pylint: disable=protected-access</span>
+    <span class="k">assert</span> <span class="n">part_stk</span><span class="o">.</span><span class="n">_df</span><span class="p">[</span><span class="s2">&quot;micrograph_path&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">nunique</span><span class="p">()</span> <span class="o">==</span> <span class="mi">1</span><span class="p">,</span> <span class="p">(</span>
+        <span class="s2">&quot;Constrained search can only be run on data from a single micrograph. &quot;</span>
+        <span class="s2">&quot;Please ensure that the particle stack contains particles from only one &quot;</span>
+        <span class="s2">&quot;micrograph.&quot;</span>
+    <span class="p">)</span>
+
     <span class="n">device_list</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">computational_config</span><span class="o">.</span><span class="n">gpu_devices</span>
 
     <span class="n">template</span> <span class="o">=</span> <span class="n">load_template_tensor</span><span class="p">(</span>
         <span class="n">template_volume</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">template_volume</span><span class="p">,</span>
         <span class="n">template_volume_path</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">template_volume_path</span><span class="p">,</span>
     <span class="p">)</span>
-
-    <span class="n">part_stk</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">particle_stack_reference</span>
 
     <span class="n">euler_angles</span> <span class="o">=</span> <span class="n">part_stk</span><span class="o">.</span><span class="n">get_euler_angles</span><span class="p">(</span><span class="n">prefer_refined_angles</span><span class="p">)</span>
 
@@ -3127,7 +3216,13 @@
     <span class="p">)</span>
 
     <span class="c1"># Ger corr mean and variance</span>
-    <span class="c1"># I want positions of reference but vals from constrained</span>
+    <span class="c1"># The position of the extracted areas needs to be from the larger particle, but</span>
+    <span class="c1"># the mean and variance must come from the initial match template on the</span>
+    <span class="c1"># smaller constrained particle.</span>
+    <span class="c1"># Currently, we just set the searched file (as in paths below) to the first</span>
+    <span class="c1"># element in the constrained particle stack.</span>
+    <span class="c1"># NOTE: This will *not* work if the constrained particle stack contains</span>
+    <span class="c1"># particles from multiple reference images.</span>
     <span class="n">part_stk</span><span class="o">.</span><span class="n">set_column</span><span class="p">(</span>
         <span class="s2">&quot;correlation_average_path&quot;</span><span class="p">,</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">particle_stack_constrained</span><span class="p">[</span><span class="s2">&quot;correlation_average_path&quot;</span><span class="p">][</span><span class="mi">0</span><span class="p">],</span>
@@ -3136,19 +3231,20 @@
         <span class="s2">&quot;correlation_variance_path&quot;</span><span class="p">,</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">particle_stack_constrained</span><span class="p">[</span><span class="s2">&quot;correlation_variance_path&quot;</span><span class="p">][</span><span class="mi">0</span><span class="p">],</span>
     <span class="p">)</span>
+    <span class="c1"># Get correlation statistics</span>
     <span class="n">corr_mean_stack</span> <span class="o">=</span> <span class="n">part_stk</span><span class="o">.</span><span class="n">construct_cropped_statistic_stack</span><span class="p">(</span>
-        <span class="s2">&quot;correlation_average&quot;</span>
+        <span class="n">stat</span><span class="o">=</span><span class="s2">&quot;correlation_average&quot;</span><span class="p">,</span>
+        <span class="n">handle_bounds</span><span class="o">=</span><span class="s2">&quot;pad&quot;</span><span class="p">,</span>
+        <span class="n">padding_mode</span><span class="o">=</span><span class="s2">&quot;constant&quot;</span><span class="p">,</span>
+        <span class="n">padding_value</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span>  <span class="c1"># pad with zeros</span>
     <span class="p">)</span>
-    <span class="n">corr_std_stack</span> <span class="o">=</span> <span class="p">(</span>
-        <span class="n">part_stk</span><span class="o">.</span><span class="n">construct_cropped_statistic_stack</span><span class="p">(</span>
-            <span class="n">stat</span><span class="o">=</span><span class="s2">&quot;correlation_variance&quot;</span><span class="p">,</span>
-            <span class="n">pos_reference</span><span class="o">=</span><span class="s2">&quot;center&quot;</span><span class="p">,</span>
-            <span class="n">handle_bounds</span><span class="o">=</span><span class="s2">&quot;pad&quot;</span><span class="p">,</span>
-            <span class="n">padding_mode</span><span class="o">=</span><span class="s2">&quot;constant&quot;</span><span class="p">,</span>
-            <span class="n">padding_value</span><span class="o">=</span><span class="mf">1e10</span><span class="p">,</span>
-        <span class="p">)</span>
-        <span class="o">**</span> <span class="mf">0.5</span>
-    <span class="p">)</span>  <span class="c1"># var to std</span>
+    <span class="n">corr_std_stack</span> <span class="o">=</span> <span class="n">part_stk</span><span class="o">.</span><span class="n">construct_cropped_statistic_stack</span><span class="p">(</span>
+        <span class="n">stat</span><span class="o">=</span><span class="s2">&quot;correlation_variance&quot;</span><span class="p">,</span>
+        <span class="n">handle_bounds</span><span class="o">=</span><span class="s2">&quot;pad&quot;</span><span class="p">,</span>
+        <span class="n">padding_mode</span><span class="o">=</span><span class="s2">&quot;constant&quot;</span><span class="p">,</span>
+        <span class="n">padding_value</span><span class="o">=</span><span class="mf">1e10</span><span class="p">,</span>  <span class="c1"># large to avoid out of bound pixels having inf z-score</span>
+    <span class="p">)</span>
+    <span class="n">corr_std_stack</span> <span class="o">=</span> <span class="n">corr_std_stack</span><span class="o">**</span><span class="mf">0.5</span>  <span class="c1"># Convert variance to standard deviation</span>
 
     <span class="k">return</span> <span class="p">{</span>
         <span class="s2">&quot;particle_stack_dft&quot;</span><span class="p">:</span> <span class="n">particle_images_dft</span><span class="p">,</span>
@@ -3251,27 +3347,7 @@
 
             <details class="quote">
               <summary>Source code in <code>src/leopard_em/pydantic_models/managers/constrained_search_manager.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">251</span>
-<span class="normal">252</span>
-<span class="normal">253</span>
-<span class="normal">254</span>
-<span class="normal">255</span>
-<span class="normal">256</span>
-<span class="normal">257</span>
-<span class="normal">258</span>
-<span class="normal">259</span>
-<span class="normal">260</span>
-<span class="normal">261</span>
-<span class="normal">262</span>
-<span class="normal">263</span>
-<span class="normal">264</span>
-<span class="normal">265</span>
-<span class="normal">266</span>
-<span class="normal">267</span>
-<span class="normal">268</span>
-<span class="normal">269</span>
-<span class="normal">270</span>
-<span class="normal">271</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">271</span>
 <span class="normal">272</span>
 <span class="normal">273</span>
 <span class="normal">274</span>
@@ -3378,7 +3454,27 @@
 <span class="normal">375</span>
 <span class="normal">376</span>
 <span class="normal">377</span>
-<span class="normal">378</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">refine_result_to_dataframe</span><span class="p">(</span>
+<span class="normal">378</span>
+<span class="normal">379</span>
+<span class="normal">380</span>
+<span class="normal">381</span>
+<span class="normal">382</span>
+<span class="normal">383</span>
+<span class="normal">384</span>
+<span class="normal">385</span>
+<span class="normal">386</span>
+<span class="normal">387</span>
+<span class="normal">388</span>
+<span class="normal">389</span>
+<span class="normal">390</span>
+<span class="normal">391</span>
+<span class="normal">392</span>
+<span class="normal">393</span>
+<span class="normal">394</span>
+<span class="normal">395</span>
+<span class="normal">396</span>
+<span class="normal">397</span>
+<span class="normal">398</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">refine_result_to_dataframe</span><span class="p">(</span>
     <span class="bp">self</span><span class="p">,</span>
     <span class="n">output_dataframe_path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
     <span class="n">result</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">],</span>
@@ -3591,32 +3687,32 @@
 
             <details class="quote">
               <summary>Source code in <code>src/leopard_em/pydantic_models/managers/constrained_search_manager.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">188</span>
-<span class="normal">189</span>
-<span class="normal">190</span>
-<span class="normal">191</span>
-<span class="normal">192</span>
-<span class="normal">193</span>
-<span class="normal">194</span>
-<span class="normal">195</span>
-<span class="normal">196</span>
-<span class="normal">197</span>
-<span class="normal">198</span>
-<span class="normal">199</span>
-<span class="normal">200</span>
-<span class="normal">201</span>
-<span class="normal">202</span>
-<span class="normal">203</span>
-<span class="normal">204</span>
-<span class="normal">205</span>
-<span class="normal">206</span>
-<span class="normal">207</span>
-<span class="normal">208</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">208</span>
 <span class="normal">209</span>
 <span class="normal">210</span>
 <span class="normal">211</span>
 <span class="normal">212</span>
-<span class="normal">213</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">run_constrained_search</span><span class="p">(</span>
+<span class="normal">213</span>
+<span class="normal">214</span>
+<span class="normal">215</span>
+<span class="normal">216</span>
+<span class="normal">217</span>
+<span class="normal">218</span>
+<span class="normal">219</span>
+<span class="normal">220</span>
+<span class="normal">221</span>
+<span class="normal">222</span>
+<span class="normal">223</span>
+<span class="normal">224</span>
+<span class="normal">225</span>
+<span class="normal">226</span>
+<span class="normal">227</span>
+<span class="normal">228</span>
+<span class="normal">229</span>
+<span class="normal">230</span>
+<span class="normal">231</span>
+<span class="normal">232</span>
+<span class="normal">233</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">run_constrained_search</span><span class="p">(</span>
     <span class="bp">self</span><span class="p">,</span>
     <span class="n">output_dataframe_path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
     <span class="n">false_positives</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.005</span><span class="p">,</span>

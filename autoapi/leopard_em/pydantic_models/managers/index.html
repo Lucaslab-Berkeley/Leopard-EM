@@ -316,11 +316,11 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../examples/04_plotting_2dtm_results" class="md-nav__link">
+      <a href="../../../../examples/04_plotting_2dtm_results/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
-    Plotting match template results
+    Visualizing 2DTM result
     
   </span>
   
@@ -879,6 +879,28 @@
   
   <span class="md-ellipsis">
     core_refine_template
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../backend/cross_correlation/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    cross_correlation
     
   </span>
   
@@ -2002,6 +2024,10 @@
 
 
         <p>Model holding parameters necessary for running the constrained search program.</p>
+<p>NOTE: The constrained search program should only be run on data from a single
+reference micrograph. That is, if you have data from two or more micrographs, that
+data from each micrograph needs processed separately. This restriction may be lifted
+in the future.</p>
 
 
 <p><span class="doc-section-title">Attributes:</span></p>
@@ -2528,8 +2554,33 @@
 <span class="normal">375</span>
 <span class="normal">376</span>
 <span class="normal">377</span>
-<span class="normal">378</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">ConstrainedSearchManager</span><span class="p">(</span><span class="n">BaseModel2DTM</span><span class="p">):</span>
+<span class="normal">378</span>
+<span class="normal">379</span>
+<span class="normal">380</span>
+<span class="normal">381</span>
+<span class="normal">382</span>
+<span class="normal">383</span>
+<span class="normal">384</span>
+<span class="normal">385</span>
+<span class="normal">386</span>
+<span class="normal">387</span>
+<span class="normal">388</span>
+<span class="normal">389</span>
+<span class="normal">390</span>
+<span class="normal">391</span>
+<span class="normal">392</span>
+<span class="normal">393</span>
+<span class="normal">394</span>
+<span class="normal">395</span>
+<span class="normal">396</span>
+<span class="normal">397</span>
+<span class="normal">398</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">ConstrainedSearchManager</span><span class="p">(</span><span class="n">BaseModel2DTM</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Model holding parameters necessary for running the constrained search program.</span>
+
+<span class="sd">    NOTE: The constrained search program should only be run on data from a single</span>
+<span class="sd">    reference micrograph. That is, if you have data from two or more micrographs, that</span>
+<span class="sd">    data from each micrograph needs processed separately. This restriction may be lifted</span>
+<span class="sd">    in the future.</span>
 
 <span class="sd">    Attributes</span>
 <span class="sd">    ----------</span>
@@ -2593,14 +2644,22 @@
         <span class="bp">self</span><span class="p">,</span> <span class="n">prefer_refined_angles</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Create the kwargs for the backend constrained_template core function.&quot;&quot;&quot;</span>
+        <span class="n">part_stk</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">particle_stack_reference</span>
+
+        <span class="c1"># Checks to make sure manager is properly configured</span>
+        <span class="c1"># pylint: disable=protected-access</span>
+        <span class="k">assert</span> <span class="n">part_stk</span><span class="o">.</span><span class="n">_df</span><span class="p">[</span><span class="s2">&quot;micrograph_path&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">nunique</span><span class="p">()</span> <span class="o">==</span> <span class="mi">1</span><span class="p">,</span> <span class="p">(</span>
+            <span class="s2">&quot;Constrained search can only be run on data from a single micrograph. &quot;</span>
+            <span class="s2">&quot;Please ensure that the particle stack contains particles from only one &quot;</span>
+            <span class="s2">&quot;micrograph.&quot;</span>
+        <span class="p">)</span>
+
         <span class="n">device_list</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">computational_config</span><span class="o">.</span><span class="n">gpu_devices</span>
 
         <span class="n">template</span> <span class="o">=</span> <span class="n">load_template_tensor</span><span class="p">(</span>
             <span class="n">template_volume</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">template_volume</span><span class="p">,</span>
             <span class="n">template_volume_path</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">template_volume_path</span><span class="p">,</span>
         <span class="p">)</span>
-
-        <span class="n">part_stk</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">particle_stack_reference</span>
 
         <span class="n">euler_angles</span> <span class="o">=</span> <span class="n">part_stk</span><span class="o">.</span><span class="n">get_euler_angles</span><span class="p">(</span><span class="n">prefer_refined_angles</span><span class="p">)</span>
 
@@ -2646,7 +2705,13 @@
         <span class="p">)</span>
 
         <span class="c1"># Ger corr mean and variance</span>
-        <span class="c1"># I want positions of reference but vals from constrained</span>
+        <span class="c1"># The position of the extracted areas needs to be from the larger particle, but</span>
+        <span class="c1"># the mean and variance must come from the initial match template on the</span>
+        <span class="c1"># smaller constrained particle.</span>
+        <span class="c1"># Currently, we just set the searched file (as in paths below) to the first</span>
+        <span class="c1"># element in the constrained particle stack.</span>
+        <span class="c1"># NOTE: This will *not* work if the constrained particle stack contains</span>
+        <span class="c1"># particles from multiple reference images.</span>
         <span class="n">part_stk</span><span class="o">.</span><span class="n">set_column</span><span class="p">(</span>
             <span class="s2">&quot;correlation_average_path&quot;</span><span class="p">,</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">particle_stack_constrained</span><span class="p">[</span><span class="s2">&quot;correlation_average_path&quot;</span><span class="p">][</span><span class="mi">0</span><span class="p">],</span>
@@ -2655,19 +2720,20 @@
             <span class="s2">&quot;correlation_variance_path&quot;</span><span class="p">,</span>
             <span class="bp">self</span><span class="o">.</span><span class="n">particle_stack_constrained</span><span class="p">[</span><span class="s2">&quot;correlation_variance_path&quot;</span><span class="p">][</span><span class="mi">0</span><span class="p">],</span>
         <span class="p">)</span>
+        <span class="c1"># Get correlation statistics</span>
         <span class="n">corr_mean_stack</span> <span class="o">=</span> <span class="n">part_stk</span><span class="o">.</span><span class="n">construct_cropped_statistic_stack</span><span class="p">(</span>
-            <span class="s2">&quot;correlation_average&quot;</span>
+            <span class="n">stat</span><span class="o">=</span><span class="s2">&quot;correlation_average&quot;</span><span class="p">,</span>
+            <span class="n">handle_bounds</span><span class="o">=</span><span class="s2">&quot;pad&quot;</span><span class="p">,</span>
+            <span class="n">padding_mode</span><span class="o">=</span><span class="s2">&quot;constant&quot;</span><span class="p">,</span>
+            <span class="n">padding_value</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span>  <span class="c1"># pad with zeros</span>
         <span class="p">)</span>
-        <span class="n">corr_std_stack</span> <span class="o">=</span> <span class="p">(</span>
-            <span class="n">part_stk</span><span class="o">.</span><span class="n">construct_cropped_statistic_stack</span><span class="p">(</span>
-                <span class="n">stat</span><span class="o">=</span><span class="s2">&quot;correlation_variance&quot;</span><span class="p">,</span>
-                <span class="n">pos_reference</span><span class="o">=</span><span class="s2">&quot;center&quot;</span><span class="p">,</span>
-                <span class="n">handle_bounds</span><span class="o">=</span><span class="s2">&quot;pad&quot;</span><span class="p">,</span>
-                <span class="n">padding_mode</span><span class="o">=</span><span class="s2">&quot;constant&quot;</span><span class="p">,</span>
-                <span class="n">padding_value</span><span class="o">=</span><span class="mf">1e10</span><span class="p">,</span>
-            <span class="p">)</span>
-            <span class="o">**</span> <span class="mf">0.5</span>
-        <span class="p">)</span>  <span class="c1"># var to std</span>
+        <span class="n">corr_std_stack</span> <span class="o">=</span> <span class="n">part_stk</span><span class="o">.</span><span class="n">construct_cropped_statistic_stack</span><span class="p">(</span>
+            <span class="n">stat</span><span class="o">=</span><span class="s2">&quot;correlation_variance&quot;</span><span class="p">,</span>
+            <span class="n">handle_bounds</span><span class="o">=</span><span class="s2">&quot;pad&quot;</span><span class="p">,</span>
+            <span class="n">padding_mode</span><span class="o">=</span><span class="s2">&quot;constant&quot;</span><span class="p">,</span>
+            <span class="n">padding_value</span><span class="o">=</span><span class="mf">1e10</span><span class="p">,</span>  <span class="c1"># large to avoid out of bound pixels having inf z-score</span>
+        <span class="p">)</span>
+        <span class="n">corr_std_stack</span> <span class="o">=</span> <span class="n">corr_std_stack</span><span class="o">**</span><span class="mf">0.5</span>  <span class="c1"># Convert variance to standard deviation</span>
 
         <span class="k">return</span> <span class="p">{</span>
             <span class="s2">&quot;particle_stack_dft&quot;</span><span class="p">:</span> <span class="n">particle_images_dft</span><span class="p">,</span>
@@ -2978,27 +3044,7 @@
 
             <details class="quote">
               <summary>Source code in <code>src/leopard_em/pydantic_models/managers/constrained_search_manager.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">215</span>
-<span class="normal">216</span>
-<span class="normal">217</span>
-<span class="normal">218</span>
-<span class="normal">219</span>
-<span class="normal">220</span>
-<span class="normal">221</span>
-<span class="normal">222</span>
-<span class="normal">223</span>
-<span class="normal">224</span>
-<span class="normal">225</span>
-<span class="normal">226</span>
-<span class="normal">227</span>
-<span class="normal">228</span>
-<span class="normal">229</span>
-<span class="normal">230</span>
-<span class="normal">231</span>
-<span class="normal">232</span>
-<span class="normal">233</span>
-<span class="normal">234</span>
-<span class="normal">235</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">235</span>
 <span class="normal">236</span>
 <span class="normal">237</span>
 <span class="normal">238</span>
@@ -3011,7 +3057,27 @@
 <span class="normal">245</span>
 <span class="normal">246</span>
 <span class="normal">247</span>
-<span class="normal">248</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">get_refine_result</span><span class="p">(</span>
+<span class="normal">248</span>
+<span class="normal">249</span>
+<span class="normal">250</span>
+<span class="normal">251</span>
+<span class="normal">252</span>
+<span class="normal">253</span>
+<span class="normal">254</span>
+<span class="normal">255</span>
+<span class="normal">256</span>
+<span class="normal">257</span>
+<span class="normal">258</span>
+<span class="normal">259</span>
+<span class="normal">260</span>
+<span class="normal">261</span>
+<span class="normal">262</span>
+<span class="normal">263</span>
+<span class="normal">264</span>
+<span class="normal">265</span>
+<span class="normal">266</span>
+<span class="normal">267</span>
+<span class="normal">268</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">get_refine_result</span><span class="p">(</span>
     <span class="bp">self</span><span class="p">,</span> <span class="n">backend_kwargs</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span> <span class="n">orientation_batch_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">64</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Get refine template result.</span>
@@ -3067,12 +3133,7 @@
 
             <details class="quote">
               <summary>Source code in <code>src/leopard_em/pydantic_models/managers/constrained_search_manager.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"> 91</span>
-<span class="normal"> 92</span>
-<span class="normal"> 93</span>
-<span class="normal"> 94</span>
-<span class="normal"> 95</span>
-<span class="normal"> 96</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"> 96</span>
 <span class="normal"> 97</span>
 <span class="normal"> 98</span>
 <span class="normal"> 99</span>
@@ -3162,18 +3223,46 @@
 <span class="normal">183</span>
 <span class="normal">184</span>
 <span class="normal">185</span>
-<span class="normal">186</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">make_backend_core_function_kwargs</span><span class="p">(</span>
+<span class="normal">186</span>
+<span class="normal">187</span>
+<span class="normal">188</span>
+<span class="normal">189</span>
+<span class="normal">190</span>
+<span class="normal">191</span>
+<span class="normal">192</span>
+<span class="normal">193</span>
+<span class="normal">194</span>
+<span class="normal">195</span>
+<span class="normal">196</span>
+<span class="normal">197</span>
+<span class="normal">198</span>
+<span class="normal">199</span>
+<span class="normal">200</span>
+<span class="normal">201</span>
+<span class="normal">202</span>
+<span class="normal">203</span>
+<span class="normal">204</span>
+<span class="normal">205</span>
+<span class="normal">206</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">make_backend_core_function_kwargs</span><span class="p">(</span>
     <span class="bp">self</span><span class="p">,</span> <span class="n">prefer_refined_angles</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Create the kwargs for the backend constrained_template core function.&quot;&quot;&quot;</span>
+    <span class="n">part_stk</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">particle_stack_reference</span>
+
+    <span class="c1"># Checks to make sure manager is properly configured</span>
+    <span class="c1"># pylint: disable=protected-access</span>
+    <span class="k">assert</span> <span class="n">part_stk</span><span class="o">.</span><span class="n">_df</span><span class="p">[</span><span class="s2">&quot;micrograph_path&quot;</span><span class="p">]</span><span class="o">.</span><span class="n">nunique</span><span class="p">()</span> <span class="o">==</span> <span class="mi">1</span><span class="p">,</span> <span class="p">(</span>
+        <span class="s2">&quot;Constrained search can only be run on data from a single micrograph. &quot;</span>
+        <span class="s2">&quot;Please ensure that the particle stack contains particles from only one &quot;</span>
+        <span class="s2">&quot;micrograph.&quot;</span>
+    <span class="p">)</span>
+
     <span class="n">device_list</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">computational_config</span><span class="o">.</span><span class="n">gpu_devices</span>
 
     <span class="n">template</span> <span class="o">=</span> <span class="n">load_template_tensor</span><span class="p">(</span>
         <span class="n">template_volume</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">template_volume</span><span class="p">,</span>
         <span class="n">template_volume_path</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">template_volume_path</span><span class="p">,</span>
     <span class="p">)</span>
-
-    <span class="n">part_stk</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">particle_stack_reference</span>
 
     <span class="n">euler_angles</span> <span class="o">=</span> <span class="n">part_stk</span><span class="o">.</span><span class="n">get_euler_angles</span><span class="p">(</span><span class="n">prefer_refined_angles</span><span class="p">)</span>
 
@@ -3219,7 +3308,13 @@
     <span class="p">)</span>
 
     <span class="c1"># Ger corr mean and variance</span>
-    <span class="c1"># I want positions of reference but vals from constrained</span>
+    <span class="c1"># The position of the extracted areas needs to be from the larger particle, but</span>
+    <span class="c1"># the mean and variance must come from the initial match template on the</span>
+    <span class="c1"># smaller constrained particle.</span>
+    <span class="c1"># Currently, we just set the searched file (as in paths below) to the first</span>
+    <span class="c1"># element in the constrained particle stack.</span>
+    <span class="c1"># NOTE: This will *not* work if the constrained particle stack contains</span>
+    <span class="c1"># particles from multiple reference images.</span>
     <span class="n">part_stk</span><span class="o">.</span><span class="n">set_column</span><span class="p">(</span>
         <span class="s2">&quot;correlation_average_path&quot;</span><span class="p">,</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">particle_stack_constrained</span><span class="p">[</span><span class="s2">&quot;correlation_average_path&quot;</span><span class="p">][</span><span class="mi">0</span><span class="p">],</span>
@@ -3228,19 +3323,20 @@
         <span class="s2">&quot;correlation_variance_path&quot;</span><span class="p">,</span>
         <span class="bp">self</span><span class="o">.</span><span class="n">particle_stack_constrained</span><span class="p">[</span><span class="s2">&quot;correlation_variance_path&quot;</span><span class="p">][</span><span class="mi">0</span><span class="p">],</span>
     <span class="p">)</span>
+    <span class="c1"># Get correlation statistics</span>
     <span class="n">corr_mean_stack</span> <span class="o">=</span> <span class="n">part_stk</span><span class="o">.</span><span class="n">construct_cropped_statistic_stack</span><span class="p">(</span>
-        <span class="s2">&quot;correlation_average&quot;</span>
+        <span class="n">stat</span><span class="o">=</span><span class="s2">&quot;correlation_average&quot;</span><span class="p">,</span>
+        <span class="n">handle_bounds</span><span class="o">=</span><span class="s2">&quot;pad&quot;</span><span class="p">,</span>
+        <span class="n">padding_mode</span><span class="o">=</span><span class="s2">&quot;constant&quot;</span><span class="p">,</span>
+        <span class="n">padding_value</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span>  <span class="c1"># pad with zeros</span>
     <span class="p">)</span>
-    <span class="n">corr_std_stack</span> <span class="o">=</span> <span class="p">(</span>
-        <span class="n">part_stk</span><span class="o">.</span><span class="n">construct_cropped_statistic_stack</span><span class="p">(</span>
-            <span class="n">stat</span><span class="o">=</span><span class="s2">&quot;correlation_variance&quot;</span><span class="p">,</span>
-            <span class="n">pos_reference</span><span class="o">=</span><span class="s2">&quot;center&quot;</span><span class="p">,</span>
-            <span class="n">handle_bounds</span><span class="o">=</span><span class="s2">&quot;pad&quot;</span><span class="p">,</span>
-            <span class="n">padding_mode</span><span class="o">=</span><span class="s2">&quot;constant&quot;</span><span class="p">,</span>
-            <span class="n">padding_value</span><span class="o">=</span><span class="mf">1e10</span><span class="p">,</span>
-        <span class="p">)</span>
-        <span class="o">**</span> <span class="mf">0.5</span>
-    <span class="p">)</span>  <span class="c1"># var to std</span>
+    <span class="n">corr_std_stack</span> <span class="o">=</span> <span class="n">part_stk</span><span class="o">.</span><span class="n">construct_cropped_statistic_stack</span><span class="p">(</span>
+        <span class="n">stat</span><span class="o">=</span><span class="s2">&quot;correlation_variance&quot;</span><span class="p">,</span>
+        <span class="n">handle_bounds</span><span class="o">=</span><span class="s2">&quot;pad&quot;</span><span class="p">,</span>
+        <span class="n">padding_mode</span><span class="o">=</span><span class="s2">&quot;constant&quot;</span><span class="p">,</span>
+        <span class="n">padding_value</span><span class="o">=</span><span class="mf">1e10</span><span class="p">,</span>  <span class="c1"># large to avoid out of bound pixels having inf z-score</span>
+    <span class="p">)</span>
+    <span class="n">corr_std_stack</span> <span class="o">=</span> <span class="n">corr_std_stack</span><span class="o">**</span><span class="mf">0.5</span>  <span class="c1"># Convert variance to standard deviation</span>
 
     <span class="k">return</span> <span class="p">{</span>
         <span class="s2">&quot;particle_stack_dft&quot;</span><span class="p">:</span> <span class="n">particle_images_dft</span><span class="p">,</span>
@@ -3343,27 +3439,7 @@
 
             <details class="quote">
               <summary>Source code in <code>src/leopard_em/pydantic_models/managers/constrained_search_manager.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">251</span>
-<span class="normal">252</span>
-<span class="normal">253</span>
-<span class="normal">254</span>
-<span class="normal">255</span>
-<span class="normal">256</span>
-<span class="normal">257</span>
-<span class="normal">258</span>
-<span class="normal">259</span>
-<span class="normal">260</span>
-<span class="normal">261</span>
-<span class="normal">262</span>
-<span class="normal">263</span>
-<span class="normal">264</span>
-<span class="normal">265</span>
-<span class="normal">266</span>
-<span class="normal">267</span>
-<span class="normal">268</span>
-<span class="normal">269</span>
-<span class="normal">270</span>
-<span class="normal">271</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">271</span>
 <span class="normal">272</span>
 <span class="normal">273</span>
 <span class="normal">274</span>
@@ -3470,7 +3546,27 @@
 <span class="normal">375</span>
 <span class="normal">376</span>
 <span class="normal">377</span>
-<span class="normal">378</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">refine_result_to_dataframe</span><span class="p">(</span>
+<span class="normal">378</span>
+<span class="normal">379</span>
+<span class="normal">380</span>
+<span class="normal">381</span>
+<span class="normal">382</span>
+<span class="normal">383</span>
+<span class="normal">384</span>
+<span class="normal">385</span>
+<span class="normal">386</span>
+<span class="normal">387</span>
+<span class="normal">388</span>
+<span class="normal">389</span>
+<span class="normal">390</span>
+<span class="normal">391</span>
+<span class="normal">392</span>
+<span class="normal">393</span>
+<span class="normal">394</span>
+<span class="normal">395</span>
+<span class="normal">396</span>
+<span class="normal">397</span>
+<span class="normal">398</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">refine_result_to_dataframe</span><span class="p">(</span>
     <span class="bp">self</span><span class="p">,</span>
     <span class="n">output_dataframe_path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
     <span class="n">result</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">],</span>
@@ -3683,32 +3779,32 @@
 
             <details class="quote">
               <summary>Source code in <code>src/leopard_em/pydantic_models/managers/constrained_search_manager.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">188</span>
-<span class="normal">189</span>
-<span class="normal">190</span>
-<span class="normal">191</span>
-<span class="normal">192</span>
-<span class="normal">193</span>
-<span class="normal">194</span>
-<span class="normal">195</span>
-<span class="normal">196</span>
-<span class="normal">197</span>
-<span class="normal">198</span>
-<span class="normal">199</span>
-<span class="normal">200</span>
-<span class="normal">201</span>
-<span class="normal">202</span>
-<span class="normal">203</span>
-<span class="normal">204</span>
-<span class="normal">205</span>
-<span class="normal">206</span>
-<span class="normal">207</span>
-<span class="normal">208</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">208</span>
 <span class="normal">209</span>
 <span class="normal">210</span>
 <span class="normal">211</span>
 <span class="normal">212</span>
-<span class="normal">213</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">run_constrained_search</span><span class="p">(</span>
+<span class="normal">213</span>
+<span class="normal">214</span>
+<span class="normal">215</span>
+<span class="normal">216</span>
+<span class="normal">217</span>
+<span class="normal">218</span>
+<span class="normal">219</span>
+<span class="normal">220</span>
+<span class="normal">221</span>
+<span class="normal">222</span>
+<span class="normal">223</span>
+<span class="normal">224</span>
+<span class="normal">225</span>
+<span class="normal">226</span>
+<span class="normal">227</span>
+<span class="normal">228</span>
+<span class="normal">229</span>
+<span class="normal">230</span>
+<span class="normal">231</span>
+<span class="normal">232</span>
+<span class="normal">233</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">run_constrained_search</span><span class="p">(</span>
     <span class="bp">self</span><span class="p">,</span>
     <span class="n">output_dataframe_path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
     <span class="n">false_positives</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.005</span><span class="p">,</span>
@@ -3985,8 +4081,7 @@ parameters, etc.</p>
 
               <details class="quote">
                 <summary>Source code in <code>src/leopard_em/pydantic_models/managers/match_template_manager.py</code></summary>
-                <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"> 31</span>
-<span class="normal"> 32</span>
+                <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"> 32</span>
 <span class="normal"> 33</span>
 <span class="normal"> 34</span>
 <span class="normal"> 35</span>
@@ -4349,7 +4444,10 @@ parameters, etc.</p>
 <span class="normal">392</span>
 <span class="normal">393</span>
 <span class="normal">394</span>
-<span class="normal">395</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">MatchTemplateManager</span><span class="p">(</span><span class="n">BaseModel2DTM</span><span class="p">):</span>
+<span class="normal">395</span>
+<span class="normal">396</span>
+<span class="normal">397</span>
+<span class="normal">398</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">MatchTemplateManager</span><span class="p">(</span><span class="n">BaseModel2DTM</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Model holding parameters necessary for running full orientation 2DTM.</span>
 
 <span class="sd">    Attributes</span>
@@ -4412,7 +4510,7 @@ parameters, etc.</p>
     <span class="n">template_volume_path</span><span class="p">:</span> <span class="nb">str</span>
     <span class="n">optics_group</span><span class="p">:</span> <span class="n">OpticsGroup</span>
     <span class="n">defocus_search_config</span><span class="p">:</span> <span class="n">DefocusSearchConfig</span>
-    <span class="n">orientation_search_config</span><span class="p">:</span> <span class="n">OrientationSearchConfig</span>
+    <span class="n">orientation_search_config</span><span class="p">:</span> <span class="n">OrientationSearchConfig</span> <span class="o">|</span> <span class="n">MultipleOrientationConfig</span>
     <span class="n">preprocessing_filters</span><span class="p">:</span> <span class="n">PreprocessingFilters</span>
     <span class="n">match_template_result</span><span class="p">:</span> <span class="n">MatchTemplateResult</span>
     <span class="n">computational_config</span><span class="p">:</span> <span class="n">ComputationalConfig</span>
@@ -4554,7 +4652,9 @@ parameters, etc.</p>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="n">core_kwargs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">make_backend_core_function_kwargs</span><span class="p">()</span>
         <span class="n">results</span> <span class="o">=</span> <span class="n">core_match_template</span><span class="p">(</span>
-            <span class="o">**</span><span class="n">core_kwargs</span><span class="p">,</span> <span class="n">orientation_batch_size</span><span class="o">=</span><span class="n">orientation_batch_size</span>
+            <span class="o">**</span><span class="n">core_kwargs</span><span class="p">,</span>
+            <span class="n">orientation_batch_size</span><span class="o">=</span><span class="n">orientation_batch_size</span><span class="p">,</span>
+            <span class="n">num_cuda_streams</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">computational_config</span><span class="o">.</span><span class="n">num_cpus</span><span class="p">,</span>
         <span class="p">)</span>
 
         <span class="c1"># Place results into the `MatchTemplateResult` object and save it.</span>
@@ -4745,8 +4845,7 @@ parameters, etc.</p>
 
             <details class="quote">
               <summary>Source code in <code>src/leopard_em/pydantic_models/managers/match_template_manager.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">135</span>
-<span class="normal">136</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">136</span>
 <span class="normal">137</span>
 <span class="normal">138</span>
 <span class="normal">139</span>
@@ -4820,7 +4919,8 @@ parameters, etc.</p>
 <span class="normal">207</span>
 <span class="normal">208</span>
 <span class="normal">209</span>
-<span class="normal">210</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">make_backend_core_function_kwargs</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
+<span class="normal">210</span>
+<span class="normal">211</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">make_backend_core_function_kwargs</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">]:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Generates the keyword arguments for backend call from held parameters.&quot;&quot;&quot;</span>
     <span class="c1"># Ensure the micrograph and template are loaded and in the correct format</span>
     <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">micrograph</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
@@ -5015,10 +5115,7 @@ Default is None and no additional keyword arguments are passed.</p>
 
             <details class="quote">
               <summary>Source code in <code>src/leopard_em/pydantic_models/managers/match_template_manager.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">264</span>
-<span class="normal">265</span>
-<span class="normal">266</span>
-<span class="normal">267</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">267</span>
 <span class="normal">268</span>
 <span class="normal">269</span>
 <span class="normal">270</span>
@@ -5120,7 +5217,10 @@ Default is None and no additional keyword arguments are passed.</p>
 <span class="normal">366</span>
 <span class="normal">367</span>
 <span class="normal">368</span>
-<span class="normal">369</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">results_to_dataframe</span><span class="p">(</span>
+<span class="normal">369</span>
+<span class="normal">370</span>
+<span class="normal">371</span>
+<span class="normal">372</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">results_to_dataframe</span><span class="p">(</span>
     <span class="bp">self</span><span class="p">,</span>
     <span class="n">half_template_width_pos_shift</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
     <span class="n">exclude_columns</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">list</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
@@ -5335,8 +5435,7 @@ results to disk directly after running the match template. Default is True.</p>
 
             <details class="quote">
               <summary>Source code in <code>src/leopard_em/pydantic_models/managers/match_template_manager.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">212</span>
-<span class="normal">213</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">213</span>
 <span class="normal">214</span>
 <span class="normal">215</span>
 <span class="normal">216</span>
@@ -5385,7 +5484,10 @@ results to disk directly after running the match template. Default is True.</p>
 <span class="normal">259</span>
 <span class="normal">260</span>
 <span class="normal">261</span>
-<span class="normal">262</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">run_match_template</span><span class="p">(</span>
+<span class="normal">262</span>
+<span class="normal">263</span>
+<span class="normal">264</span>
+<span class="normal">265</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">run_match_template</span><span class="p">(</span>
     <span class="bp">self</span><span class="p">,</span>
     <span class="n">orientation_batch_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">16</span><span class="p">,</span>
     <span class="n">do_result_export</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span>
@@ -5409,7 +5511,9 @@ results to disk directly after running the match template. Default is True.</p>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="n">core_kwargs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">make_backend_core_function_kwargs</span><span class="p">()</span>
     <span class="n">results</span> <span class="o">=</span> <span class="n">core_match_template</span><span class="p">(</span>
-        <span class="o">**</span><span class="n">core_kwargs</span><span class="p">,</span> <span class="n">orientation_batch_size</span><span class="o">=</span><span class="n">orientation_batch_size</span>
+        <span class="o">**</span><span class="n">core_kwargs</span><span class="p">,</span>
+        <span class="n">orientation_batch_size</span><span class="o">=</span><span class="n">orientation_batch_size</span><span class="p">,</span>
+        <span class="n">num_cuda_streams</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">computational_config</span><span class="o">.</span><span class="n">num_cpus</span><span class="p">,</span>
     <span class="p">)</span>
 
     <span class="c1"># Place results into the `MatchTemplateResult` object and save it.</span>
@@ -5551,10 +5655,7 @@ results to disk directly after running the match template. Default is True.</p>
 
             <details class="quote">
               <summary>Source code in <code>src/leopard_em/pydantic_models/managers/match_template_manager.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">371</span>
-<span class="normal">372</span>
-<span class="normal">373</span>
-<span class="normal">374</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">374</span>
 <span class="normal">375</span>
 <span class="normal">376</span>
 <span class="normal">377</span>
@@ -5575,7 +5676,10 @@ results to disk directly after running the match template. Default is True.</p>
 <span class="normal">392</span>
 <span class="normal">393</span>
 <span class="normal">394</span>
-<span class="normal">395</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">save_config</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">mode</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;yaml&quot;</span><span class="p">,</span> <span class="s2">&quot;json&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;yaml&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="normal">395</span>
+<span class="normal">396</span>
+<span class="normal">397</span>
+<span class="normal">398</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">save_config</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">mode</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;yaml&quot;</span><span class="p">,</span> <span class="s2">&quot;json&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;yaml&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Save this Pydandic model to disk. Wrapper around the serialization methods.</span>
 
 <span class="sd">    Parameters</span>
@@ -5622,13 +5726,13 @@ results to disk directly after running the match template. Default is True.</p>
 
             <details class="quote">
               <summary>Source code in <code>src/leopard_em/pydantic_models/managers/match_template_manager.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">107</span>
-<span class="normal">108</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">108</span>
 <span class="normal">109</span>
 <span class="normal">110</span>
 <span class="normal">111</span>
 <span class="normal">112</span>
-<span class="normal">113</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@field_validator</span><span class="p">(</span><span class="s2">&quot;micrograph_path&quot;</span><span class="p">)</span>  <span class="c1"># type: ignore</span>
+<span class="normal">113</span>
+<span class="normal">114</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@field_validator</span><span class="p">(</span><span class="s2">&quot;micrograph_path&quot;</span><span class="p">)</span>  <span class="c1"># type: ignore</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">validate_micrograph_path</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">v</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Ensure the micrograph file exists.&quot;&quot;&quot;</span>
     <span class="k">if</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">v</span><span class="p">):</span>
@@ -5657,13 +5761,13 @@ results to disk directly after running the match template. Default is True.</p>
 
             <details class="quote">
               <summary>Source code in <code>src/leopard_em/pydantic_models/managers/match_template_manager.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">115</span>
-<span class="normal">116</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">116</span>
 <span class="normal">117</span>
 <span class="normal">118</span>
 <span class="normal">119</span>
 <span class="normal">120</span>
-<span class="normal">121</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@field_validator</span><span class="p">(</span><span class="s2">&quot;template_volume_path&quot;</span><span class="p">)</span>  <span class="c1"># type: ignore</span>
+<span class="normal">121</span>
+<span class="normal">122</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@field_validator</span><span class="p">(</span><span class="s2">&quot;template_volume_path&quot;</span><span class="p">)</span>  <span class="c1"># type: ignore</span>
 <span class="k">def</span><span class="w"> </span><span class="nf">validate_template_volume_path</span><span class="p">(</span><span class="bp">cls</span><span class="p">,</span> <span class="n">v</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Ensure the template volume file exists.&quot;&quot;&quot;</span>
     <span class="k">if</span> <span class="ow">not</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">v</span><span class="p">):</span>
@@ -6160,7 +6264,7 @@ results to disk directly after running the match template. Default is True.</p>
 <span class="sd">            Whether to use refined angles or not. Defaults to True.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="c1"># simulate template volume</span>
-        <span class="n">template</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">simulator</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">gpu_ids</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">computational_config</span><span class="o">.</span><span class="n">gpu_ids</span><span class="p">)</span>
+        <span class="n">template</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">simulator</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">device</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">computational_config</span><span class="o">.</span><span class="n">gpu_ids</span><span class="p">)</span>
 
         <span class="c1"># The set of &quot;best&quot; euler angles from match template search</span>
         <span class="c1"># Check if refined angles exist, otherwise use the original angles</span>
@@ -6744,7 +6848,7 @@ results to disk directly after running the match template. Default is True.</p>
 <span class="sd">        Whether to use refined angles or not. Defaults to True.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="c1"># simulate template volume</span>
-    <span class="n">template</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">simulator</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">gpu_ids</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">computational_config</span><span class="o">.</span><span class="n">gpu_ids</span><span class="p">)</span>
+    <span class="n">template</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">simulator</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">device</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">computational_config</span><span class="o">.</span><span class="n">gpu_ids</span><span class="p">)</span>
 
     <span class="c1"># The set of &quot;best&quot; euler angles from match template search</span>
     <span class="c1"># Check if refined angles exist, otherwise use the original angles</span>
@@ -7404,7 +7508,7 @@ results to disk directly after running the match template. Default is True.</p>
               </td>
             </tr>
             <tr class="doc-section-item">
-              <td><code><a class="autorefs autorefs-internal" title="run_refine_template(output_dataframe_path, orientation_batch_size=64) (leopard_em.pydantic_models.managers.RefineTemplateManager.run_refine_template)" href="#leopard_em.pydantic_models.managers.RefineTemplateManager.run_refine_template">run_refine_template</a></code></td>
+              <td><code><a class="autorefs autorefs-internal" title="run_refine_template(output_dataframe_path, correlation_batch_size=32) (leopard_em.pydantic_models.managers.RefineTemplateManager.run_refine_template)" href="#leopard_em.pydantic_models.managers.RefineTemplateManager.run_refine_template">run_refine_template</a></code></td>
               <td>
                 <div class="doc-md-description">
                   <p>Run the refine template program.</p>
@@ -7656,16 +7760,7 @@ results to disk directly after running the match template. Default is True.</p>
 <span class="normal">254</span>
 <span class="normal">255</span>
 <span class="normal">256</span>
-<span class="normal">257</span>
-<span class="normal">258</span>
-<span class="normal">259</span>
-<span class="normal">260</span>
-<span class="normal">261</span>
-<span class="normal">262</span>
-<span class="normal">263</span>
-<span class="normal">264</span>
-<span class="normal">265</span>
-<span class="normal">266</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">RefineTemplateManager</span><span class="p">(</span><span class="n">BaseModel2DTM</span><span class="p">):</span>
+<span class="normal">257</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">RefineTemplateManager</span><span class="p">(</span><span class="n">BaseModel2DTM</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Model holding parameters necessary for running the refine template program.</span>
 
 <span class="sd">    Attributes</span>
@@ -7694,7 +7789,7 @@ results to disk directly after running the match template. Default is True.</p>
 <span class="sd">        Initialize the refine template manager.</span>
 <span class="sd">    make_backend_core_function_kwargs(self) -&gt; dict[str, Any]</span>
 <span class="sd">        Create the kwargs for the backend refine_template core function.</span>
-<span class="sd">    run_refine_template(self, orientation_batch_size: int = 64) -&gt; None</span>
+<span class="sd">    run_refine_template(self, correlation_batch_size: int = 32) -&gt; None</span>
 <span class="sd">        Run the refine template program.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
@@ -7762,7 +7857,7 @@ results to disk directly after running the match template. Default is True.</p>
         <span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">run_refine_template</span><span class="p">(</span>
-        <span class="bp">self</span><span class="p">,</span> <span class="n">output_dataframe_path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">orientation_batch_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">64</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">output_dataframe_path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">correlation_batch_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">32</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Run the refine template program and saves the resultant DataFrame to csv.</span>
 
@@ -7770,19 +7865,19 @@ results to disk directly after running the match template. Default is True.</p>
 <span class="sd">        ----------</span>
 <span class="sd">        output_dataframe_path : str</span>
 <span class="sd">            Path to save the refined particle data.</span>
-<span class="sd">        orientation_batch_size : int</span>
-<span class="sd">            Number of orientations to process at once. Defaults to 64.</span>
+<span class="sd">        correlation_batch_size : int</span>
+<span class="sd">            Number of cross-correlations to process in one batch, defaults to 32.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
         <span class="n">backend_kwargs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">make_backend_core_function_kwargs</span><span class="p">()</span>
 
-        <span class="n">result</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_refine_result</span><span class="p">(</span><span class="n">backend_kwargs</span><span class="p">,</span> <span class="n">orientation_batch_size</span><span class="p">)</span>
+        <span class="n">result</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_refine_result</span><span class="p">(</span><span class="n">backend_kwargs</span><span class="p">,</span> <span class="n">correlation_batch_size</span><span class="p">)</span>
 
         <span class="bp">self</span><span class="o">.</span><span class="n">refine_result_to_dataframe</span><span class="p">(</span>
             <span class="n">output_dataframe_path</span><span class="o">=</span><span class="n">output_dataframe_path</span><span class="p">,</span> <span class="n">result</span><span class="o">=</span><span class="n">result</span>
         <span class="p">)</span>
 
     <span class="k">def</span><span class="w"> </span><span class="nf">get_refine_result</span><span class="p">(</span>
-        <span class="bp">self</span><span class="p">,</span> <span class="n">backend_kwargs</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span> <span class="n">orientation_batch_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">64</span>
+        <span class="bp">self</span><span class="p">,</span> <span class="n">backend_kwargs</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span> <span class="n">correlation_batch_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">32</span>
     <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]:</span>
 <span class="w">        </span><span class="sd">&quot;&quot;&quot;Get refine template result.</span>
 
@@ -7790,29 +7885,20 @@ results to disk directly after running the match template. Default is True.</p>
 <span class="sd">        ----------</span>
 <span class="sd">        backend_kwargs : dict</span>
 <span class="sd">            Keyword arguments for the backend processing</span>
-<span class="sd">        orientation_batch_size : int</span>
-<span class="sd">            Number of orientations to process at once. Defaults to 64.</span>
+<span class="sd">        correlation_batch_size : int</span>
+<span class="sd">            Number of orientations to process at once. Defaults to 32.</span>
 
 <span class="sd">        Returns</span>
 <span class="sd">        -------</span>
 <span class="sd">        dict[str, np.ndarray]</span>
 <span class="sd">            The result of the refine template program.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="c1"># Adjust batch size if orientation search is disabled</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">orientation_refinement_config</span><span class="o">.</span><span class="n">enabled</span><span class="p">:</span>
-            <span class="n">orientation_batch_size</span> <span class="o">=</span> <span class="mi">1</span>
-        <span class="k">elif</span> <span class="p">(</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">orientation_refinement_config</span><span class="o">.</span><span class="n">euler_angles_offsets</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
-            <span class="o">&lt;</span> <span class="n">orientation_batch_size</span>
-        <span class="p">):</span>
-            <span class="n">orientation_batch_size</span> <span class="o">=</span> <span class="p">(</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">orientation_refinement_config</span><span class="o">.</span><span class="n">euler_angles_offsets</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
-            <span class="p">)</span>
-
         <span class="c1"># pylint: disable=duplicate-code</span>
         <span class="n">result</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
         <span class="n">result</span> <span class="o">=</span> <span class="n">core_refine_template</span><span class="p">(</span>
-            <span class="n">batch_size</span><span class="o">=</span><span class="n">orientation_batch_size</span><span class="p">,</span> <span class="o">**</span><span class="n">backend_kwargs</span>
+            <span class="n">batch_size</span><span class="o">=</span><span class="n">correlation_batch_size</span><span class="p">,</span>
+            <span class="n">num_cuda_streams</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">computational_config</span><span class="o">.</span><span class="n">num_cpus</span><span class="p">,</span>
+            <span class="o">**</span><span class="n">backend_kwargs</span><span class="p">,</span>
         <span class="p">)</span>
         <span class="n">result</span> <span class="o">=</span> <span class="p">{</span><span class="n">k</span><span class="p">:</span> <span class="n">v</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span><span class="o">.</span><span class="n">numpy</span><span class="p">()</span> <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">result</span><span class="o">.</span><span class="n">items</span><span class="p">()}</span>
 
@@ -7928,7 +8014,7 @@ results to disk directly after running the match template. Default is True.</p>
 
 
 <h3 id="leopard_em.pydantic_models.managers.RefineTemplateManager.get_refine_result" class="doc doc-heading">
-            <code class="highlight language-python"><span class="n">get_refine_result</span><span class="p">(</span><span class="n">backend_kwargs</span><span class="p">,</span> <span class="n">orientation_batch_size</span><span class="o">=</span><span class="mi">64</span><span class="p">)</span></code>
+            <code class="highlight language-python"><span class="n">get_refine_result</span><span class="p">(</span><span class="n">backend_kwargs</span><span class="p">,</span> <span class="n">correlation_batch_size</span><span class="o">=</span><span class="mi">32</span><span class="p">)</span></code>
 
 </h3>
 
@@ -7967,18 +8053,18 @@ results to disk directly after running the match template. Default is True.</p>
           </tr>
           <tr class="doc-section-item">
             <td>
-                <code>orientation_batch_size</code>
+                <code>correlation_batch_size</code>
             </td>
             <td>
                   <code><span title="int">int</span></code>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Number of orientations to process at once. Defaults to 64.</p>
+                <p>Number of orientations to process at once. Defaults to 32.</p>
               </div>
             </td>
             <td>
-                  <code>64</code>
+                  <code>32</code>
             </td>
           </tr>
       </tbody>
@@ -8036,17 +8122,8 @@ results to disk directly after running the match template. Default is True.</p>
 <span class="normal">162</span>
 <span class="normal">163</span>
 <span class="normal">164</span>
-<span class="normal">165</span>
-<span class="normal">166</span>
-<span class="normal">167</span>
-<span class="normal">168</span>
-<span class="normal">169</span>
-<span class="normal">170</span>
-<span class="normal">171</span>
-<span class="normal">172</span>
-<span class="normal">173</span>
-<span class="normal">174</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">get_refine_result</span><span class="p">(</span>
-    <span class="bp">self</span><span class="p">,</span> <span class="n">backend_kwargs</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span> <span class="n">orientation_batch_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">64</span>
+<span class="normal">165</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">get_refine_result</span><span class="p">(</span>
+    <span class="bp">self</span><span class="p">,</span> <span class="n">backend_kwargs</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span> <span class="n">correlation_batch_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">32</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Get refine template result.</span>
 
@@ -8054,29 +8131,20 @@ results to disk directly after running the match template. Default is True.</p>
 <span class="sd">    ----------</span>
 <span class="sd">    backend_kwargs : dict</span>
 <span class="sd">        Keyword arguments for the backend processing</span>
-<span class="sd">    orientation_batch_size : int</span>
-<span class="sd">        Number of orientations to process at once. Defaults to 64.</span>
+<span class="sd">    correlation_batch_size : int</span>
+<span class="sd">        Number of orientations to process at once. Defaults to 32.</span>
 
 <span class="sd">    Returns</span>
 <span class="sd">    -------</span>
 <span class="sd">    dict[str, np.ndarray]</span>
 <span class="sd">        The result of the refine template program.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
-    <span class="c1"># Adjust batch size if orientation search is disabled</span>
-    <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">orientation_refinement_config</span><span class="o">.</span><span class="n">enabled</span><span class="p">:</span>
-        <span class="n">orientation_batch_size</span> <span class="o">=</span> <span class="mi">1</span>
-    <span class="k">elif</span> <span class="p">(</span>
-        <span class="bp">self</span><span class="o">.</span><span class="n">orientation_refinement_config</span><span class="o">.</span><span class="n">euler_angles_offsets</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
-        <span class="o">&lt;</span> <span class="n">orientation_batch_size</span>
-    <span class="p">):</span>
-        <span class="n">orientation_batch_size</span> <span class="o">=</span> <span class="p">(</span>
-            <span class="bp">self</span><span class="o">.</span><span class="n">orientation_refinement_config</span><span class="o">.</span><span class="n">euler_angles_offsets</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
-        <span class="p">)</span>
-
     <span class="c1"># pylint: disable=duplicate-code</span>
     <span class="n">result</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
     <span class="n">result</span> <span class="o">=</span> <span class="n">core_refine_template</span><span class="p">(</span>
-        <span class="n">batch_size</span><span class="o">=</span><span class="n">orientation_batch_size</span><span class="p">,</span> <span class="o">**</span><span class="n">backend_kwargs</span>
+        <span class="n">batch_size</span><span class="o">=</span><span class="n">correlation_batch_size</span><span class="p">,</span>
+        <span class="n">num_cuda_streams</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">computational_config</span><span class="o">.</span><span class="n">num_cpus</span><span class="p">,</span>
+        <span class="o">**</span><span class="n">backend_kwargs</span><span class="p">,</span>
     <span class="p">)</span>
     <span class="n">result</span> <span class="o">=</span> <span class="p">{</span><span class="n">k</span><span class="p">:</span> <span class="n">v</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span><span class="o">.</span><span class="n">numpy</span><span class="p">()</span> <span class="k">for</span> <span class="n">k</span><span class="p">,</span> <span class="n">v</span> <span class="ow">in</span> <span class="n">result</span><span class="o">.</span><span class="n">items</span><span class="p">()}</span>
 
@@ -8287,7 +8355,16 @@ False.</p>
 
             <details class="quote">
               <summary>Source code in <code>src/leopard_em/pydantic_models/managers/refine_template_manager.py</code></summary>
-              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">176</span>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">167</span>
+<span class="normal">168</span>
+<span class="normal">169</span>
+<span class="normal">170</span>
+<span class="normal">171</span>
+<span class="normal">172</span>
+<span class="normal">173</span>
+<span class="normal">174</span>
+<span class="normal">175</span>
+<span class="normal">176</span>
 <span class="normal">177</span>
 <span class="normal">178</span>
 <span class="normal">179</span>
@@ -8368,16 +8445,7 @@ False.</p>
 <span class="normal">254</span>
 <span class="normal">255</span>
 <span class="normal">256</span>
-<span class="normal">257</span>
-<span class="normal">258</span>
-<span class="normal">259</span>
-<span class="normal">260</span>
-<span class="normal">261</span>
-<span class="normal">262</span>
-<span class="normal">263</span>
-<span class="normal">264</span>
-<span class="normal">265</span>
-<span class="normal">266</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">refine_result_to_dataframe</span><span class="p">(</span>
+<span class="normal">257</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">refine_result_to_dataframe</span><span class="p">(</span>
     <span class="bp">self</span><span class="p">,</span> <span class="n">output_dataframe_path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">result</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">]</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Convert refine template result to dataframe.</span>
@@ -8478,7 +8546,7 @@ False.</p>
 
 
 <h3 id="leopard_em.pydantic_models.managers.RefineTemplateManager.run_refine_template" class="doc doc-heading">
-            <code class="highlight language-python"><span class="n">run_refine_template</span><span class="p">(</span><span class="n">output_dataframe_path</span><span class="p">,</span> <span class="n">orientation_batch_size</span><span class="o">=</span><span class="mi">64</span><span class="p">)</span></code>
+            <code class="highlight language-python"><span class="n">run_refine_template</span><span class="p">(</span><span class="n">output_dataframe_path</span><span class="p">,</span> <span class="n">correlation_batch_size</span><span class="o">=</span><span class="mi">32</span><span class="p">)</span></code>
 
 </h3>
 
@@ -8517,18 +8585,18 @@ False.</p>
           </tr>
           <tr class="doc-section-item">
             <td>
-                <code>orientation_batch_size</code>
+                <code>correlation_batch_size</code>
             </td>
             <td>
                   <code><span title="int">int</span></code>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Number of orientations to process at once. Defaults to 64.</p>
+                <p>Number of cross-correlations to process in one batch, defaults to 32.</p>
               </div>
             </td>
             <td>
-                  <code>64</code>
+                  <code>32</code>
             </td>
           </tr>
       </tbody>
@@ -8556,7 +8624,7 @@ False.</p>
 <span class="normal">135</span>
 <span class="normal">136</span>
 <span class="normal">137</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">run_refine_template</span><span class="p">(</span>
-    <span class="bp">self</span><span class="p">,</span> <span class="n">output_dataframe_path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">orientation_batch_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">64</span>
+    <span class="bp">self</span><span class="p">,</span> <span class="n">output_dataframe_path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">correlation_batch_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">32</span>
 <span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Run the refine template program and saves the resultant DataFrame to csv.</span>
 
@@ -8564,12 +8632,12 @@ False.</p>
 <span class="sd">    ----------</span>
 <span class="sd">    output_dataframe_path : str</span>
 <span class="sd">        Path to save the refined particle data.</span>
-<span class="sd">    orientation_batch_size : int</span>
-<span class="sd">        Number of orientations to process at once. Defaults to 64.</span>
+<span class="sd">    correlation_batch_size : int</span>
+<span class="sd">        Number of cross-correlations to process in one batch, defaults to 32.</span>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="n">backend_kwargs</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">make_backend_core_function_kwargs</span><span class="p">()</span>
 
-    <span class="n">result</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_refine_result</span><span class="p">(</span><span class="n">backend_kwargs</span><span class="p">,</span> <span class="n">orientation_batch_size</span><span class="p">)</span>
+    <span class="n">result</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">get_refine_result</span><span class="p">(</span><span class="n">backend_kwargs</span><span class="p">,</span> <span class="n">correlation_batch_size</span><span class="p">)</span>
 
     <span class="bp">self</span><span class="o">.</span><span class="n">refine_result_to_dataframe</span><span class="p">(</span>
         <span class="n">output_dataframe_path</span><span class="o">=</span><span class="n">output_dataframe_path</span><span class="p">,</span> <span class="n">result</span><span class="o">=</span><span class="n">result</span>

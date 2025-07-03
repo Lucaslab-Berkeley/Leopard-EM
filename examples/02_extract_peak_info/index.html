@@ -395,11 +395,11 @@
   
   
     <li class="md-nav__item">
-      <a href="../04_plotting_2dtm_results" class="md-nav__link">
+      <a href="../04_plotting_2dtm_results/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
-    Plotting match template results
+    Visualizing 2DTM result
     
   </span>
   
@@ -954,6 +954,28 @@
   
   <span class="md-ellipsis">
     core_refine_template
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/backend/cross_correlation/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    cross_correlation
     
   </span>
   
@@ -2305,7 +2327,8 @@ from leopard_em.pydantic_models.managers import MatchTemplateManager</div>
 <div class="jp-InputArea jp-Cell-inputArea"><div class="jp-InputPrompt jp-InputArea-prompt">
 </div><div class="jp-RenderedHTMLCommon jp-RenderedMarkdown jp-MarkdownOutput" data-mime-type="text/markdown">
 <h2 id="downloading-example-data">Downloading example data<a class="anchor-link" href="#downloading-example-data">¶</a></h2><p>Run the following code cell to download pre-processed results into the current directory of the notebook.
-If you have an actual result already on your system, you can proceed with that configuration file</p>
+This is dependent on the <code>zenodo-get</code> package which should come pre-installed with Leopard-EM</p>
+<p>If you have an actual result already on your system, you can proceed with that configuration file.</p>
 </div>
 </div>
 </div>
@@ -2328,91 +2351,27 @@ If you have an actual result already on your system, you can proceed with that c
 </div>
 </clipboard-copy>
 </div>
-<div class="highlight-ipynb hl-python"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
-
-<span class="kn">import</span><span class="w"> </span><span class="nn">requests</span>
-
-
-<span class="k">def</span><span class="w"> </span><span class="nf">download_zenodo_file</span><span class="p">(</span><span class="n">url</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
-<span class="w">    </span><span class="sd">"""Downloads a zenodo file from the given URL. Returns the output filename."""</span>
-    <span class="n">output_filename</span> <span class="o">=</span> <span class="n">url</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">"/"</span><span class="p">)[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span>
-
-    <span class="c1"># Check if the file already exists</span>
-    <span class="k">if</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">exists</span><span class="p">(</span><span class="n">output_filename</span><span class="p">):</span>
-        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"File </span><span class="si">{</span><span class="n">output_filename</span><span class="si">}</span><span class="s2"> already exists. Skipping download."</span><span class="p">)</span>
-        <span class="k">return</span> <span class="n">output_filename</span>
-
-    <span class="n">response</span> <span class="o">=</span> <span class="n">requests</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">url</span><span class="p">,</span> <span class="n">stream</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
-    <span class="n">response</span><span class="o">.</span><span class="n">raise_for_status</span><span class="p">()</span>  <span class="c1"># Check for request errors</span>
-
-    <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">output_filename</span><span class="p">,</span> <span class="s2">"wb"</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
-        <span class="k">for</span> <span class="n">chunk</span> <span class="ow">in</span> <span class="n">response</span><span class="o">.</span><span class="n">iter_content</span><span class="p">(</span><span class="n">chunk_size</span><span class="o">=</span><span class="mi">8192</span><span class="p">):</span>
-            <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">chunk</span><span class="p">)</span>
-
-    <span class="k">return</span> <span class="n">output_filename</span>
-
-
-<span class="c1"># NOTE: This may take a few seconds to few minutes, depending on internet connection</span>
-<span class="c1"># fmt: off</span>
-<span class="n">file_urls</span> <span class="o">=</span> <span class="p">[</span>
-    <span class="s2">"https://zenodo.org/records/15426374/files/60S_map_px0.936_bscale0.5.mrc"</span><span class="p">,</span>
-    <span class="s2">"https://zenodo.org/records/15426374/files/xenon_216_000_0_output_mip.mrc"</span><span class="p">,</span>
-    <span class="s2">"https://zenodo.org/records/15426374/files/xenon_216_000_0_output_scaled_mip.mrc"</span><span class="p">,</span>
-    <span class="s2">"https://zenodo.org/records/15426374/files/xenon_216_000_0_output_orientation_phi.mrc"</span><span class="p">,</span>
-    <span class="s2">"https://zenodo.org/records/15426374/files/xenon_216_000_0_output_orientation_theta.mrc"</span><span class="p">,</span>
-    <span class="s2">"https://zenodo.org/records/15426374/files/xenon_216_000_0_output_orientation_psi.mrc"</span><span class="p">,</span>
-    <span class="s2">"https://zenodo.org/records/15426374/files/xenon_216_000_0_output_relative_defocus.mrc"</span><span class="p">,</span>
-    <span class="s2">"https://zenodo.org/records/15426374/files/xenon_216_000_0_output_correlation_average.mrc"</span><span class="p">,</span>
-    <span class="s2">"https://zenodo.org/records/15426374/files/xenon_216_000_0_output_correlation_variance.mrc"</span><span class="p">,</span>
-<span class="p">]</span>
-<span class="c1"># fmt: on</span>
-
-<span class="k">for</span> <span class="n">url</span> <span class="ow">in</span> <span class="n">file_urls</span><span class="p">:</span>
-    <span class="n">filename</span> <span class="o">=</span> <span class="n">download_zenodo_file</span><span class="p">(</span><span class="n">url</span><span class="p">)</span>
-    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">"Downloaded </span><span class="si">{</span><span class="n">filename</span><span class="si">}</span><span class="s2">"</span><span class="p">)</span>
+<div class="highlight-ipynb hl-python"><pre><span></span><span class="err">!</span><span class="n">zenodo_get</span> <span class="n">https</span><span class="p">:</span><span class="o">//</span><span class="n">doi</span><span class="o">.</span><span class="n">org</span><span class="o">/</span><span class="mf">10.5281</span><span class="o">/</span><span class="n">zenodo</span><span class="mf">.15426374</span> \
+<span class="o">--</span><span class="n">glob</span> <span class="s2">"60S_map_px0.936_bscale0.5.mrc"</span> \
+<span class="o">--</span><span class="n">glob</span> <span class="s2">"xenon_216_000_0_output_mip.mrc"</span> \
+<span class="o">--</span><span class="n">glob</span> <span class="s2">"xenon_216_000_0_output_scaled_mip.mrc"</span> \
+<span class="o">--</span><span class="n">glob</span> <span class="s2">"xenon_216_000_0_output_orientation_phi.mrc"</span> \
+<span class="o">--</span><span class="n">glob</span> <span class="s2">"xenon_216_000_0_output_orientation_theta.mrc"</span> \
+<span class="o">--</span><span class="n">glob</span> <span class="s2">"xenon_216_000_0_output_orientation_psi.mrc"</span> \
+<span class="o">--</span><span class="n">glob</span> <span class="s2">"xenon_216_000_0_output_relative_defocus.mrc"</span> \
+<span class="o">--</span><span class="n">glob</span> <span class="s2">"xenon_216_000_0_output_correlation_average.mrc"</span> \
+<span class="o">--</span><span class="n">glob</span> <span class="s2">"xenon_216_000_0_output_correlation_variance.mrc"</span>
 </pre></div>
-<div class="clipboard-copy-txt" id="cell-2">import os
-
-import requests
-
-
-def download_zenodo_file(url: str) -&gt; str:
-    """Downloads a zenodo file from the given URL. Returns the output filename."""
-    output_filename = url.split("/")[-1]
-
-    # Check if the file already exists
-    if os.path.exists(output_filename):
-        print(f"File {output_filename} already exists. Skipping download.")
-        return output_filename
-
-    response = requests.get(url, stream=True)
-    response.raise_for_status()  # Check for request errors
-
-    with open(output_filename, "wb") as f:
-        for chunk in response.iter_content(chunk_size=8192):
-            f.write(chunk)
-
-    return output_filename
-
-
-# NOTE: This may take a few seconds to few minutes, depending on internet connection
-# fmt: off
-file_urls = [
-    "https://zenodo.org/records/15426374/files/60S_map_px0.936_bscale0.5.mrc",
-    "https://zenodo.org/records/15426374/files/xenon_216_000_0_output_mip.mrc",
-    "https://zenodo.org/records/15426374/files/xenon_216_000_0_output_scaled_mip.mrc",
-    "https://zenodo.org/records/15426374/files/xenon_216_000_0_output_orientation_phi.mrc",
-    "https://zenodo.org/records/15426374/files/xenon_216_000_0_output_orientation_theta.mrc",
-    "https://zenodo.org/records/15426374/files/xenon_216_000_0_output_orientation_psi.mrc",
-    "https://zenodo.org/records/15426374/files/xenon_216_000_0_output_relative_defocus.mrc",
-    "https://zenodo.org/records/15426374/files/xenon_216_000_0_output_correlation_average.mrc",
-    "https://zenodo.org/records/15426374/files/xenon_216_000_0_output_correlation_variance.mrc",
-]
-# fmt: on
-
-for url in file_urls:
-    filename = download_zenodo_file(url)
-    print(f"Downloaded {filename}")</div>
+<div class="clipboard-copy-txt" id="cell-2">!zenodo_get https://doi.org/10.5281/zenodo.15426374 \
+--glob "60S_map_px0.936_bscale0.5.mrc" \
+--glob "xenon_216_000_0_output_mip.mrc" \
+--glob "xenon_216_000_0_output_scaled_mip.mrc" \
+--glob "xenon_216_000_0_output_orientation_phi.mrc" \
+--glob "xenon_216_000_0_output_orientation_theta.mrc" \
+--glob "xenon_216_000_0_output_orientation_psi.mrc" \
+--glob "xenon_216_000_0_output_relative_defocus.mrc" \
+--glob "xenon_216_000_0_output_correlation_average.mrc" \
+--glob "xenon_216_000_0_output_correlation_variance.mrc"</div>
 </div>
 </div>
 </div>
@@ -2424,24 +2383,67 @@ for url in file_urls:
 <div class="jp-OutputArea-child">
 <div class="jp-OutputPrompt jp-OutputArea-prompt"></div>
 <div class="jp-RenderedText jp-OutputArea-output" data-mime-type="text/plain" tabindex="0">
-<pre>File 60S_map_px0.936_bscale0.5.mrc already exists. Skipping download.
-Downloaded 60S_map_px0.936_bscale0.5.mrc
-File xenon_216_000_0_output_mip.mrc already exists. Skipping download.
-Downloaded xenon_216_000_0_output_mip.mrc
-File xenon_216_000_0_output_scaled_mip.mrc already exists. Skipping download.
-Downloaded xenon_216_000_0_output_scaled_mip.mrc
-File xenon_216_000_0_output_orientation_phi.mrc already exists. Skipping download.
-Downloaded xenon_216_000_0_output_orientation_phi.mrc
-File xenon_216_000_0_output_orientation_theta.mrc already exists. Skipping download.
-Downloaded xenon_216_000_0_output_orientation_theta.mrc
-File xenon_216_000_0_output_orientation_psi.mrc already exists. Skipping download.
-Downloaded xenon_216_000_0_output_orientation_psi.mrc
-File xenon_216_000_0_output_relative_defocus.mrc already exists. Skipping download.
-Downloaded xenon_216_000_0_output_relative_defocus.mrc
-File xenon_216_000_0_output_correlation_average.mrc already exists. Skipping download.
-Downloaded xenon_216_000_0_output_correlation_average.mrc
-File xenon_216_000_0_output_correlation_variance.mrc already exists. Skipping download.
-Downloaded xenon_216_000_0_output_correlation_variance.mrc
+<pre>Title: 2DTM inputs and program results from the Leopard-EM Python package
+Keywords: 
+Publication date: 2025-05-15
+DOI: 10.5281/zenodo.15426374
+Total size: 948.2 MB
+
+Downloading (1/9):
+File: xenon_216_000_0_output_relative_defocus.mrc (51.4 MB)
+Link: https://zenodo.org/api/records/15426374/files/xenon_216_000_0_output_relative_defocus.mrc/content
+100% [....................................................] 51409924 / 51409924
+Checksum is correct for xenon_216_000_0_output_relative_defocus.mrc. (eb62fdd477b14f5b618f970fb635e7e8)
+
+Downloading (2/9):
+File: 60S_map_px0.936_bscale0.5.mrc (536.9 MB)
+Link: https://zenodo.org/api/records/15426374/files/60S_map_px0.936_bscale0.5.mrc/content
+100% [..................................................] 536871936 / 536871936
+Checksum is correct for 60S_map_px0.936_bscale0.5.mrc. (4419d7ac93f5492b5f27a8a410b3d1fd)
+
+Downloading (3/9):
+File: xenon_216_000_0_output_scaled_mip.mrc (51.4 MB)
+Link: https://zenodo.org/api/records/15426374/files/xenon_216_000_0_output_scaled_mip.mrc/content
+100% [....................................................] 51409924 / 51409924
+Checksum is correct for xenon_216_000_0_output_scaled_mip.mrc. (20b1e6099fe4248fac106824d1aa65a5)
+
+Downloading (4/9):
+File: xenon_216_000_0_output_orientation_psi.mrc (51.4 MB)
+Link: https://zenodo.org/api/records/15426374/files/xenon_216_000_0_output_orientation_psi.mrc/content
+100% [....................................................] 51409924 / 51409924
+Checksum is correct for xenon_216_000_0_output_orientation_psi.mrc. (65e8bf20a90f131ce86bf64c630ee5e1)
+
+Downloading (5/9):
+File: xenon_216_000_0_output_orientation_phi.mrc (51.4 MB)
+Link: https://zenodo.org/api/records/15426374/files/xenon_216_000_0_output_orientation_phi.mrc/content
+100% [....................................................] 51409924 / 51409924
+Checksum is correct for xenon_216_000_0_output_orientation_phi.mrc. (6c51d9b315f2b59e930fbc54d3a4fcfd)
+
+Downloading (6/9):
+File: xenon_216_000_0_output_correlation_average.mrc (51.4 MB)
+Link: https://zenodo.org/api/records/15426374/files/xenon_216_000_0_output_correlation_average.mrc/content
+100% [....................................................] 51409924 / 51409924
+Checksum is correct for xenon_216_000_0_output_correlation_average.mrc. (e0c1c298055f1d765b557ab3363e0d32)
+
+Downloading (7/9):
+File: xenon_216_000_0_output_mip.mrc (51.4 MB)
+Link: https://zenodo.org/api/records/15426374/files/xenon_216_000_0_output_mip.mrc/content
+100% [....................................................] 51409924 / 51409924
+Checksum is correct for xenon_216_000_0_output_mip.mrc. (e913d42e86d84d521746ae90eec9d6fe)
+
+Downloading (8/9):
+File: xenon_216_000_0_output_orientation_theta.mrc (51.4 MB)
+Link: https://zenodo.org/api/records/15426374/files/xenon_216_000_0_output_orientation_theta.mrc/content
+100% [....................................................] 51409924 / 51409924
+Checksum is correct for xenon_216_000_0_output_orientation_theta.mrc. (8c852dce6182df6d2f7153d1c70cce98)
+
+Downloading (9/9):
+File: xenon_216_000_0_output_correlation_variance.mrc (51.4 MB)
+Link: https://zenodo.org/api/records/15426374/files/xenon_216_000_0_output_correlation_variance.mrc/content
+100% [....................................................] 51409924 / 51409924
+Checksum is correct for xenon_216_000_0_output_correlation_variance.mrc. (2a7ffb937e05a6374f751cacb48e4908)
+
+All specified files have been processed.
 </pre>
 </div>
 </div>

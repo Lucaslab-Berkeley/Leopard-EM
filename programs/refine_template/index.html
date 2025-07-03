@@ -318,11 +318,11 @@
   
   
     <li class="md-nav__item">
-      <a href="../../examples/04_plotting_2dtm_results" class="md-nav__link">
+      <a href="../../examples/04_plotting_2dtm_results/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
-    Plotting match template results
+    Visualizing 2DTM result
     
   </span>
   
@@ -1007,6 +1007,28 @@
   
   <span class="md-ellipsis">
     core_refine_template
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/backend/cross_correlation/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    cross_correlation
     
   </span>
   
@@ -2009,13 +2031,18 @@ If you are doubtful of a deposited model's pixel size accuracy (or the relative 
 <p>The <code>preprocessing_filters</code> block should be copied directly from the original <code>match_template</code> program configuration.
 All these parameters are discussed in more detail on the <a href="../match_template/#configuring-the-pre-processing-filters">match template program page</a>.</p>
 <h3 id="configuring-gpus-for-a-match-template-run">Configuring GPUs for a match template run</h3>
-<p>Template refinement can run across multiple GPUs and is controlled in the same way as match template.
-Note that the <code>num_cpus</code> field is currently unused and can just be set to one.
-Like <a href="../match_template/#configuring-gpus-for-a-match-template-run">configuring GPUs for a match template run</a>, GPUs are targeted by their device index.
+<p>The refine template program parallelizes across multiple GPUs by splitting which particles are refined across the configured list of GPU devices.
+The <code>num_cpus</code> field controls how many concurrent streams of work are being submitted to each GPUs; in most cases, a value of <code>1</code> or <code>2</code> will saturate the GPU and give the best performance, although your mileage may vary.
+Like <a href="../match_template/#configuring-gpus-for-a-match-template-run">configuring GPUs for a match template run</a>, GPUs are targeted by their device index or the special string <code>"all"</code>
 The following configuration will run <code>refine_template</code> on GPU zero.</p>
 <div class="highlight"><pre><span></span><code><span class="nt">computational_config</span><span class="p">:</span>
 <span class="w">  </span><span class="nt">gpu_ids</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0</span>
 <span class="w">  </span><span class="nt">num_cpus</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
+</code></pre></div>
+<p>The following configuration will run <code>refine_template</code> on all available GPUs with two streams per GPU.</p>
+<div class="highlight"><pre><span></span><code><span class="nt">computational_config</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">gpu_ids</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;all&quot;</span>
+<span class="w">  </span><span class="nt">num_cpus</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2</span>
 </code></pre></div>
 <h2 id="running-the-refine-template-program">Running the refine template program</h2>
 <p>Once you've configured a YAML file, running the refine template program is fairly simple.

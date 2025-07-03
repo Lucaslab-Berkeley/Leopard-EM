@@ -316,11 +316,11 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../examples/04_plotting_2dtm_results" class="md-nav__link">
+      <a href="../../../../examples/04_plotting_2dtm_results/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
-    Plotting match template results
+    Visualizing 2DTM result
     
   </span>
   
@@ -879,6 +879,28 @@
   
   <span class="md-ellipsis">
     core_refine_template
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../backend/cross_correlation/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    cross_correlation
     
   </span>
   
@@ -3410,7 +3432,7 @@ applies filters, and prepares the template for further processing.</p>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="c1"># Extract out the regions of interest (particles) based on the particle stack</span>
     <span class="n">particle_images</span> <span class="o">=</span> <span class="n">particle_stack</span><span class="o">.</span><span class="n">construct_image_stack</span><span class="p">(</span>
-        <span class="n">pos_reference</span><span class="o">=</span><span class="s2">&quot;center&quot;</span><span class="p">,</span>
+        <span class="n">pos_reference</span><span class="o">=</span><span class="s2">&quot;top-left&quot;</span><span class="p">,</span>
         <span class="n">padding_value</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span>
         <span class="n">handle_bounds</span><span class="o">=</span><span class="s2">&quot;pad&quot;</span><span class="p">,</span>
         <span class="n">padding_mode</span><span class="o">=</span><span class="s2">&quot;constant&quot;</span><span class="p">,</span>
@@ -3766,18 +3788,18 @@ OptimizeTemplateManager's make_backend_core_function_kwargs methods.</p>
 <span class="sd">    &quot;&quot;&quot;</span>
     <span class="c1"># Get correlation statistics</span>
     <span class="n">corr_mean_stack</span> <span class="o">=</span> <span class="n">particle_stack</span><span class="o">.</span><span class="n">construct_cropped_statistic_stack</span><span class="p">(</span>
-        <span class="s2">&quot;correlation_average&quot;</span><span class="p">,</span>
+        <span class="n">stat</span><span class="o">=</span><span class="s2">&quot;correlation_average&quot;</span><span class="p">,</span>
+        <span class="n">handle_bounds</span><span class="o">=</span><span class="s2">&quot;pad&quot;</span><span class="p">,</span>
+        <span class="n">padding_mode</span><span class="o">=</span><span class="s2">&quot;constant&quot;</span><span class="p">,</span>
+        <span class="n">padding_value</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span>  <span class="c1"># pad with zeros</span>
     <span class="p">)</span>
-    <span class="n">corr_std_stack</span> <span class="o">=</span> <span class="p">(</span>
-        <span class="n">particle_stack</span><span class="o">.</span><span class="n">construct_cropped_statistic_stack</span><span class="p">(</span>
-            <span class="n">stat</span><span class="o">=</span><span class="s2">&quot;correlation_variance&quot;</span><span class="p">,</span>
-            <span class="n">pos_reference</span><span class="o">=</span><span class="s2">&quot;center&quot;</span><span class="p">,</span>
-            <span class="n">handle_bounds</span><span class="o">=</span><span class="s2">&quot;pad&quot;</span><span class="p">,</span>
-            <span class="n">padding_mode</span><span class="o">=</span><span class="s2">&quot;constant&quot;</span><span class="p">,</span>
-            <span class="n">padding_value</span><span class="o">=</span><span class="mf">1e10</span><span class="p">,</span>  <span class="c1"># large to avoid out of bound pixels having inf z-score</span>
-        <span class="p">)</span>
-        <span class="o">**</span> <span class="mf">0.5</span>
-    <span class="p">)</span>  <span class="c1"># var to std</span>
+    <span class="n">corr_std_stack</span> <span class="o">=</span> <span class="n">particle_stack</span><span class="o">.</span><span class="n">construct_cropped_statistic_stack</span><span class="p">(</span>
+        <span class="n">stat</span><span class="o">=</span><span class="s2">&quot;correlation_variance&quot;</span><span class="p">,</span>
+        <span class="n">handle_bounds</span><span class="o">=</span><span class="s2">&quot;pad&quot;</span><span class="p">,</span>
+        <span class="n">padding_mode</span><span class="o">=</span><span class="s2">&quot;constant&quot;</span><span class="p">,</span>
+        <span class="n">padding_value</span><span class="o">=</span><span class="mf">1e10</span><span class="p">,</span>  <span class="c1"># large to avoid out of bound pixels having inf z-score</span>
+    <span class="p">)</span>
+    <span class="n">corr_std_stack</span> <span class="o">=</span> <span class="n">corr_std_stack</span><span class="o">**</span><span class="mf">0.5</span>  <span class="c1"># Convert variance to standard deviation</span>
 
     <span class="c1"># Extract and preprocess images and filters</span>
     <span class="p">(</span>

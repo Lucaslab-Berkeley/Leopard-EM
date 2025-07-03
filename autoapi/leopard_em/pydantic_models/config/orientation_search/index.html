@@ -316,11 +316,11 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../../../examples/04_plotting_2dtm_results" class="md-nav__link">
+      <a href="../../../../../examples/04_plotting_2dtm_results/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
-    Plotting match template results
+    Visualizing 2DTM result
     
   </span>
   
@@ -896,6 +896,28 @@
   
   
     <li class="md-nav__item">
+      <a href="../../../backend/cross_correlation/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    cross_correlation
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../../backend/process_results/" class="md-nav__link">
         
   
@@ -1183,6 +1205,30 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#leopard_em.pydantic_models.config.orientation_search.MultipleOrientationConfig" class="md-nav__link">
+    <span class="md-ellipsis">
+      MultipleOrientationConfig
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="MultipleOrientationConfig">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#leopard_em.pydantic_models.config.orientation_search.MultipleOrientationConfig.euler_angles" class="md-nav__link">
+    <span class="md-ellipsis">
+      euler_angles
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#leopard_em.pydantic_models.config.orientation_search.OrientationSearchConfig" class="md-nav__link">
     <span class="md-ellipsis">
       OrientationSearchConfig
@@ -1196,6 +1242,15 @@
   <a href="#leopard_em.pydantic_models.config.orientation_search.OrientationSearchConfig.euler_angles" class="md-nav__link">
     <span class="md-ellipsis">
       euler_angles
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#leopard_em.pydantic_models.config.orientation_search.OrientationSearchConfig.validate_angle_ranges_and_symmetry" class="md-nav__link">
+    <span class="md-ellipsis">
+      validate_angle_ranges_and_symmetry
     </span>
   </a>
   
@@ -1844,6 +1899,30 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#leopard_em.pydantic_models.config.orientation_search.MultipleOrientationConfig" class="md-nav__link">
+    <span class="md-ellipsis">
+      MultipleOrientationConfig
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="MultipleOrientationConfig">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#leopard_em.pydantic_models.config.orientation_search.MultipleOrientationConfig.euler_angles" class="md-nav__link">
+    <span class="md-ellipsis">
+      euler_angles
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#leopard_em.pydantic_models.config.orientation_search.OrientationSearchConfig" class="md-nav__link">
     <span class="md-ellipsis">
       OrientationSearchConfig
@@ -1857,6 +1936,15 @@
   <a href="#leopard_em.pydantic_models.config.orientation_search.OrientationSearchConfig.euler_angles" class="md-nav__link">
     <span class="md-ellipsis">
       euler_angles
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#leopard_em.pydantic_models.config.orientation_search.OrientationSearchConfig.validate_angle_ranges_and_symmetry" class="md-nav__link">
+    <span class="md-ellipsis">
+      validate_angle_ranges_and_symmetry
     </span>
   </a>
   
@@ -2099,62 +2187,7 @@ Must be greater than or equal to 0.</p>
 
               <details class="quote">
                 <summary>Source code in <code>src/leopard_em/pydantic_models/config/orientation_search.py</code></summary>
-                <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">226</span>
-<span class="normal">227</span>
-<span class="normal">228</span>
-<span class="normal">229</span>
-<span class="normal">230</span>
-<span class="normal">231</span>
-<span class="normal">232</span>
-<span class="normal">233</span>
-<span class="normal">234</span>
-<span class="normal">235</span>
-<span class="normal">236</span>
-<span class="normal">237</span>
-<span class="normal">238</span>
-<span class="normal">239</span>
-<span class="normal">240</span>
-<span class="normal">241</span>
-<span class="normal">242</span>
-<span class="normal">243</span>
-<span class="normal">244</span>
-<span class="normal">245</span>
-<span class="normal">246</span>
-<span class="normal">247</span>
-<span class="normal">248</span>
-<span class="normal">249</span>
-<span class="normal">250</span>
-<span class="normal">251</span>
-<span class="normal">252</span>
-<span class="normal">253</span>
-<span class="normal">254</span>
-<span class="normal">255</span>
-<span class="normal">256</span>
-<span class="normal">257</span>
-<span class="normal">258</span>
-<span class="normal">259</span>
-<span class="normal">260</span>
-<span class="normal">261</span>
-<span class="normal">262</span>
-<span class="normal">263</span>
-<span class="normal">264</span>
-<span class="normal">265</span>
-<span class="normal">266</span>
-<span class="normal">267</span>
-<span class="normal">268</span>
-<span class="normal">269</span>
-<span class="normal">270</span>
-<span class="normal">271</span>
-<span class="normal">272</span>
-<span class="normal">273</span>
-<span class="normal">274</span>
-<span class="normal">275</span>
-<span class="normal">276</span>
-<span class="normal">277</span>
-<span class="normal">278</span>
-<span class="normal">279</span>
-<span class="normal">280</span>
-<span class="normal">281</span>
+                <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">281</span>
 <span class="normal">282</span>
 <span class="normal">283</span>
 <span class="normal">284</span>
@@ -2222,7 +2255,62 @@ Must be greater than or equal to 0.</p>
 <span class="normal">346</span>
 <span class="normal">347</span>
 <span class="normal">348</span>
-<span class="normal">349</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">ConstrainedOrientationConfig</span><span class="p">(</span><span class="n">BaseModel2DTM</span><span class="p">):</span>
+<span class="normal">349</span>
+<span class="normal">350</span>
+<span class="normal">351</span>
+<span class="normal">352</span>
+<span class="normal">353</span>
+<span class="normal">354</span>
+<span class="normal">355</span>
+<span class="normal">356</span>
+<span class="normal">357</span>
+<span class="normal">358</span>
+<span class="normal">359</span>
+<span class="normal">360</span>
+<span class="normal">361</span>
+<span class="normal">362</span>
+<span class="normal">363</span>
+<span class="normal">364</span>
+<span class="normal">365</span>
+<span class="normal">366</span>
+<span class="normal">367</span>
+<span class="normal">368</span>
+<span class="normal">369</span>
+<span class="normal">370</span>
+<span class="normal">371</span>
+<span class="normal">372</span>
+<span class="normal">373</span>
+<span class="normal">374</span>
+<span class="normal">375</span>
+<span class="normal">376</span>
+<span class="normal">377</span>
+<span class="normal">378</span>
+<span class="normal">379</span>
+<span class="normal">380</span>
+<span class="normal">381</span>
+<span class="normal">382</span>
+<span class="normal">383</span>
+<span class="normal">384</span>
+<span class="normal">385</span>
+<span class="normal">386</span>
+<span class="normal">387</span>
+<span class="normal">388</span>
+<span class="normal">389</span>
+<span class="normal">390</span>
+<span class="normal">391</span>
+<span class="normal">392</span>
+<span class="normal">393</span>
+<span class="normal">394</span>
+<span class="normal">395</span>
+<span class="normal">396</span>
+<span class="normal">397</span>
+<span class="normal">398</span>
+<span class="normal">399</span>
+<span class="normal">400</span>
+<span class="normal">401</span>
+<span class="normal">402</span>
+<span class="normal">403</span>
+<span class="normal">404</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">ConstrainedOrientationConfig</span><span class="p">(</span><span class="n">BaseModel2DTM</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Serialization and validation of constrained orientation parameters.</span>
 
 <span class="sd">    Attributes</span>
@@ -2424,6 +2512,188 @@ phi, theta, and psi angles, respectively, in the 'ZYZ' convention.</p>
 
 
 
+<h2 id="leopard_em.pydantic_models.config.orientation_search.MultipleOrientationConfig" class="doc doc-heading">
+            <code>MultipleOrientationConfig</code>
+
+
+</h2>
+
+
+    <div class="doc doc-contents ">
+            <p class="doc doc-class-bases">
+              Bases: <code><a class="autorefs autorefs-internal" title="BaseModel2DTM (leopard_em.pydantic_models.custom_types.BaseModel2DTM)" href="../../custom_types/#leopard_em.pydantic_models.custom_types.BaseModel2DTM">BaseModel2DTM</a></code></p>
+
+
+        <p>Configuration for multiple orientation search ranges.</p>
+<p>This class allows specifying multiple complete orientation search
+configurations and concatenates their Euler angles.</p>
+
+
+<p><span class="doc-section-title">Attributes:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td><code><span title="leopard_em.pydantic_models.config.orientation_search.MultipleOrientationConfig.orientation_configs">orientation_configs</span></code></td>
+            <td>
+                  <code><span title="list">list</span>[<a class="autorefs autorefs-internal" title="OrientationSearchConfig (leopard_em.pydantic_models.config.orientation_search.OrientationSearchConfig)" href="#leopard_em.pydantic_models.config.orientation_search.OrientationSearchConfig">OrientationSearchConfig</a>]</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>List of orientation search configurations to combine.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+
+
+
+
+
+              <details class="quote">
+                <summary>Source code in <code>src/leopard_em/pydantic_models/config/orientation_search.py</code></summary>
+                <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">173</span>
+<span class="normal">174</span>
+<span class="normal">175</span>
+<span class="normal">176</span>
+<span class="normal">177</span>
+<span class="normal">178</span>
+<span class="normal">179</span>
+<span class="normal">180</span>
+<span class="normal">181</span>
+<span class="normal">182</span>
+<span class="normal">183</span>
+<span class="normal">184</span>
+<span class="normal">185</span>
+<span class="normal">186</span>
+<span class="normal">187</span>
+<span class="normal">188</span>
+<span class="normal">189</span>
+<span class="normal">190</span>
+<span class="normal">191</span>
+<span class="normal">192</span>
+<span class="normal">193</span>
+<span class="normal">194</span>
+<span class="normal">195</span>
+<span class="normal">196</span>
+<span class="normal">197</span>
+<span class="normal">198</span>
+<span class="normal">199</span>
+<span class="normal">200</span>
+<span class="normal">201</span>
+<span class="normal">202</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">MultipleOrientationConfig</span><span class="p">(</span><span class="n">BaseModel2DTM</span><span class="p">):</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Configuration for multiple orientation search ranges.</span>
+
+<span class="sd">    This class allows specifying multiple complete orientation search</span>
+<span class="sd">    configurations and concatenates their Euler angles.</span>
+
+<span class="sd">    Attributes</span>
+<span class="sd">    ----------</span>
+<span class="sd">    orientation_configs : list[OrientationSearchConfig]</span>
+<span class="sd">        List of orientation search configurations to combine.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+
+    <span class="n">orientation_configs</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="n">OrientationSearchConfig</span><span class="p">]</span>
+
+    <span class="nd">@property</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">euler_angles</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Returns the concatenated Euler angles from all orientation configs.</span>
+
+<span class="sd">        Returns</span>
+<span class="sd">        -------</span>
+<span class="sd">        torch.Tensor</span>
+<span class="sd">            A tensor of shape (N, 3) where N is the total number of orientations</span>
+<span class="sd">            from all configurations. The columns represent the psi, theta, and phi</span>
+<span class="sd">            angles respectively.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">all_euler_angles</span> <span class="o">=</span> <span class="p">[]</span>
+        <span class="k">for</span> <span class="n">config</span> <span class="ow">in</span> <span class="bp">self</span><span class="o">.</span><span class="n">orientation_configs</span><span class="p">:</span>
+            <span class="n">all_euler_angles</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">config</span><span class="o">.</span><span class="n">euler_angles</span><span class="p">)</span>
+
+        <span class="k">return</span> <span class="n">torch</span><span class="o">.</span><span class="n">cat</span><span class="p">(</span><span class="n">all_euler_angles</span><span class="p">,</span> <span class="n">dim</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+</code></pre></div></td></tr></table></div>
+              </details>
+
+
+
+  <div class="doc doc-children">
+
+
+
+
+
+
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h3 id="leopard_em.pydantic_models.config.orientation_search.MultipleOrientationConfig.euler_angles" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">euler_angles</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-property"><code>property</code></small>
+  </span>
+
+</h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Returns the concatenated Euler angles from all orientation configs.</p>
+
+
+    <p><span class="doc-section-title">Returns:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><span title="torch.Tensor">Tensor</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>A tensor of shape (N, 3) where N is the total number of orientations
+from all configurations. The columns represent the psi, theta, and phi
+angles respectively.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+    </div>
+
+</div>
+
+
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-class">
+
+
+
 <h2 id="leopard_em.pydantic_models.config.orientation_search.OrientationSearchConfig" class="doc doc-heading">
             <code>OrientationSearchConfig</code>
 
@@ -2438,11 +2708,11 @@ phi, theta, and psi angles, respectively, in the 'ZYZ' convention.</p>
 
         <p>Serialization and validation of orientation search parameters for 2DTM.</p>
 <p>The angles -- phi, theta, and psi -- represent Euler angles in the 'ZYZ'
-convention.</p>
+convention in units of degrees between 0 and 360 (for phi and psi) or
+between 0 and 180 (for theta).</p>
 <p>This model effectively acts as a connector into the
 <code>torch_so3.uniform_so3_sampling.get_uniform_euler_angles</code> function from the
 <a href="https://github.com/teamtomo/torch-so3">torch-so3</a> package.</p>
-<p>TODO: Add parameters for template symmetry.</p>
 <p>TODO: Implement indexing to get the i-th or range of orientations in the
 search space (need to be ordered).</p>
 
@@ -2458,26 +2728,26 @@ search space (need to be ordered).</p>
       </thead>
       <tbody>
           <tr class="doc-section-item">
-            <td><code><span title="leopard_em.pydantic_models.config.orientation_search.OrientationSearchConfig.orientation_sampling_method">orientation_sampling_method</span></code></td>
+            <td><code><span title="leopard_em.pydantic_models.config.orientation_search.OrientationSearchConfig.psi_step">psi_step</span></code></td>
             <td>
-                  <code><span title="str">str</span></code>
+                  <code><span title="float">float</span></code>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Method for sampling orientations. Default is 'Hopf Fibration'.
-Currently only 'Hopf Fibration' is supported.</p>
+                <p>Angular step size for psi in degrees. Must be greater
+than 0.</p>
               </div>
             </td>
           </tr>
           <tr class="doc-section-item">
-            <td><code><span title="leopard_em.pydantic_models.config.orientation_search.OrientationSearchConfig.symmetry">symmetry</span></code></td>
+            <td><code><span title="leopard_em.pydantic_models.config.orientation_search.OrientationSearchConfig.theta_step">theta_step</span></code></td>
             <td>
-                  <code><span title="str">str</span></code>
+                  <code><span title="float">float</span></code>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Symmetry group of the template. Default is 'C1'.
-Currently only 'C1' is supported.</p>
+                <p>Angular step size for theta in degrees. Must be
+greater than 0.</p>
               </div>
             </td>
           </tr>
@@ -2548,26 +2818,27 @@ Currently only 'C1' is supported.</p>
             </td>
           </tr>
           <tr class="doc-section-item">
-            <td><code><span title="leopard_em.pydantic_models.config.orientation_search.OrientationSearchConfig.psi_step">psi_step</span></code></td>
+            <td><code><span title="leopard_em.pydantic_models.config.orientation_search.OrientationSearchConfig.base_grid_method">base_grid_method</span></code></td>
             <td>
-                  <code><span title="float">float</span></code>
+                  <code><span title="str">str</span></code>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Angular step size for psi in degrees. Must be greater
-than 0.</p>
+                <p>Method for sampling orientations. Default is 'uniform'.
+Currently only 'uniform' is supported.</p>
               </div>
             </td>
           </tr>
           <tr class="doc-section-item">
-            <td><code><span title="leopard_em.pydantic_models.config.orientation_search.OrientationSearchConfig.theta_step">theta_step</span></code></td>
+            <td><code><span title="leopard_em.pydantic_models.config.orientation_search.OrientationSearchConfig.symmetry">symmetry</span></code></td>
             <td>
-                  <code><span title="float">float</span></code>
+                  <code><span title="str">str</span></code>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Angular step size for theta in degrees. Must be
-greater than 0.</p>
+                <p>Symmetry group of the template. Default is 'C1'. Note that if symmetry is
+provided, then the angle min/max values must be all set to None (validation
+will set these automatically based on the symmetry group).</p>
               </div>
             </td>
           </tr>
@@ -2582,8 +2853,7 @@ greater than 0.</p>
 
               <details class="quote">
                 <summary>Source code in <code>src/leopard_em/pydantic_models/config/orientation_search.py</code></summary>
-                <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"> 21</span>
-<span class="normal"> 22</span>
+                <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"> 22</span>
 <span class="normal"> 23</span>
 <span class="normal"> 24</span>
 <span class="normal"> 25</span>
@@ -2708,29 +2978,51 @@ greater than 0.</p>
 <span class="normal">144</span>
 <span class="normal">145</span>
 <span class="normal">146</span>
-<span class="normal">147</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">OrientationSearchConfig</span><span class="p">(</span><span class="n">BaseModel2DTM</span><span class="p">):</span>
+<span class="normal">147</span>
+<span class="normal">148</span>
+<span class="normal">149</span>
+<span class="normal">150</span>
+<span class="normal">151</span>
+<span class="normal">152</span>
+<span class="normal">153</span>
+<span class="normal">154</span>
+<span class="normal">155</span>
+<span class="normal">156</span>
+<span class="normal">157</span>
+<span class="normal">158</span>
+<span class="normal">159</span>
+<span class="normal">160</span>
+<span class="normal">161</span>
+<span class="normal">162</span>
+<span class="normal">163</span>
+<span class="normal">164</span>
+<span class="normal">165</span>
+<span class="normal">166</span>
+<span class="normal">167</span>
+<span class="normal">168</span>
+<span class="normal">169</span>
+<span class="normal">170</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">OrientationSearchConfig</span><span class="p">(</span><span class="n">BaseModel2DTM</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Serialization and validation of orientation search parameters for 2DTM.</span>
 
 <span class="sd">    The angles -- phi, theta, and psi -- represent Euler angles in the &#39;ZYZ&#39;</span>
-<span class="sd">    convention.</span>
+<span class="sd">    convention in units of degrees between 0 and 360 (for phi and psi) or</span>
+<span class="sd">    between 0 and 180 (for theta).</span>
 
 <span class="sd">    This model effectively acts as a connector into the</span>
 <span class="sd">    `torch_so3.uniform_so3_sampling.get_uniform_euler_angles` function from the</span>
 <span class="sd">    [torch-so3](https://github.com/teamtomo/torch-so3) package.</span>
-
-<span class="sd">    TODO: Add parameters for template symmetry.</span>
 
 <span class="sd">    TODO: Implement indexing to get the i-th or range of orientations in the</span>
 <span class="sd">    search space (need to be ordered).</span>
 
 <span class="sd">    Attributes</span>
 <span class="sd">    ----------</span>
-<span class="sd">    orientation_sampling_method : str</span>
-<span class="sd">        Method for sampling orientations. Default is &#39;Hopf Fibration&#39;.</span>
-<span class="sd">        Currently only &#39;Hopf Fibration&#39; is supported.</span>
-<span class="sd">    symmetry : str</span>
-<span class="sd">        Symmetry group of the template. Default is &#39;C1&#39;.</span>
-<span class="sd">        Currently only &#39;C1&#39; is supported.</span>
+<span class="sd">    psi_step : float</span>
+<span class="sd">        Angular step size for psi in degrees. Must be greater</span>
+<span class="sd">        than 0.</span>
+<span class="sd">    theta_step : float</span>
+<span class="sd">        Angular step size for theta in degrees. Must be</span>
+<span class="sd">        greater than 0.</span>
 <span class="sd">    phi_min : float</span>
 <span class="sd">        Minimum value for the phi angle in degrees.</span>
 <span class="sd">    phi_max : float</span>
@@ -2743,12 +3035,13 @@ greater than 0.</p>
 <span class="sd">        Minimum value for the psi angle in degrees.</span>
 <span class="sd">    psi_max : float</span>
 <span class="sd">        Maximum value for the psi angle in degrees.</span>
-<span class="sd">    psi_step : float</span>
-<span class="sd">        Angular step size for psi in degrees. Must be greater</span>
-<span class="sd">        than 0.</span>
-<span class="sd">    theta_step : float</span>
-<span class="sd">        Angular step size for theta in degrees. Must be</span>
-<span class="sd">        greater than 0.</span>
+<span class="sd">    base_grid_method : str</span>
+<span class="sd">        Method for sampling orientations. Default is &#39;uniform&#39;.</span>
+<span class="sd">        Currently only &#39;uniform&#39; is supported.</span>
+<span class="sd">    symmetry : str</span>
+<span class="sd">        Symmetry group of the template. Default is &#39;C1&#39;. Note that if symmetry is</span>
+<span class="sd">        provided, then the angle min/max values must be all set to None (validation</span>
+<span class="sd">        will set these automatically based on the symmetry group).</span>
 <span class="sd">    &quot;&quot;&quot;</span>
 
     <span class="n">psi_step</span><span class="p">:</span> <span class="n">Annotated</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="n">Field</span><span class="p">(</span><span class="n">ge</span><span class="o">=</span><span class="mf">0.0</span><span class="p">)]</span> <span class="o">=</span> <span class="mf">1.5</span>
@@ -2759,8 +3052,58 @@ greater than 0.</p>
     <span class="n">theta_max</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="n">psi_min</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
     <span class="n">psi_max</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="kc">None</span>
+
     <span class="n">base_grid_method</span><span class="p">:</span> <span class="n">Literal</span><span class="p">[</span><span class="s2">&quot;uniform&quot;</span><span class="p">,</span> <span class="s2">&quot;healpix&quot;</span><span class="p">,</span> <span class="s2">&quot;cartesian&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;uniform&quot;</span>
-    <span class="n">symmetry</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;C1&quot;</span>
+    <span class="n">symmetry</span><span class="p">:</span> <span class="n">Optional</span><span class="p">[</span><span class="nb">str</span><span class="p">]</span> <span class="o">=</span> <span class="s2">&quot;C1&quot;</span>
+
+    <span class="nd">@model_validator</span><span class="p">(</span><span class="n">mode</span><span class="o">=</span><span class="s2">&quot;after&quot;</span><span class="p">)</span>  <span class="c1"># type: ignore</span>
+    <span class="k">def</span><span class="w"> </span><span class="nf">validate_angle_ranges_and_symmetry</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Self</span><span class="p">:</span>
+<span class="w">        </span><span class="sd">&quot;&quot;&quot;Validate that angle ranges are consistent with symmetry.</span>
+
+<span class="sd">        There should be only two valid cases for combinations of manually defined</span>
+<span class="sd">        angle ranges and the symmetry group:</span>
+<span class="sd">        1. Symmetry argument is *not* None, and all angle min/max values</span>
+<span class="sd">           are set to None. In this case, the angle ranges will be set based on</span>
+<span class="sd">           the symmetry group.</span>
+<span class="sd">        2. Symmetry argument is None, and all angle min/max values are not None.</span>
+
+<span class="sd">        If any other combination is provided, a ValueError will be raised.</span>
+<span class="sd">        &quot;&quot;&quot;</span>
+        <span class="n">_all_none</span> <span class="o">=</span> <span class="nb">all</span><span class="p">(</span>
+            <span class="n">x</span> <span class="ow">is</span> <span class="kc">None</span>
+            <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="p">[</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">phi_min</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">phi_max</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">theta_min</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">theta_max</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">psi_min</span><span class="p">,</span>
+                <span class="bp">self</span><span class="o">.</span><span class="n">psi_max</span><span class="p">,</span>
+            <span class="p">]</span>
+        <span class="p">)</span>
+
+        <span class="c1"># Check that both symmetry and angle ranges are not None</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">symmetry</span> <span class="ow">and</span> <span class="n">_all_none</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="s2">&quot;Either a symmetry group must be provided, or all angle ranges must &quot;</span>
+                <span class="s2">&quot;not be None. Both symmetry and angle ranges were set to None.&quot;</span>
+            <span class="p">)</span>
+
+        <span class="c1"># Case where both symmetry and angle ranges are provided</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">symmetry</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">_all_none</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+                <span class="s2">&quot;Symmetry group is provided, but angle ranges are also set. &quot;</span>
+                <span class="s2">&quot;Please set all angle ranges to None when using symmetry.&quot;</span>
+            <span class="p">)</span>
+
+        <span class="c1"># Case where symmetry group is provided, validate the symmetry</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">symmetry</span><span class="p">:</span>
+            <span class="n">match</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;([A-Za-z]+)(\d*)$&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">symmetry</span><span class="p">)</span>
+            <span class="k">if</span> <span class="ow">not</span> <span class="n">match</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Invalid symmetry format: </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">symmetry</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+        <span class="c1"># If we reach here, it means that either symmetry is set or angle ranges are set</span>
+        <span class="c1"># but not both, so we can proceed.</span>
+        <span class="k">return</span> <span class="bp">self</span>
 
     <span class="nd">@property</span>
     <span class="k">def</span><span class="w"> </span><span class="nf">euler_angles</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">:</span>
@@ -2773,66 +3116,38 @@ greater than 0.</p>
 <span class="sd">            search over. The columns represent the psi, theta, and phi angles</span>
 <span class="sd">            respectively.</span>
 <span class="sd">        &quot;&quot;&quot;</span>
-        <span class="c1"># Get symmetry order and group</span>
-        <span class="n">match</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;([A-Za-z]+)(\d*)&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">symmetry</span><span class="p">)</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="n">match</span><span class="p">:</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Invalid symmetry format: </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">symmetry</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-        <span class="n">sym_group</span> <span class="o">=</span> <span class="n">match</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
-        <span class="n">sym_order</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">match</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">2</span><span class="p">))</span> <span class="k">if</span> <span class="n">match</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span> <span class="k">else</span> <span class="mi">1</span>
+        <span class="c1"># If the symmetry used for the angular ranges, calculate the angular ranges</span>
+        <span class="c1"># based on the symmetry group.</span>
+        <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">symmetry</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+            <span class="n">match</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;([A-Za-z]+)(\d*)&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">symmetry</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">match</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Invalid symmetry format: </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">symmetry</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 
-        <span class="c1"># Check if all angle parameters are None</span>
-        <span class="n">all_none</span> <span class="o">=</span> <span class="nb">all</span><span class="p">(</span>
-            <span class="n">x</span> <span class="ow">is</span> <span class="kc">None</span>
-            <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="p">[</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">phi_min</span><span class="p">,</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">phi_max</span><span class="p">,</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">theta_min</span><span class="p">,</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">theta_max</span><span class="p">,</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">psi_min</span><span class="p">,</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">psi_max</span><span class="p">,</span>
-            <span class="p">]</span>
-        <span class="p">)</span>
-
-        <span class="c1"># Check if all angle parameters are set (not None)</span>
-        <span class="n">all_set</span> <span class="o">=</span> <span class="nb">all</span><span class="p">(</span>
-            <span class="n">x</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
-            <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="p">[</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">phi_min</span><span class="p">,</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">phi_max</span><span class="p">,</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">theta_min</span><span class="p">,</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">theta_max</span><span class="p">,</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">psi_min</span><span class="p">,</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">psi_max</span><span class="p">,</span>
-            <span class="p">]</span>
-        <span class="p">)</span>
-
-        <span class="c1"># Error if some are None and some are not</span>
-        <span class="k">if</span> <span class="ow">not</span> <span class="p">(</span><span class="n">all_none</span> <span class="ow">or</span> <span class="n">all_set</span><span class="p">):</span>
-            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
-                <span class="s2">&quot;Either all angle parameters (phi_min, phi_max, theta_min, theta_max, &quot;</span>
-                <span class="s2">&quot;psi_min, psi_max) must be set or all must be None&quot;</span>
+            <span class="n">sym_group</span> <span class="o">=</span> <span class="n">match</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+            <span class="n">sym_order</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">match</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">2</span><span class="p">))</span> <span class="k">if</span> <span class="n">match</span><span class="o">.</span><span class="n">group</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span> <span class="k">else</span> <span class="mi">1</span>
+            <span class="p">(</span><span class="n">phi_min</span><span class="p">,</span> <span class="n">phi_max</span><span class="p">,</span> <span class="n">theta_min</span><span class="p">,</span> <span class="n">theta_max</span><span class="p">,</span> <span class="n">psi_min</span><span class="p">,</span> <span class="n">psi_max</span><span class="p">)</span> <span class="o">=</span> <span class="p">(</span>
+                <span class="n">get_symmetry_ranges</span><span class="p">(</span><span class="n">sym_group</span><span class="p">,</span> <span class="n">sym_order</span><span class="p">)</span>
             <span class="p">)</span>
+        <span class="c1"># Otherwise, use the provided angular ranges replacing with default values if</span>
+        <span class="c1"># any are set to None.</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">phi_min</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">phi_min</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">phi_min</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="mf">0.0</span>
+            <span class="n">phi_max</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">phi_max</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">phi_max</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="mf">360.0</span>
+            <span class="n">theta_min</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">theta_min</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">theta_min</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="mf">0.0</span>
+            <span class="n">theta_max</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">theta_max</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">theta_max</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="mf">180.0</span>
+            <span class="n">psi_min</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">psi_min</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">psi_min</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="mf">0.0</span>
+            <span class="n">psi_max</span> <span class="o">=</span> <span class="bp">self</span><span class="o">.</span><span class="n">psi_max</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">psi_max</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="mf">360.0</span>
 
-        <span class="c1"># If all are None, use symmetry to set them</span>
-        <span class="k">if</span> <span class="n">all_none</span><span class="p">:</span>
-            <span class="p">(</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">phi_min</span><span class="p">,</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">phi_max</span><span class="p">,</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">theta_min</span><span class="p">,</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">theta_max</span><span class="p">,</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">psi_min</span><span class="p">,</span>
-                <span class="bp">self</span><span class="o">.</span><span class="n">psi_max</span><span class="p">,</span>
-            <span class="p">)</span> <span class="o">=</span> <span class="n">get_symmetry_ranges</span><span class="p">(</span><span class="n">sym_group</span><span class="p">,</span> <span class="n">sym_order</span><span class="p">)</span>
-
+        <span class="c1"># Generate angles</span>
         <span class="k">return</span> <span class="n">get_uniform_euler_angles</span><span class="p">(</span>
             <span class="n">psi_step</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">psi_step</span><span class="p">,</span>
             <span class="n">theta_step</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">theta_step</span><span class="p">,</span>
-            <span class="n">phi_min</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">phi_min</span><span class="p">,</span>
-            <span class="n">phi_max</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">phi_max</span><span class="p">,</span>
-            <span class="n">theta_min</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">theta_min</span><span class="p">,</span>
-            <span class="n">theta_max</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">theta_max</span><span class="p">,</span>
-            <span class="n">psi_min</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">psi_min</span><span class="p">,</span>
-            <span class="n">psi_max</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">psi_max</span><span class="p">,</span>
+            <span class="n">phi_min</span><span class="o">=</span><span class="n">phi_min</span><span class="p">,</span>
+            <span class="n">phi_max</span><span class="o">=</span><span class="n">phi_max</span><span class="p">,</span>
+            <span class="n">theta_min</span><span class="o">=</span><span class="n">theta_min</span><span class="p">,</span>
+            <span class="n">theta_max</span><span class="o">=</span><span class="n">theta_max</span><span class="p">,</span>
+            <span class="n">psi_min</span><span class="o">=</span><span class="n">psi_min</span><span class="p">,</span>
+            <span class="n">psi_max</span><span class="o">=</span><span class="n">psi_max</span><span class="p">,</span>
             <span class="n">base_grid_method</span><span class="o">=</span><span class="bp">self</span><span class="o">.</span><span class="n">base_grid_method</span><span class="p">,</span>
         <span class="p">)</span>
 </code></pre></div></td></tr></table></div>
@@ -2896,6 +3211,130 @@ respectively.</p>
 </div>
 
 
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="leopard_em.pydantic_models.config.orientation_search.OrientationSearchConfig.validate_angle_ranges_and_symmetry" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">validate_angle_ranges_and_symmetry</span><span class="p">()</span></code>
+
+</h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Validate that angle ranges are consistent with symmetry.</p>
+<p>There should be only two valid cases for combinations of manually defined
+angle ranges and the symmetry group:
+1. Symmetry argument is <em>not</em> None, and all angle min/max values
+   are set to None. In this case, the angle ranges will be set based on
+   the symmetry group.
+2. Symmetry argument is None, and all angle min/max values are not None.</p>
+<p>If any other combination is provided, a ValueError will be raised.</p>
+
+
+            <details class="quote">
+              <summary>Source code in <code>src/leopard_em/pydantic_models/config/orientation_search.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"> 77</span>
+<span class="normal"> 78</span>
+<span class="normal"> 79</span>
+<span class="normal"> 80</span>
+<span class="normal"> 81</span>
+<span class="normal"> 82</span>
+<span class="normal"> 83</span>
+<span class="normal"> 84</span>
+<span class="normal"> 85</span>
+<span class="normal"> 86</span>
+<span class="normal"> 87</span>
+<span class="normal"> 88</span>
+<span class="normal"> 89</span>
+<span class="normal"> 90</span>
+<span class="normal"> 91</span>
+<span class="normal"> 92</span>
+<span class="normal"> 93</span>
+<span class="normal"> 94</span>
+<span class="normal"> 95</span>
+<span class="normal"> 96</span>
+<span class="normal"> 97</span>
+<span class="normal"> 98</span>
+<span class="normal"> 99</span>
+<span class="normal">100</span>
+<span class="normal">101</span>
+<span class="normal">102</span>
+<span class="normal">103</span>
+<span class="normal">104</span>
+<span class="normal">105</span>
+<span class="normal">106</span>
+<span class="normal">107</span>
+<span class="normal">108</span>
+<span class="normal">109</span>
+<span class="normal">110</span>
+<span class="normal">111</span>
+<span class="normal">112</span>
+<span class="normal">113</span>
+<span class="normal">114</span>
+<span class="normal">115</span>
+<span class="normal">116</span>
+<span class="normal">117</span>
+<span class="normal">118</span>
+<span class="normal">119</span>
+<span class="normal">120</span>
+<span class="normal">121</span>
+<span class="normal">122</span>
+<span class="normal">123</span>
+<span class="normal">124</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="nd">@model_validator</span><span class="p">(</span><span class="n">mode</span><span class="o">=</span><span class="s2">&quot;after&quot;</span><span class="p">)</span>  <span class="c1"># type: ignore</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">validate_angle_ranges_and_symmetry</span><span class="p">(</span><span class="bp">self</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Self</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Validate that angle ranges are consistent with symmetry.</span>
+
+<span class="sd">    There should be only two valid cases for combinations of manually defined</span>
+<span class="sd">    angle ranges and the symmetry group:</span>
+<span class="sd">    1. Symmetry argument is *not* None, and all angle min/max values</span>
+<span class="sd">       are set to None. In this case, the angle ranges will be set based on</span>
+<span class="sd">       the symmetry group.</span>
+<span class="sd">    2. Symmetry argument is None, and all angle min/max values are not None.</span>
+
+<span class="sd">    If any other combination is provided, a ValueError will be raised.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">_all_none</span> <span class="o">=</span> <span class="nb">all</span><span class="p">(</span>
+        <span class="n">x</span> <span class="ow">is</span> <span class="kc">None</span>
+        <span class="k">for</span> <span class="n">x</span> <span class="ow">in</span> <span class="p">[</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">phi_min</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">phi_max</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">theta_min</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">theta_max</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">psi_min</span><span class="p">,</span>
+            <span class="bp">self</span><span class="o">.</span><span class="n">psi_max</span><span class="p">,</span>
+        <span class="p">]</span>
+    <span class="p">)</span>
+
+    <span class="c1"># Check that both symmetry and angle ranges are not None</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="bp">self</span><span class="o">.</span><span class="n">symmetry</span> <span class="ow">and</span> <span class="n">_all_none</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="s2">&quot;Either a symmetry group must be provided, or all angle ranges must &quot;</span>
+            <span class="s2">&quot;not be None. Both symmetry and angle ranges were set to None.&quot;</span>
+        <span class="p">)</span>
+
+    <span class="c1"># Case where both symmetry and angle ranges are provided</span>
+    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">symmetry</span> <span class="ow">and</span> <span class="ow">not</span> <span class="n">_all_none</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span>
+            <span class="s2">&quot;Symmetry group is provided, but angle ranges are also set. &quot;</span>
+            <span class="s2">&quot;Please set all angle ranges to None when using symmetry.&quot;</span>
+        <span class="p">)</span>
+
+    <span class="c1"># Case where symmetry group is provided, validate the symmetry</span>
+    <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">symmetry</span><span class="p">:</span>
+        <span class="n">match</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">match</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;([A-Za-z]+)(\d*)$&quot;</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">symmetry</span><span class="p">)</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">match</span><span class="p">:</span>
+            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Invalid symmetry format: </span><span class="si">{</span><span class="bp">self</span><span class="o">.</span><span class="n">symmetry</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+    <span class="c1"># If we reach here, it means that either symmetry is set or angle ranges are set</span>
+    <span class="c1"># but not both, so we can proceed.</span>
+    <span class="k">return</span> <span class="bp">self</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
 
 
 
@@ -3047,62 +3486,7 @@ Must be greater than or equal to 0.</p>
 
               <details class="quote">
                 <summary>Source code in <code>src/leopard_em/pydantic_models/config/orientation_search.py</code></summary>
-                <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">150</span>
-<span class="normal">151</span>
-<span class="normal">152</span>
-<span class="normal">153</span>
-<span class="normal">154</span>
-<span class="normal">155</span>
-<span class="normal">156</span>
-<span class="normal">157</span>
-<span class="normal">158</span>
-<span class="normal">159</span>
-<span class="normal">160</span>
-<span class="normal">161</span>
-<span class="normal">162</span>
-<span class="normal">163</span>
-<span class="normal">164</span>
-<span class="normal">165</span>
-<span class="normal">166</span>
-<span class="normal">167</span>
-<span class="normal">168</span>
-<span class="normal">169</span>
-<span class="normal">170</span>
-<span class="normal">171</span>
-<span class="normal">172</span>
-<span class="normal">173</span>
-<span class="normal">174</span>
-<span class="normal">175</span>
-<span class="normal">176</span>
-<span class="normal">177</span>
-<span class="normal">178</span>
-<span class="normal">179</span>
-<span class="normal">180</span>
-<span class="normal">181</span>
-<span class="normal">182</span>
-<span class="normal">183</span>
-<span class="normal">184</span>
-<span class="normal">185</span>
-<span class="normal">186</span>
-<span class="normal">187</span>
-<span class="normal">188</span>
-<span class="normal">189</span>
-<span class="normal">190</span>
-<span class="normal">191</span>
-<span class="normal">192</span>
-<span class="normal">193</span>
-<span class="normal">194</span>
-<span class="normal">195</span>
-<span class="normal">196</span>
-<span class="normal">197</span>
-<span class="normal">198</span>
-<span class="normal">199</span>
-<span class="normal">200</span>
-<span class="normal">201</span>
-<span class="normal">202</span>
-<span class="normal">203</span>
-<span class="normal">204</span>
-<span class="normal">205</span>
+                <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">205</span>
 <span class="normal">206</span>
 <span class="normal">207</span>
 <span class="normal">208</span>
@@ -3120,7 +3504,62 @@ Must be greater than or equal to 0.</p>
 <span class="normal">220</span>
 <span class="normal">221</span>
 <span class="normal">222</span>
-<span class="normal">223</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">RefineOrientationConfig</span><span class="p">(</span><span class="n">BaseModel2DTM</span><span class="p">):</span>
+<span class="normal">223</span>
+<span class="normal">224</span>
+<span class="normal">225</span>
+<span class="normal">226</span>
+<span class="normal">227</span>
+<span class="normal">228</span>
+<span class="normal">229</span>
+<span class="normal">230</span>
+<span class="normal">231</span>
+<span class="normal">232</span>
+<span class="normal">233</span>
+<span class="normal">234</span>
+<span class="normal">235</span>
+<span class="normal">236</span>
+<span class="normal">237</span>
+<span class="normal">238</span>
+<span class="normal">239</span>
+<span class="normal">240</span>
+<span class="normal">241</span>
+<span class="normal">242</span>
+<span class="normal">243</span>
+<span class="normal">244</span>
+<span class="normal">245</span>
+<span class="normal">246</span>
+<span class="normal">247</span>
+<span class="normal">248</span>
+<span class="normal">249</span>
+<span class="normal">250</span>
+<span class="normal">251</span>
+<span class="normal">252</span>
+<span class="normal">253</span>
+<span class="normal">254</span>
+<span class="normal">255</span>
+<span class="normal">256</span>
+<span class="normal">257</span>
+<span class="normal">258</span>
+<span class="normal">259</span>
+<span class="normal">260</span>
+<span class="normal">261</span>
+<span class="normal">262</span>
+<span class="normal">263</span>
+<span class="normal">264</span>
+<span class="normal">265</span>
+<span class="normal">266</span>
+<span class="normal">267</span>
+<span class="normal">268</span>
+<span class="normal">269</span>
+<span class="normal">270</span>
+<span class="normal">271</span>
+<span class="normal">272</span>
+<span class="normal">273</span>
+<span class="normal">274</span>
+<span class="normal">275</span>
+<span class="normal">276</span>
+<span class="normal">277</span>
+<span class="normal">278</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">class</span><span class="w"> </span><span class="nc">RefineOrientationConfig</span><span class="p">(</span><span class="n">BaseModel2DTM</span><span class="p">):</span>
 <span class="w">    </span><span class="sd">&quot;&quot;&quot;Serialization and validation of orientation refinement parameters.</span>
 
 <span class="sd">    Angles will be sampled from [-coarse_step, coarse_step] in increments of</span>

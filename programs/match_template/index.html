@@ -318,11 +318,11 @@
   
   
     <li class="md-nav__item">
-      <a href="../../examples/04_plotting_2dtm_results" class="md-nav__link">
+      <a href="../../examples/04_plotting_2dtm_results/" class="md-nav__link">
         
   
   <span class="md-ellipsis">
-    Plotting match template results
+    Visualizing 2DTM result
     
   </span>
   
@@ -1055,6 +1055,28 @@
   
   <span class="md-ellipsis">
     core_refine_template
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/backend/cross_correlation/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    cross_correlation
     
   </span>
   
@@ -2138,14 +2160,16 @@ Filtering to a specific resolution in terms of Angstroms means doing some math b
 </code></pre></div>
 <h3 id="configuring-gpus-for-a-match-template-run">Configuring GPUs for a match template run</h3>
 <p>The final block of the match template configuration file is used to choose which GPUs will run on.
-The <code>num_cpus</code> field can currently be ignored and just set to <code>1</code>; this may be updated in the future to correspond to the number of CPU threads the search runs on.
+The <code>num_cpus</code> field is used to control how many concurrent streams the <code>match_template</code> program will run on for each device.
+Values between 1 and 8 are generally advised, but mileage may vary on your system.
 The <code>gpu_ids</code> field is a list of integers defining which GPU device index(s) the program will target.
+A value of <code>gpu_ids: "all"</code> is a special case which will target all GPUs on the machine (note that only single-node execution is currently supported).
 The example below will distribute work equally between the zeroth and first GPU device which need discoverable by PyTorch.</p>
 <div class="highlight"><pre><span></span><code><span class="nt">computational_config</span><span class="p">:</span>
 <span class="w">  </span><span class="nt">gpu_ids</span><span class="p">:</span>
 <span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0</span>
 <span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
-<span class="w">  </span><span class="nt">num_cpus</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span><span class="w">  </span><span class="c1"># Currently unused</span>
+<span class="w">  </span><span class="nt">num_cpus</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">4</span><span class="w">  </span><span class="c1"># 4 streams x 2 devices = 8 total streams</span>
 </code></pre></div>
 <div class="admonition warning">
 <p class="admonition-title">RuntimeError: CUDA error: invalid device ordinal</p>
