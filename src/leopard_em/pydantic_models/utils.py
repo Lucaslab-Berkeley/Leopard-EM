@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any
 
 import torch
 from torch_fourier_filter.ctf import calculate_ctf_2d
+from torch_fourier_filter.envelopes import b_envelope
 
 # Using the TYPE_CHECKING statement to avoid circular imports
 if TYPE_CHECKING:
@@ -166,14 +167,25 @@ def calculate_ctf_filter_stack_full_args(
             voltage=kwargs["voltage"],
             spherical_aberration=cs_val,
             amplitude_contrast=kwargs["amplitude_contrast_ratio"],
-            b_factor=kwargs["ctf_B_factor"],
+            b_factor=0.0,
             phase_shift=kwargs["phase_shift"],
             pixel_size=kwargs["pixel_size"],
             image_shape=template_shape,
             rfft=True,
             fftshift=False,
         )
+        # calc B-envelope and apply
+        b_envelope_tmp = b_envelope(
+            B=kwargs["ctf_B_factor"],
+            image_shape=template_shape,
+            pixel_size=kwargs["pixel_size"],
+            rfft=True,
+            fftshift=False,
+        )
+        tmp *= b_envelope_tmp
         ctf_list.append(tmp)
+
+    
 
     ctf = torch.stack(ctf_list, dim=0)
 
