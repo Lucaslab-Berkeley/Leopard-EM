@@ -185,8 +185,6 @@ def calculate_ctf_filter_stack_full_args(
         tmp *= b_envelope_tmp
         ctf_list.append(tmp)
 
-    
-
     ctf = torch.stack(ctf_list, dim=0)
 
     return ctf
