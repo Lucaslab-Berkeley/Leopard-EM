@@ -181,6 +181,7 @@ def calculate_ctf_filter_stack_full_args(
             pixel_size=kwargs["pixel_size"],
             rfft=True,
             fftshift=False,
+            device=tmp.device,
         )
         tmp *= b_envelope_tmp
         ctf_list.append(tmp)
