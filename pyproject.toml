@@ -49,7 +49,7 @@ dependencies = [
     "roma",
     "tqdm",
     "torch-fourier-slice>=v0.2.0",
-    "torch-fourier-filter>=v0.2.3",
+    "torch-fourier-filter>=v0.2.6",
     "torch-so3>=v0.2.0",
     "ttsim3d>=v0.4.0",
     "lmfit",
