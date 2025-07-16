@@ -167,7 +167,6 @@ def calculate_ctf_filter_stack_full_args(
             voltage=kwargs["voltage"],
             spherical_aberration=cs_val,
             amplitude_contrast=kwargs["amplitude_contrast_ratio"],
-            b_factor=0.0,
             phase_shift=kwargs["phase_shift"],
             pixel_size=kwargs["pixel_size"],
             image_shape=template_shape,
