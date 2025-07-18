@@ -20,9 +20,10 @@ repos:
     rev: v1.24.6
     hooks:
       - id: typos
+        exclude: ".*\\.ipynb$"  # exclude Jupyter notebooks because of metadata
         args:  # omitting --write-changes
           - "--force-exclude"
-          # - "--config=_typos.toml"
+          - "--config=_typos.toml"
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.7.2
