@@ -22,6 +22,7 @@ import roma
 import torch
 from scipy.ndimage import gaussian_filter
 from torch_fourier_filter.ctf import calculate_ctf_2d
+from torch_fourier_filter.envelopes import b_envelope
 
 from leopard_em.backend.cross_correlation import (
     do_batched_orientation_cross_correlate,
@@ -70,7 +71,7 @@ def sample_input_data() -> dict[str, torch.Tensor]:
     template_fft = torch.fft.fftshift(template_fft, dim=(0, 1))
 
     # Generate a set of projective filters (CTFs) for the template
-    defocus_values = torch.linspace(500, 1500, NUM_DEFOCUS_VALUES)
+    defocus_values = torch.linspace(2000, 4000, NUM_DEFOCUS_VALUES)
     pixel_sizes = torch.linspace(0.8, 1.2, NUM_PIXEL_SIZES)
     cs_values = get_cs_range(1.0, pixel_sizes, 2.7)
 
@@ -83,7 +84,6 @@ def sample_input_data() -> dict[str, torch.Tensor]:
             voltage=300,  # 300 kV
             spherical_aberration=cs_val,
             amplitude_contrast=0.07,
-            b_factor=100.0,
             phase_shift=0.0,
             pixel_size=1.0,
             image_shape=template.shape[-2:],
@@ -92,7 +92,17 @@ def sample_input_data() -> dict[str, torch.Tensor]:
         )
         ctf_list.append(tmp)
 
+    # Apply a b-factor envelope to the CTFs
+    b_factor = 100.0  # arbitrary value
+    b_envelope_values = b_envelope(
+        B=b_factor,
+        image_shape=template.shape[-2:],
+        pixel_size=1.0,
+        device="cuda",
+    )
+
     projective_filters = torch.stack(ctf_list, dim=0).to(device="cuda")
+    projective_filters *= b_envelope_values[None, None]
 
     return {
         "image_dft": image_fft,
@@ -116,6 +126,13 @@ def test_stream_and_batch_cross_correlate_consistency(sample_input_data):
     assert streamed_result.shape == batched_result.shape
 
     max_abs_diff = (streamed_result - batched_result).abs().max().item()
+
+    ### DEBUGGING
+    import numpy as np
+
+    np.save("batched_result.npy", batched_result.cpu().numpy())
+    np.save("streamed_result.npy", streamed_result.cpu().numpy())
+    ### END DEBUGGING
 
     # NOTE: using lighter tolerances here since FFT plans execute differently, and
     # cross-correlation results should be distributed roughly normally around zero.
