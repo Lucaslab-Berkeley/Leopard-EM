@@ -127,13 +127,6 @@ def test_stream_and_batch_cross_correlate_consistency(sample_input_data):
 
     max_abs_diff = (streamed_result - batched_result).abs().max().item()
 
-    ### DEBUGGING
-    import numpy as np
-
-    np.save("batched_result.npy", batched_result.cpu().numpy())
-    np.save("streamed_result.npy", streamed_result.cpu().numpy())
-    ### END DEBUGGING
-
     # NOTE: using lighter tolerances here since FFT plans execute differently, and
     # cross-correlation results should be distributed roughly normally around zero.
     assert torch.allclose(streamed_result, batched_result, atol=5e-3, rtol=5e-3), (
