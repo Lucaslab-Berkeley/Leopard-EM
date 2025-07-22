@@ -404,7 +404,7 @@ def _core_match_template_single_gpu(
         mininterval=1,  # Slow down to reduce number of lines written
         smoothing=0.05,
         unit="corr",
-        unit_scale=total_projections / num_batches,
+        unit_scale=int(total_projections / num_batches) + 1,
     )
 
     ##################################
