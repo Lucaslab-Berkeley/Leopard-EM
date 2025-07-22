@@ -129,6 +129,8 @@ def normalize_template_projection(
     )
     variance /= large_shape[0] * large_shape[1]
 
+    variance = torch.clamp(variance, min=1e-8)
+
     return projections / torch.sqrt(variance)
 
 
