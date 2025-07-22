@@ -320,14 +320,14 @@ class ConstrainedSearchManager(BaseModel2DTM):
         # Defocus
         df_refined["refined_relative_defocus"] = (
             result["refined_defocus_offset"]
-            + self.particle_stack_reference.get_relative_defocus()
+            + self.particle_stack_reference.get_relative_defocus().cpu().numpy()
             - self.zdiffs.cpu().numpy()
         )
 
         # Pixel size
         df_refined["refined_pixel_size"] = (
             result["refined_pixel_size_offset"]
-            + self.particle_stack_reference.get_pixel_size()
+            + self.particle_stack_reference.get_pixel_size().cpu().numpy()
         )
 
         # Cross-correlation statistics
