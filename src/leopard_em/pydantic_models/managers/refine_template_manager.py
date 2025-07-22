@@ -204,12 +204,13 @@ class RefineTemplateManager(BaseModel2DTM):
         # Defocus
         df_refined["refined_relative_defocus"] = (
             result["refined_defocus_offset"]
-            + self.particle_stack.get_relative_defocus()
+            + self.particle_stack.get_relative_defocus().cpu().numpy()
         )
 
         # Pixel size
         df_refined["refined_pixel_size"] = (
-            result["refined_pixel_size_offset"] + self.particle_stack.get_pixel_size()
+            result["refined_pixel_size_offset"]
+            + self.particle_stack.get_pixel_size().cpu().numpy()
         )
 
         # Cross-correlation statistics
