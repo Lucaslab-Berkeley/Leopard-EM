@@ -72,9 +72,9 @@ def get_rfft_slices_from_volume(
 
     """
     shape = volume.shape
-    volume_rfft = torch.fft.fftshift(volume, dim=(-3, -2, -1))  # pylint: disable=E1102
-    volume_rfft = torch.fft.fftn(volume_rfft, dim=(-3, -2, -1))  # pylint: disable=E1102
-    volume_rfft = torch.fft.fftshift(volume_rfft, dim=(-3, -2))  # pylint: disable=E1102
+    volume_rfft = torch.fft.fftshift(volume, dim=(-3, -2, -1))  # pylint: disable=not-callable
+    volume_rfft = torch.fft.fftn(volume_rfft, dim=(-3, -2, -1))  # pylint: disable=not-callable
+    volume_rfft = torch.fft.fftshift(volume_rfft, dim=(-3, -2))  # pylint: disable=not-callable
 
     # Use roma to keep angles on same device
     rot_matrix = roma.euler_to_rotmat("ZYZ", (phi, theta, psi), degrees=degrees)
