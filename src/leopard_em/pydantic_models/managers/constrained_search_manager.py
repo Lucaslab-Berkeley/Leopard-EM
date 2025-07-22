@@ -286,8 +286,6 @@ class ConstrainedSearchManager(BaseModel2DTM):
             The number of false positives to allow per particle.
         """
         df_refined = self.particle_stack_reference.get_dataframe_copy()
-        # Reorder the columns
-        df_refined = df_refined.reindex(columns=CONSTRAINED_DF_COLUMN_ORDER)
 
         # x and y positions
         pos_offset_y = result["refined_pos_y"]
@@ -322,13 +320,14 @@ class ConstrainedSearchManager(BaseModel2DTM):
         # Defocus
         df_refined["refined_relative_defocus"] = (
             result["refined_defocus_offset"]
-            + df_refined["refined_relative_defocus"]
+            + self.particle_stack_reference.get_relative_defocus()
             - self.zdiffs.cpu().numpy()
         )
 
         # Pixel size
         df_refined["refined_pixel_size"] = (
-            result["refined_pixel_size_offset"] + df_refined["pixel_size"]
+            result["refined_pixel_size_offset"]
+            + self.particle_stack_reference.get_pixel_size()
         )
 
         # Cross-correlation statistics
@@ -336,6 +335,9 @@ class ConstrainedSearchManager(BaseModel2DTM):
         refined_scaled_mip = result["refined_z_score"]
         df_refined["refined_mip"] = refined_mip
         df_refined["refined_scaled_mip"] = refined_scaled_mip
+
+        # Reorder the columns
+        df_refined = df_refined.reindex(columns=CONSTRAINED_DF_COLUMN_ORDER).fillna(0)
 
         # Save the refined DataFrame to disk
         df_refined.to_csv(output_dataframe_path)
