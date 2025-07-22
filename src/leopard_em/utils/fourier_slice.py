@@ -3,7 +3,6 @@
 import roma
 import torch
 from torch_fourier_slice import extract_central_slices_rfft_3d
-from torch_fourier_slice._dft_utils import _fftshift_3d, _ifftshift_2d
 from torch_grid_utils import fftfreq_grid
 
 
@@ -35,11 +34,12 @@ def _rfft_slices_to_real_projections(
     torch.Tensor
         The real-space projections.
     """
-    fourier_slices = _ifftshift_2d(fourier_slices, rfft=True)
+    # pylint: disable=not-callable
+    fourier_slices = torch.fft.fftshift(fourier_slices, dim=(-2,))
     # pylint: disable=not-callable
     projections = torch.fft.irfftn(fourier_slices, dim=(-2, -1))
-    projections = _ifftshift_2d(projections, rfft=False)
-
+    # pylint: disable=not-callable
+    projections = torch.fft.ifftshift(projections, dim=(-2, -1))
     return projections
 
 
@@ -72,10 +72,9 @@ def get_rfft_slices_from_volume(
 
     """
     shape = volume.shape
-    volume_rfft = _fftshift_3d(volume, rfft=False)
-    # pylint: disable=not-callable
-    volume_rfft = torch.fft.fftn(volume_rfft, dim=(-3, -2, -1))
-    volume_rfft = _fftshift_3d(volume_rfft, rfft=True)
+    volume_rfft = torch.fft.fftshift(volume, dim=(-3, -2, -1))  # pylint: disable=E1102
+    volume_rfft = torch.fft.fftn(volume_rfft, dim=(-3, -2, -1))  # pylint: disable=E1102
+    volume_rfft = torch.fft.fftshift(volume_rfft, dim=(-3, -2))  # pylint: disable=E1102
 
     # Use roma to keep angles on same device
     rot_matrix = roma.euler_to_rotmat("ZYZ", (phi, theta, psi), degrees=degrees)
