@@ -12,6 +12,8 @@ def handle_correlation_mode(
 ) -> torch.Tensor:
     """Handle cropping for cross correlation mode.
 
+     NOTE: 'full' mode is not implemented.
+
     Parameters
     ----------
     cross_correlation : torch.Tensor
@@ -20,10 +22,9 @@ def handle_correlation_mode(
         The desired shape of the output.
     mode : Literal["valid", "same"]
         The mode of the cross correlation. Either 'valid' or 'same'. See
-        [numpy.correlate](
-            numpy.org/doc/stable/reference/generated/numpy.convolve.html#numpy.convolve
-        )
-        for more details. NOTE: 'full' mode is not supported.
+        [numpy.correlate](https://numpy.org/doc/stable/reference/generated/
+        numpy.convolve.html#numpy.convolve)
+        for more details.
     """
     # Crop the result to the valid bounds
     if mode == "valid":
