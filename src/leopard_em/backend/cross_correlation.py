@@ -78,6 +78,11 @@ def do_streamed_orientation_cross_correlate(
     fourier_slices[..., 0, 0] = 0 + 0j  # zero out the DC component (mean zero)
     fourier_slices *= -1  # flip contrast
 
+    # Barrier to ensure Fourier slice computation on default stream is done before
+    # continuing computation in parallel on non-default streams.
+    for s in streams:
+        s.wait_stream(torch.cuda.default_stream(image_dft.device))
+
     # Iterate over the orientations
     for i in range(num_orientations):
         fourier_slice = fourier_slices[i]
@@ -113,6 +118,11 @@ def do_streamed_orientation_cross_correlate(
                         s=image_shape_real,
                         out=cross_correlation[k, j, i],
                     )
+
+    # Record 'fourier_slices' on each stream to ensure it's not deallocated before all
+    # streams are finished processing.
+    for s in streams:
+        fourier_slices.record_stream(s)
 
     # Wait for all streams to finish
     for stream in streams:
