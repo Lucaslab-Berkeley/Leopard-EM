@@ -80,7 +80,6 @@ def do_streamed_orientation_cross_correlate(
 
     # Barrier to ensure Fourier slice computation on default stream is done before
     # continuing computation in parallel on non-default streams.
-    for s in streams:
     default_stream = torch.cuda.default_stream(image_dft.device)
     for s in streams:
         s.wait_stream(default_stream)
