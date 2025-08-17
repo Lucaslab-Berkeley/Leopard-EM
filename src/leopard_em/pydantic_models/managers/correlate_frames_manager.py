@@ -238,7 +238,7 @@ class CorrelateFramesManager(BaseModel2DTM):
             Path to save the output dataframes
         """
         # Create dataframes for MIPs and z-scores with each frame in a column
-        df_refined = self.particle_stack._df.copy()
+        df_refined = self.particle_stack.get_dataframe_copy()
         frames_df_mip = pd.DataFrame(
             {
                 "particle_index": df_refined["particle_index"],
@@ -269,7 +269,7 @@ class CorrelateFramesManager(BaseModel2DTM):
         sum_z_score = np.sum(z_scores, axis=1)
 
         # Save the summed results
-        df_refined = self.particle_stack._df.copy()
+        df_refined = self.particle_stack.get_dataframe_copy()
         df_refined["refined_mip"] = sum_refined_mip
         df_refined["refined_scaled_mip"] = sum_z_score
         df_refined.to_csv(output_dataframe_path, index=False)
