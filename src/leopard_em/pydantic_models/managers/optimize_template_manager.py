@@ -71,7 +71,7 @@ class OptimizeTemplateManager(BaseModel2DTM):
             Whether to use refined angles or not. Defaults to True.
         """
         # simulate template volume
-        template = self.simulator.run(gpu_ids=self.computational_config.gpu_ids)
+        template = self.simulator.run(device=self.computational_config.gpu_ids)
 
         # The set of "best" euler angles from match template search
         # Check if refined angles exist, otherwise use the original angles

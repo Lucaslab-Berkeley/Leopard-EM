@@ -1,0 +1,46 @@
+computational_config:
+  gpu_ids: 0
+  num_cpus: 1
+defocus_search_config:
+  defocus_max: 1200.0
+  defocus_min: -1200.0
+  defocus_step: 200.0
+  enabled: true
+match_template_result:
+  allow_file_overwrite: true
+  correlation_average_path:   xenon_216_000_0_output_correlation_average.mrc
+  correlation_variance_path:  xenon_216_000_0_output_correlation_variance.mrc
+  mip_path:                   xenon_216_000_0_output_mip.mrc
+  orientation_phi_path:       xenon_216_000_0_output_orientation_phi.mrc
+  orientation_psi_path:       xenon_216_000_0_output_orientation_psi.mrc
+  orientation_theta_path:     xenon_216_000_0_output_orientation_theta.mrc
+  relative_defocus_path:      xenon_216_000_0_output_relative_defocus.mrc
+  scaled_mip_path:            xenon_216_000_0_output_scaled_mip.mrc
+micrograph_path:              dummy_micrograph.mrc  # Not the actual micrograph
+optics_group:
+  amplitude_contrast_ratio: 0.07
+  astigmatism_angle: -41.713057
+  ctf_B_factor: 60.0
+  defocus_u: 6248.730469
+  defocus_v: 5856.529785
+  label: micrograph_1
+  phase_shift: 0.0
+  pixel_size: 0.936
+  spherical_aberration: 2.7
+  voltage: 300.0
+orientation_search_config:
+  base_grid_method: uniform
+  psi_step: 1.5
+  theta_step: 2.5
+preprocessing_filters:
+  bandpass_filter:
+    enabled: false
+    falloff: 0.05
+    high_freq_cutoff: 0.5
+    low_freq_cutoff: 0.0
+  whitening_filter:
+    do_power_spectrum: true
+    enabled: true
+    max_freq: 1.0
+    num_freq_bins: null
+template_volume_path: 60S_map_px0.936_bscale0.5.mrc

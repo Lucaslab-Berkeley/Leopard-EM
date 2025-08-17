@@ -2,6 +2,9 @@
 # it adds:
 # 1. auto fixing pull requests
 # 2. auto updating the pre-commit configuration
+
+exclude: "^docs/examples/.*\\.py$"  # Ignore built example python files
+
 ci:
   autoupdate_schedule: monthly
   autofix_commit_msg: "style(pre-commit.ci): auto fixes [...]"

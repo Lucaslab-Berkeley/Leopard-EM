@@ -37,15 +37,15 @@ orientation_search_config:
   theta_step: 2.5  # in degrees
 preprocessing_filters:
   whitening_filter:
-    do_power_spectrum: true
     enabled: true
+    do_power_spectrum: true
     max_freq: 0.5  # In terms of Nyquist frequency
     num_freq_bins: null
   bandpass_filter:
     enabled: false
     falloff: null
-    high_freq_cutoff: null
-    low_freq_cutoff: null
+    high_freq_cutoff: null  # Both high/low in terms of Nyquist frequency
+    low_freq_cutoff: null   # e.g. low-pass to 3 Å @ 1.06 Å/px would be 0.353
 computational_config:
   gpu_ids:
   - 0

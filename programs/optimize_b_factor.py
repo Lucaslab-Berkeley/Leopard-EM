@@ -47,7 +47,7 @@ def get_metric(df: pd.DataFrame) -> float:
 
 
 def main() -> None:
-    """Main function to run the optimize template program."""
+    """Main function to run the optimize b-factor program."""
     b_values = list(range(B_MIN, B_MAX + B_STEP, B_STEP))
     best_metric = -float("inf")
     best_b = 0

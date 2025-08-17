@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any
 
 import torch
 from torch_fourier_filter.ctf import calculate_ctf_2d
+from torch_fourier_filter.envelopes import b_envelope
 
 # Using the TYPE_CHECKING statement to avoid circular imports
 if TYPE_CHECKING:
@@ -228,13 +229,22 @@ def calculate_ctf_filter_stack_full_args(
             voltage=kwargs["voltage"],
             spherical_aberration=cs_val,
             amplitude_contrast=kwargs["amplitude_contrast_ratio"],
-            b_factor=kwargs["ctf_B_factor"],
             phase_shift=kwargs["phase_shift"],
             pixel_size=kwargs["pixel_size"],
             image_shape=template_shape,
             rfft=True,
             fftshift=False,
         )
+        # calc B-envelope and apply
+        b_envelope_tmp = b_envelope(
+            B=kwargs["ctf_B_factor"],
+            image_shape=template_shape,
+            pixel_size=kwargs["pixel_size"],
+            rfft=True,
+            fftshift=False,
+            device=tmp.device,
+        )
+        tmp *= b_envelope_tmp
         ctf_list.append(tmp)
 
     ctf = torch.stack(ctf_list, dim=0)
@@ -430,7 +440,7 @@ def setup_images_filters_particle_stack(
     """
     # Extract out the regions of interest (particles) based on the particle stack
     particle_images = particle_stack.construct_image_stack(
-        pos_reference="center",
+        pos_reference="top-left",
         padding_value=0.0,
         handle_bounds="pad",
         padding_mode="constant",
@@ -626,11 +636,18 @@ def setup_particle_backend_kwargs(
     """
     # Get correlation statistics
     corr_mean_stack = particle_stack.construct_cropped_statistic_stack(
-        "correlation_average"
+        stat="correlation_average",
+        handle_bounds="pad",
+        padding_mode="constant",
+        padding_value=0.0,  # pad with zeros
     )
-    corr_std_stack = (
-        particle_stack.construct_cropped_statistic_stack("correlation_variance") ** 0.5
-    )  # var to std
+    corr_std_stack = particle_stack.construct_cropped_statistic_stack(
+        stat="correlation_variance",
+        handle_bounds="pad",
+        padding_mode="constant",
+        padding_value=1e10,  # large to avoid out of bound pixels having inf z-score
+    )
+    corr_std_stack = corr_std_stack**0.5  # Convert variance to standard deviation
 
     # Extract and preprocess images and filters
     (

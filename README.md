@@ -36,7 +36,7 @@ from leopard_em.pydantic_models.managers import MatchTemplateManager
 
 YAML_CONFIG_PATH = "/path/to/match-template-configuration.yaml"
 DATAFRAME_OUTPUT_PATH = "/path/to/match-template-results.csv"
-ORIENTATION_BATCH_SIZE = 32
+ORIENTATION_BATCH_SIZE = 8
 
 def main():
     mt_manager = MatchTemplateManager.from_yaml(YAML_CONFIG_PATH)

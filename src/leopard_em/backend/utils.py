@@ -1,9 +1,52 @@
 """Utility and helper functions associated with the backend of Leopard-EM."""
 
+import warnings
 from multiprocessing import Manager, Process
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, TypeVar
 
 import torch
+
+F = TypeVar("F", bound=Callable[..., Any])
+
+
+def attempt_torch_compilation(target_func: F, backend: str = "inductor") -> F:
+    """Compile a function using Torch's compilation utilities.
+
+    NOTE: This function will fall back onto the original function if compilation fails
+    or is not supported. Under these circumstances, a warning is issued to inform the
+    user of the failure, but the program will continue to run with the original
+    function.
+
+    Parameters
+    ----------
+    target_func : Callable
+        The function to compile.
+    backend : str, optional
+        The backend to use for compilation (default is "inductor").
+
+    Returns
+    -------
+    Callable
+        The potentially compiled function.
+
+    Warning
+    -------
+    If compilation fails, the original function is returned without modification which
+    is useful for program consistency. If compilation is not supported, then a
+    warning is generated, and the original function is returned.
+    """
+    try:
+        compiled_func = torch.compile(target_func, backend=backend)
+        return compiled_func  # type: ignore[no-any-return]
+    except (RuntimeError, NotImplementedError) as e:
+        warnings.warn(
+            f"Failed to compile function {target_func.__name__} with"
+            f"backend {backend}: {e}. "
+            "Returning the original function instead and continuing...",
+            UserWarning,
+            stacklevel=2,
+        )
+        return target_func
 
 
 def normalize_template_projection(
@@ -72,9 +115,11 @@ def normalize_template_projection(
     # ) ** 2
 
     # Fast calculation of mean/var using Torch + appropriate scaling.
+    large_size_sqrt = (large_shape[0] * large_shape[1]) ** 0.5
     relative_size = (small_shape[0] * small_shape[1]) / (
         large_shape[0] * large_shape[1]
     )
+
     mean = torch.mean(projections, dim=(-2, -1), keepdim=True) * relative_size
     mean *= relative_size
 
@@ -84,9 +129,9 @@ def normalize_template_projection(
     variance += (
         (large_shape[0] - small_shape[0]) * (large_shape[1] - small_shape[1]) * mean**2
     )
-    variance /= large_shape[0] * large_shape[1]
 
-    return projections / torch.sqrt(variance)
+    projections = (projections * large_size_sqrt) / torch.sqrt(variance.clamp_min(1e-8))
+    return projections
 
 
 # NOTE: Disabling pylint for number of argument since these all need updated in-place
@@ -215,16 +260,19 @@ def run_multiprocess_jobs(
 
     Example
     -------
-    def worker(result_dict, idx, param1, param2):
-        # perform work
+    ```
+    def worker_fn(result_dict, idx, param1, param2):
         result_dict[idx] = param1 + param2
+
 
     kwargs_per_process = [
         {"param1": 1, "param2": 2},
         {"param1": 3, "param2": 4},
     ]
-    results = run_multiprocess_jobs(worker, kwargs_per_process)
-    # results will be something like: {0: 3, 1: 7}
+    results = run_multiprocess_jobs(worker_fn, kwargs_per_process)
+    print(results)
+    # {0: 3, 1: 7}
+    ```
     """
     if extra_kwargs is None:
         extra_kwargs = {}
@@ -247,3 +295,12 @@ def run_multiprocess_jobs(
         p.join()
 
     return dict(result_dict)
+
+
+# These are compiled normalization and stat update functions
+normalize_template_projection_compiled = attempt_torch_compilation(
+    normalize_template_projection, backend="inductor"
+)
+do_iteration_statistics_updates_compiled = attempt_torch_compilation(
+    do_iteration_statistics_updates, backend="inductor"
+)

@@ -3,18 +3,49 @@ theme:
   name: material
 plugins:
   - search
+  - autorefs
   - mkdocs-jupyter
   - inline-select-svg
+  - mkdocs-autoapi:
+      autoapi_dir: src
+  - mkdocstrings:
+      enabled: !ENV [ENABLE_MKDOCSTRINGS, true]
+      handlers:
+        python:
+          paths:
+            - src
+          options:
+            docstring_style: numpy
+  # - gallery:
+  #     examples_dirs: docs/examples
+  #     gallery_dirs: docs/generated/gallery
 markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
   - mdx_math
+  - footnotes
 extra_javascript:
   - https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.4/MathJax.js?config=TeX-AMS-MML_HTMLorMML
 nav:
   - Home: index.md
-  - Data Formats: data_formats.md
+  # - generated/gallery
   - Examples:
-    - Match Template Configuration: examples/basic_configuration.ipynb
+    - Match Template Config:            examples/01_basic_configuration.ipynb
+    - Peaks to DataFrame:               examples/02_extract_peak_info.ipynb
+    - Comparing Scoring Metrics:        examples/03_compare_scoring_metrics.ipynb
+    - Plotting match template results:  examples/04_plotting_2dtm_results
+    - Structure re-projection plot:     examples/05_structure_reprojection.ipynb 
+    # - Constrained Search: examples/constrained_search_example.yaml
+  - Programs:
+    - Overview:                   programs/overview.md
+    - Match Template details:     programs/match_template.md
+    - Refine Template details:    programs/refine_template.md
+    - Optimize Template details:  programs/optimize_template.md
+    - Constrained Search details: programs/constrained_search.md
+  - Program Output Formats: data_formats.md
   #   - Analyzing Match Template Results: examples/analyzing_results.md
   # - Pydantic Model API: api/pydantic_models.md
   # - Backend API: api/backend.md
   # - Theory: theory.md
+  - Contributing: contributing.md
