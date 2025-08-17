@@ -115,9 +115,11 @@ def normalize_template_projection(
     # ) ** 2
 
     # Fast calculation of mean/var using Torch + appropriate scaling.
+    large_size_sqrt = (large_shape[0] * large_shape[1]) ** 0.5
     relative_size = (small_shape[0] * small_shape[1]) / (
         large_shape[0] * large_shape[1]
     )
+
     mean = torch.mean(projections, dim=(-2, -1), keepdim=True) * relative_size
     mean *= relative_size
 
@@ -127,9 +129,9 @@ def normalize_template_projection(
     variance += (
         (large_shape[0] - small_shape[0]) * (large_shape[1] - small_shape[1]) * mean**2
     )
-    variance /= large_shape[0] * large_shape[1]
 
-    return projections / torch.sqrt(variance)
+    projections = (projections * large_size_sqrt) / torch.sqrt(variance.clamp_min(1e-8))
+    return projections
 
 
 # NOTE: Disabling pylint for number of argument since these all need updated in-place

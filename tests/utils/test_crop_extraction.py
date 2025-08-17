@@ -61,7 +61,7 @@ def test_get_cropped_image_regions_numpy_fixed_positions():
 def test_get_cropped_image_regions_numpy_random_nonoverlapping():
     """Random non-overlapping pos for _get_cropped_image_regions_numpy function."""
     box_size = (5, 5)
-    num_patches = 10
+    num_patches = 32
     image_size = (256, 256)
     test_patch = get_test_patch(box_size)
     image = np.zeros(image_size, dtype=np.float32)
@@ -69,15 +69,20 @@ def test_get_cropped_image_regions_numpy_random_nonoverlapping():
     # Generate non-overlapping positions
     positions = []
     for _ in range(num_patches):
-        while True:
+        total_failures = 0
+        while total_failures < 100:
             y = np.random.randint(0, image_size[0] - box_size[0] + 1)
             x = np.random.randint(0, image_size[1] - box_size[1] + 1)
-            if all(
-                not (y <= py < y + box_size[0] and x <= px < x + box_size[1])
+            # Check if new position overlaps with any existing position
+            overlap = any(
+                abs(y - py) < box_size[0] and abs(x - px) < box_size[1]
                 for py, px in positions
-            ):
+            )
+
+            if not overlap:
                 positions.append((y, x))
                 break
+            total_failures += 1
 
     pos_y, pos_x = zip(*positions)
 
