@@ -288,6 +288,8 @@ def construct_multi_gpu_match_template_kwargs(
 
 
 # pylint: disable=too-many-locals
+# pylint: disable=too-many-arguments
+# pylint: disable=too-many-positional-arguments
 def _core_match_template_single_gpu(
     result_dict: dict,
     device_id: int,
@@ -325,10 +327,10 @@ def _core_match_template_single_gpu(
         4 devices has shape (orientations // 4, 3).
     projective_filters : torch.Tensor
         Multiplied 'ctf_filters' with 'whitening_filter_template'. Has shape
-        (defocus_batch, h, w // 2 + 1). Is RFFT and not fftshifted.
+        (num_Cs, num_defocus, h, w // 2 + 1). Is RFFT and not fftshifted.
     defocus_values : torch.Tensor
         What defoucs values correspond with the CTF filters. Has shape
-        (defocus_batch,).
+        (num_defocus,).
     pixel_values : torch.Tensor
         What pixel size values correspond with the CTF filters. Has shape
         (pixel_size_batch,).
