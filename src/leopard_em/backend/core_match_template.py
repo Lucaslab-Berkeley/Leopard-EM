@@ -493,20 +493,5 @@ def _core_match_template_single_gpu(
     result_dict[device_id] = result
 
     # Final cleanup to release all tensors from this GPU
-    del (
-        image_dft,
-        template_dft,
-        euler_angles,
-        projective_filters,
-        defocus_values,
-        pixel_values,
-        mip,
-        best_phi,
-        best_theta,
-        best_psi,
-        best_defocus,
-        best_pixel_size,
-        correlation_sum,
-        correlation_squared_sum,
     torch.cuda.empty_cache()
     torch.cuda.ipc_collect()
