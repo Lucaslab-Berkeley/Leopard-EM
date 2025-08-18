@@ -508,6 +508,5 @@ def _core_match_template_single_gpu(
         best_pixel_size,
         correlation_sum,
         correlation_squared_sum,
-    )
     torch.cuda.empty_cache()
     torch.cuda.ipc_collect()
