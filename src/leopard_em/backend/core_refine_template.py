@@ -120,6 +120,7 @@ def core_refine_template(
     ###########################################
     ### Split particle stack across devices ###
     ###########################################
+
     kwargs_per_device = construct_multi_gpu_refine_template_kwargs(
         particle_stack_dft=particle_stack_dft,
         template_dft=template_dft,
@@ -143,6 +144,11 @@ def core_refine_template(
         target=_core_refine_template_single_gpu,
         kwargs_list=kwargs_per_device,
     )
+
+    # Synchronize all devices to ensure all computations are complete
+    for dev in device:
+        if dev.type == "cuda":
+            torch.cuda.synchronize(dev)
 
     # Shape information for offset calculations
     _, img_h, img_w = particle_stack_dft.shape
@@ -190,6 +196,7 @@ def core_refine_template(
     refined_pos_y = refined_pos_y[sort_indices]
     refined_pos_x = refined_pos_x[sort_indices]
     angle_idx = angle_idx[sort_indices]
+
     # Offset refined_pos_{x,y} by the extracted box size (same as original)
     refined_pos_y -= (img_h - template_h + 1) // 2
     refined_pos_x -= (img_w - template_w + 1) // 2
@@ -289,39 +296,33 @@ def construct_multi_gpu_refine_template_kwargs(
         # Get particle indices for this device
         particle_indices = torch.arange(start_idx, end_idx)
 
-        # Split tensors for this device
-        device_particle_stack_dft = particle_stack_dft[start_idx:end_idx].to(device)
-        device_euler_angles = euler_angles[start_idx:end_idx].to(device)
-        device_defocus_u = defocus_u[start_idx:end_idx].to(device)
-        device_defocus_v = defocus_v[start_idx:end_idx].to(device)
-        device_defocus_angle = defocus_angle[start_idx:end_idx].to(device)
-        device_projective_filters = projective_filters[start_idx:end_idx].to(device)
-
-        # These are shared across all particles
-        device_template_dft = template_dft.to(device)
-        device_euler_angle_offsets = euler_angle_offsets.to(device)
-        device_defocus_offsets = defocus_offsets.to(device)
-        device_pixel_size_offsets = pixel_size_offsets.to(device)
-        device_corr_mean = corr_mean.to(device)
-        device_corr_std = corr_std.to(device)
+        # Split tensors for this device. All these tensors are per-particle, that is
+        # the i-th element in each tensor corresponds to the i-th particle in the stack.
+        device_particle_stack_dft = particle_stack_dft[start_idx:end_idx]
+        device_euler_angles = euler_angles[start_idx:end_idx]
+        device_defocus_u = defocus_u[start_idx:end_idx]
+        device_defocus_v = defocus_v[start_idx:end_idx]
+        device_defocus_angle = defocus_angle[start_idx:end_idx]
+        device_projective_filters = projective_filters[start_idx:end_idx]
 
         kwargs = {
             "particle_stack_dft": device_particle_stack_dft,
-            "particle_indices": particle_indices.cpu().numpy(),
-            "template_dft": device_template_dft,
+            "particle_indices": particle_indices,
+            "template_dft": template_dft,
             "euler_angles": device_euler_angles,
-            "euler_angle_offsets": device_euler_angle_offsets,
+            "euler_angle_offsets": euler_angle_offsets,
             "defocus_u": device_defocus_u,
             "defocus_v": device_defocus_v,
             "defocus_angle": device_defocus_angle,
-            "defocus_offsets": device_defocus_offsets,
-            "pixel_size_offsets": device_pixel_size_offsets,
-            "corr_mean": device_corr_mean,
-            "corr_std": device_corr_std,
-            "ctf_kwargs": ctf_kwargs,
+            "defocus_offsets": defocus_offsets,
+            "pixel_size_offsets": pixel_size_offsets,
+            "corr_mean": corr_mean,
+            "corr_std": corr_std,
             "projective_filters": device_projective_filters,
+            "ctf_kwargs": ctf_kwargs,
             "batch_size": batch_size,
             "num_cuda_streams": num_cuda_streams,
+            "device": device,
         }
 
         kwargs_per_device.append(kwargs)
@@ -346,9 +347,10 @@ def _core_refine_template_single_gpu(
     pixel_size_offsets: torch.Tensor,
     corr_mean: torch.Tensor,
     corr_std: torch.Tensor,
-    ctf_kwargs: dict,
     projective_filters: torch.Tensor,
+    ctf_kwargs: dict,
     batch_size: int,
+    device: torch.device,
     num_cuda_streams: int = 1,
 ) -> None:
     """Run refine template on a subset of particles on a single GPU.
@@ -383,17 +385,40 @@ def _core_refine_template_single_gpu(
         Mean of the cross-correlation
     corr_std : torch.Tensor
         Standard deviation of the cross-correlation
-    ctf_kwargs : dict
-        CTF calculation parameters.
     projective_filters : torch.Tensor
         Projective filters for particles in this subset.
+    ctf_kwargs : dict
+        CTF calculation parameters.
     batch_size : int
         Batch size for orientation processing.
+    device : torch.device
+        Torch device to run this process on.
     num_cuda_streams : int, optional
         Number of CUDA streams to use for parallel processing. Defaults to 1.
     """
-    device = particle_stack_dft.device
     streams = [torch.cuda.Stream(device=device) for _ in range(num_cuda_streams)]
+
+    ######################################
+    ### Send all tensors to the device ###
+    ######################################
+
+    particle_stack_dft = particle_stack_dft.to(device)
+    particle_indices = particle_indices.to(device)
+    template_dft = template_dft.to(device)
+    euler_angles = euler_angles.to(device)
+    euler_angle_offsets = euler_angle_offsets.to(device)
+    defocus_u = defocus_u.to(device)
+    defocus_v = defocus_v.to(device)
+    defocus_angle = defocus_angle.to(device)
+    defocus_offsets = defocus_offsets.to(device)
+    pixel_size_offsets = pixel_size_offsets.to(device)
+    corr_mean = corr_mean.to(device)
+    corr_std = corr_std.to(device)
+    projective_filters = projective_filters.to(device)
+
+    ########################################
+    ### Setup constants and progress bar ###
+    ########################################
 
     num_particles, _, img_w = particle_stack_dft.shape
     _, _, template_w = template_dft.shape
@@ -413,7 +438,10 @@ def _core_refine_template_single_gpu(
         smoothing=0.1,
     )
 
-    # Iterate over each particle in the stack to get the refined statistics
+    #############################################################################
+    ### Iterate over each particle in the stack to get the refined statistics ###
+    #############################################################################
+
     refined_statistics = []
     for i in pbar_iter:
         particle_image_dft = particle_stack_dft[i]
@@ -441,6 +469,10 @@ def _core_refine_template_single_gpu(
                 device_id=device_id,
             )
             refined_statistics.append(refined_stats)
+
+    # Wait for all streams to finish
+    for stream in streams:
+        stream.synchronize()
 
     # For each particle, calculate the new best orientation, defocus, and position
     refined_cross_correlation = torch.tensor(
@@ -483,8 +515,8 @@ def _core_refine_template_single_gpu(
             euler_angles[i, :],  # original angle
         )
         refined_euler_angles[i, :] = composed_refined_angle
-        # wrap the euler angles back to original ranges
 
+    # wrap the euler angles back to original ranges
     refined_euler_angles[:, 0] = torch.where(
         refined_euler_angles[:, 0] < 0,
         refined_euler_angles[:, 0] + 360,
@@ -510,7 +542,7 @@ def _core_refine_template_single_gpu(
         "refined_pixel_size_offset": refined_pixel_size_offset.cpu().numpy(),
         "refined_pos_y": refined_pos_y.cpu().numpy(),
         "refined_pos_x": refined_pos_x.cpu().numpy(),
-        "particle_indices": particle_indices,  # Include original indices for sorting
+        "particle_indices": particle_indices.cpu().numpy(),  # Original idxs for sorting
         "angle_idx": angle_idx.cpu().numpy(),
     }
 
@@ -709,6 +741,7 @@ def _core_refine_template_single_thread(
             refined_pos_y = y_idx
             refined_pos_x = x_idx
             full_angle_idx = angle_idx + start_idx
+
     # Return the refined statistics
     refined_stats = {
         "max_cc": max_cc,
