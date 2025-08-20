@@ -518,7 +518,7 @@ def setup_frame_filters_particle_stack(
     """
     # Extract out the regions of interest (particles) based on the particle stack
     particle_images = particle_stack.construct_image_stack(
-        pos_reference="center",
+        pos_reference="top-left",
         padding_value=0.0,
         handle_bounds="pad",
         padding_mode="constant",
@@ -564,7 +564,7 @@ def setup_image_normalization_factor(
     """Get the image normalization factor."""
     # Extract out the regions of interest (particles) based on the particle stack
     particle_images = particle_stack.construct_image_stack(
-        pos_reference="center",
+        pos_reference="top-left",
         padding_value=0.0,
         handle_bounds="pad",
         padding_mode="constant",
