@@ -694,14 +694,11 @@ class ParticleStack(BaseModel2DTM):
         """Get the number of particles in the stack."""
         return len(self._df)
 
-    def get_absolute_defocus(
-        self, prefer_refined_defocus: bool = True
-    ) -> tuple[torch.Tensor, torch.Tensor]:
-        """Get the absolute defocus values for each particle.
-
-        NOTE: If the refined defocus values are requested but not present in the
-        DataFrame (either no column or any NaN values), a user warning is raised and the
-        original defocus values are returned instead.
+    def get_relative_defocus(
+        self,
+        prefer_refined_defocus: bool = True,
+    ) -> torch.Tensor:
+        """Get the relative defocus values for each particle.
 
         Parameters
         ----------
@@ -711,18 +708,16 @@ class ParticleStack(BaseModel2DTM):
 
         Returns
         -------
-        tuple[torch.Tensor, torch.Tensor]
-            A tuple of two tensors containing the absolute defocus values along the
-            major (defocus_u) and minor axes (defocus_v), respectively in units of
-            Angstroms.
+        torch.Tensor
+            The relative defocus values for each particle.
 
         Warnings
         --------
-            Warns if NaN values or no column present for either 'refined_defocus_u' or
-            'refined_defocus_v'. Falls back to the unrefined values.
+            Warns if NaN values or no column present for either
+            'refined_relative_defocus' or 'relative_defocus'.
+            Falls back to the unrefined values.
         """
         rel_defocus_col = "relative_defocus"
-
         # Both refined columns must be present AND no values can be NaN or inf
         if prefer_refined_defocus:
             if "refined_relative_defocus" not in self._df.columns:
@@ -740,12 +735,76 @@ class ParticleStack(BaseModel2DTM):
             else:
                 rel_defocus_col = "refined_relative_defocus"
 
-        # Get the defocus values from the DataFrame
-        particle_defocus = torch.tensor(self._df[rel_defocus_col].to_numpy())
+        return torch.tensor(self._df[rel_defocus_col].to_numpy())
+
+    def get_absolute_defocus(
+        self, prefer_refined_defocus: bool = True
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Get the absolute defocus values for each particle.
+
+        NOTE: If the refined defocus values are requested but not present in the
+        DataFrame (either no column or any NaN values), a user warning is raised
+        and the original defocus values are returned instead.
+
+        Parameters
+        ----------
+        prefer_refined_defocus : bool, optional
+            Whether to use the refined defocus values
+            (columns prefixed with 'refined_') or not, by default True.
+
+        Returns
+        -------
+        tuple[torch.Tensor, torch.Tensor]
+            A tuple of two tensors containing the absolute defocus values along the
+            major (defocus_u) and minor axes (defocus_v), respectively in units of
+            Angstroms.
+        """
+        particle_defocus = self.get_relative_defocus(prefer_refined_defocus)
         defocus_u = torch.tensor(self._df["defocus_u"].to_numpy()) + particle_defocus
         defocus_v = torch.tensor(self._df["defocus_v"].to_numpy()) + particle_defocus
 
         return defocus_u, defocus_v
+
+    def get_pixel_size(
+        self,
+        prefer_refined_pixel_size: bool = True,
+    ) -> torch.Tensor:
+        """Get the relative pixel size values for each particle.
+
+        Parameters
+        ----------
+        prefer_refined_pixel_size : bool, optional
+            Whether to use the refined pixel size values
+            (columns prefixed with 'refined_') or not, by default True.
+
+        Returns
+        -------
+        torch.Tensor
+            The relative pixel size values for each particle.
+
+        Warnings
+        --------
+            Warns if NaN values or no column present for either 'refined_pixel_size'
+            or 'pixel_size'. Falls back to the unrefined values.
+        """
+        pixel_size_col = "pixel_size"
+        if prefer_refined_pixel_size:
+            if "refined_pixel_size" not in self._df.columns:
+                warnings.warn(
+                    "Refined pixel size not found in DataFrame, using original"
+                    " pixel size values...",
+                    stacklevel=2,
+                )
+            elif _any_nan_or_inf(self._df["refined_pixel_size"]):
+                warnings.warn(
+                    "Refined pixel size contain NaN or inf values, using original"
+                    " pixel size values...",
+                    stacklevel=2,
+                )
+            else:
+                pixel_size_col = "refined_pixel_size"
+
+        return torch.tensor(self._df[pixel_size_col].to_numpy())
 
     def get_euler_angles(self, prefer_refined_angles: bool = True) -> torch.Tensor:
         """Return the Euler angles (phi, theta, psi) of all particles as a tensor.
