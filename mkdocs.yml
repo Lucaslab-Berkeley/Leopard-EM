@@ -30,6 +30,8 @@ extra_javascript:
 nav:
   - Home: index.md
   # - generated/gallery
+  - Tutorials:
+    - Batch Processing: tutorials/batch_processing.md
   - Examples:
     - Match Template Config:            examples/01_basic_configuration.ipynb
     - Peaks to DataFrame:               examples/02_extract_peak_info.ipynb
