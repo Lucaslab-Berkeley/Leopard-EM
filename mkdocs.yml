@@ -1,6 +1,8 @@
 site_name: "Leopard-EM: Two-Dimensional Template Matching in Python"
 theme:
   name: material
+  features:
+    - content.code.copy
 plugins:
   - search
   - autorefs

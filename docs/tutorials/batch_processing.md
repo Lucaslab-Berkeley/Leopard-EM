@@ -13,6 +13,7 @@ The pre-requisites for this tutorial are:
 5. Leopard-EM installed in the current Python environment.
 
 !!! note "Why Leopard-EM doesn't handle batch processing internally"
+
     Leopard-EM is designed to be a flexible and modular Python package for 2DTM, and as such we focus on providing the core functionality for 2DTM workflows.
     Reproducibility is another key aspect of Leopard-EM, and we encourage users to have a one-to-one mapping between input configuration files and 2DTM results.
     This means that Leopard-EM does not inherently handle batch processing, but instead provides a simple interface for users to write their own 2DTM workflows specific to their computing environments and project needs.
@@ -62,6 +63,11 @@ See the [Match Template program page](../programs/match_template.md) for informa
 We enclose the populated fields in double curly braces `{{...}}` which are used for string replacement in the later Python script.
 
 This file should be saved as `base_match_template_config.yaml` in the project directory root.
+
+!!! Note "Code copy button (top-left)"
+
+    This tutorial includes _a lot_ of code snippets.
+    There is a copy button in the top-left corner of each code block which will copy the entire code block to your clipboard.
 
 ```yaml
 # base_match_template_config.yaml
@@ -318,6 +324,7 @@ Our project directory structure should now look like this:
 ```
 
 !!! note "Batch processing in Leopard-EM not depend on CTFFIND5"
+
     This tutorial assumes outputs from the CTFFIND5 program each in their own diagnostic file, but the above script can be adapted to any number of CTF estimation outputs.
     As long as you can uniquely map each micrograph to a set of defocus parameters (presumably in a Python function), the above population of the configuration will be straightforward.
 
@@ -378,6 +385,7 @@ python run_match_template.py match_template_results/micrograph_0_match_template_
 Rather than running each 2DTM search manually, we can use an included SLURM job scheduler to process all of the data. Here, we choose to use a SLURM array job since we have a large number of micrographs to process and the computational needs don't change between runs.
 
 !!! caution "Adapting to your SLURM environment"
+
     Different computing environments have different SLURM configurations including how to request GPU resources, constraints on job allocations, and how to record allocations to a computing account.
     We cannot possibly enumerate all possible configurations, but the following script is a good starting point.
     You will need to adapt the SLURM job script below to your specific computing environment, but the principles of running _N_ independent searches across _N_ micrographs remains the same.
