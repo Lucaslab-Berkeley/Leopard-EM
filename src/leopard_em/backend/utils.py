@@ -1,5 +1,6 @@
 """Utility and helper functions associated with the backend of Leopard-EM."""
 
+import os
 import warnings
 from multiprocessing import Manager, Process
 from typing import Any, Callable, Optional, TypeVar
@@ -39,6 +40,11 @@ def attempt_torch_compilation(
     is useful for program consistency. If compilation is not supported, then a
     warning is generated, and the original function is returned.
     """
+    # Check if compilation is disabled via environment variable
+    disable_compilation = os.environ.get("LEOPARDEM_DISABLE_TORCH_COMPILATION", "0")
+    if disable_compilation != "0":
+        return target_func
+
     try:
         compiled_func = torch.compile(target_func, backend=backend, mode=mode)
         return compiled_func  # type: ignore[no-any-return]
