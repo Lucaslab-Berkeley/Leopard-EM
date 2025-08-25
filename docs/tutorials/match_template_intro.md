@@ -508,7 +508,7 @@ and run the Python script again
 python run_match_template.py
 ```
 
-??? "CUDA Out of Memory Error"
+??? warning "Encountering CUDA Out of Memory Error"
 
     On GPUs with lower amounts of VRAM, you may encounter an out-of-memory error.
     Decrease the batch size to a lower value (e.g., `ORIENTATION_BATCH_SIZE = 4`) and try re-running the script.
@@ -519,14 +519,31 @@ Excellent!
 Once the template matching process finishes, there should be the following new files in the project directory.
 
 
-TODO: Include new files
+```
+leopardEM_intro/
+60S_aligned.pdb
+...
+output_correlation_average_intro.mrc    <-- New
+output_correlation_variance_intro.mrc   <-- New
+output_mip_intro.mrc                    <-- New
+output_orientation_phi_intro.mrc        <-- New
+output_orientation_psi_intro.mrc        <-- New
+output_orientation_theta_intro.mrc      <-- New
+output_relative_defocus_intro.mrc       <-- New
+output_scaled_mip_intro.mrc             <-- New
+results_match_template_60S_intro.csv    <-- New
+results_match_template_crop_intro.csv
+run_match_template.py
+...
+xenon_131_000_0.0_DWS.mrc
+```
 
 
-Their exact contents and visualizing the results are discussed elsewhere in the documentation, and what we're most interested in is the `results/results_match_template_60S_intro.csv` file which contains all the information about our **417 identified peaks above the statistical threshold**.
+Their exact contents and visualizing the results are discussed elsewhere in the documentation, and what we're most interested in is the `results/results_match_template_60S_intro.csv` file which contains all the information about our **407 identified peaks above the statistical threshold**.
 
 ## Step 5: Quality control and filtering (micrograph edge artifact)
 
-Re-referencing the image of our lamella, we can clearly see the lamella edge is visible in the top-right corner.
+Re-referencing the micrograph, we can clearly see the lamella edge is visible in the top-right corner.
 This region causes spurious correlations because of **low correlation variance** in dark regions which artificially inflates z-scores.
 
 ### Identified peak distribution in x-y
@@ -534,11 +551,12 @@ This region causes spurious correlations because of **low correlation variance**
 Looking at the distribution of identified peaks from the 2DTM search (below), we can see a large concentration of peaks in this dark lamella edge.
 
 
-TODO: include image
+![Distribution of identified peaks in the micrograph](../static/match_template_intro_all_locations.png)
 
 
 **For this tutorial** we take a very simple approach by filtering peaks based both on the MIP (maximum intensity projection) and z-score values which removes these peaks with extremely low variance.
-We require the MIP value to be at least 80% of the z-score for each particle.
+We apply a filter that remove any particles where their correlation variance is less than $0.925$.
+The normalization process for the approximately spherical 60S ribosome means the correlation variance should be around $1.0$ for real particles, and this is a reasonable cutoff for demonstration purposes.
 
 !!! caution "Other approaches to deal with micrograph artifacts"
     
@@ -564,7 +582,7 @@ def main():
     df = pd.read_csv("results_match_template_60S_intro.csv")
 
     # remove rows where 'mip' is less than 80% of 'scaled_mip'
-    filtered_df = df[df["mip"] >= 0.8 * df["scaled_mip"]]
+    filtered_df = df[df["correlation_variance"] >= 0.95]
 
     print(f"Original number of particles: {len(df)}")
     print(f"Filtered number of particles: {len(filtered_df)}")
@@ -575,8 +593,58 @@ if __name__ == "__main__":
     main()
 ```
 
-We now have a filtered results CSV file `results_match_template_60S_edit_intro.csv` with **XXXXX particles**.
+We now have a filtered results CSV file `results_match_template_60S_edit_intro.csv` with **374 particles**, and we can see new distribution of found peaks below.
 
+![Distribution of filtered peaks in the micrograph](../static/match_template_intro_filtered_locations.png)
+
+??? info "Python script for generating above plot images"
+
+    The following is a very simple plotting script using matplotlib to visualize the distribution of particles before and after filtering. Note, you may need to install matplotlib via `pip install matplotlib` before running the script.
+
+    ```python
+    import mrcfile
+    import numpy as np
+    import pandas as pd
+    import matplotlib.pyplot as plt
+
+    # Load data
+    img = mrcfile.read("xenon_131_000_0.0_DWS.mrc")
+    df = pd.read_csv("results_match_template_60S_intro.csv")
+    df_filtered = pd.read_csv("results_match_template_60S_edit_intro.csv")
+
+    # Plot 1: Only unfiltered data
+    plt.figure(figsize=(8, 8))
+    plt.imshow(img, cmap="gray")
+    plt.scatter(
+        df["pos_x_img"], df["pos_y_img"], c="red", s=30, label="All", alpha=0.4, marker="x"
+    )
+    plt.axis("off")
+    plt.legend()
+    plt.savefig("match_template_intro_all_locations.png", dpi=200, bbox_inches="tight")
+    plt.close()
+
+    # Plot 2: Both filtered and unfiltered data
+    plt.figure(figsize=(8, 8))
+    plt.imshow(img, cmap="gray")
+    plt.scatter(
+        df["pos_x_img"], df["pos_y_img"], c="red", s=30, label="All", alpha=0.4, marker="x"
+    )
+    plt.scatter(
+        df_filtered["pos_x_img"],
+        df_filtered["pos_y_img"],
+        c="blue",
+        s=30,
+        marker="o",
+        label="Filtered",
+        alpha=0.4,
+    )
+    plt.axis("off")
+    plt.legend()
+    plt.savefig("match_template_intro_filtered_locations.png", dpi=200, bbox_inches="tight")
+    plt.close()
+
+    print("Plots saved successfully!")
+    ```
 ----
 
 ## Step 6: Template refinement
@@ -597,22 +665,24 @@ Generally, the extracted box size should be 4-24 pixels larger than the template
 Create a new file `refine_template_config_60S_intro.yaml` with the following contents.
 
 ```yaml
-template_volume_path: maps/60S_map_px0.936_bscale0.5.mrc
+template_volume_path: 60S_map_px0.936_bscale0.5_intro.mrc
 particle_stack:
-  df_path: results/results_match_template_60S_edit.csv
-  extracted_box_size: [512, 512]
+  df_path: results_match_template_60S_edit_intro.csv
+  extracted_box_size: [518, 518]
   original_template_size: [512, 512]
 defocus_refinement_config:
-  enabled: false
+  enabled: true
   defocus_max:  100.0  # in Angstroms, relative to "best" particle defocus value
   defocus_min: -100.0  # in Angstroms, relative to "best" particle defocus value
   defocus_step: 20.0   # in Angstroms
 orientation_refinement_config:
+  enabled: true
+  psi_step_coarse:     1.5  # in degrees
+  psi_step_fine:       0.1  # in degrees
+  theta_step_coarse:   2.5  # in degrees
+  theta_step_fine:     0.1  # in degrees
+pixel_size_refinement_config:
   enabled: false
-  psi_step_coarse:     1.5   # in degrees
-  psi_step_fine:       0.05  # in degrees
-  theta_step_coarse:   2.5   # in degrees
-  theta_step_fine:     0.05  # in degrees
 preprocessing_filters:
   whitening_filter:
     do_power_spectrum: true
@@ -645,13 +715,19 @@ if __name__ == "__main__":
     main()
 ```
 
+Then run the script:
+
+```bash
+python run_refine_template.py
+```
+
 ### Refinement results
 
 We now have a set of particle locations and orientations with improved orientation and defocus estimates along with improved z-scores.
 These results are saved in an updated CSV file `results_refine_template_60S_intro.csv`.
 
 The introductory tutorial is now complete, and you should now have solid understanding of the standard 2DTM workflow using Leopard-EM.
-Feel free to explore other parts of the documentation to learn more about how you can use these refined results to visualize particles, such as with [Visualizing 2DTM Results](visualizing_2dtm_results.md), or the exact [data formats which Leopard-EM uses](data_formats.md).
+Feel free to explore other parts of the documentation to learn more about how you can use these refined results to visualize particles, such as with [Visualizing 2DTM Results](../examples/04_plotting_2dtm_results.ipynb), or the exact [data formats which Leopard-EM uses](../data_formats.md).
 
 ## Tutorial summary
 
