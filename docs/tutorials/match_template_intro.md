@@ -518,7 +518,6 @@ python run_match_template.py
 Excellent!
 Once the template matching process finishes, there should be the following new files in the project directory.
 
-
 ```
 leopardEM_intro/
 60S_aligned.pdb
@@ -538,21 +537,19 @@ run_match_template.py
 xenon_131_000_0.0_DWS.mrc
 ```
 
-
 Their exact contents and visualizing the results are discussed elsewhere in the documentation, and what we're most interested in is the `results/results_match_template_60S_intro.csv` file which contains all the information about our **407 identified peaks above the statistical threshold**.
 
 ## Step 5: Quality control and filtering (micrograph edge artifact)
 
 Re-referencing the micrograph, we can clearly see the lamella edge is visible in the top-right corner.
+
 This region causes spurious correlations because of **low correlation variance** in dark regions which artificially inflates z-scores.
 
 ### Identified peak distribution in x-y
 
 Looking at the distribution of identified peaks from the 2DTM search (below), we can see a large concentration of peaks in this dark lamella edge.
 
-
 ![Distribution of identified peaks in the micrograph](../static/match_template_intro_all_locations.png)
-
 
 **For this tutorial** we take a very simple approach by filtering peaks based both on the MIP (maximum intensity projection) and z-score values which removes these peaks with extremely low variance.
 We apply a filter that remove any particles where their correlation variance is less than $0.925$.
@@ -581,8 +578,8 @@ from leopard_em.analysis.zscore_metric import gaussian_noise_zscore_cutoff
 def main():
     df = pd.read_csv("results_match_template_60S_intro.csv")
 
-    # remove rows where 'mip' is less than 80% of 'scaled_mip'
-    filtered_df = df[df["correlation_variance"] >= 0.95]
+    # remove rows with low correlation variance
+    filtered_df = df[df["correlation_variance"] >= 0.925]
 
     print(f"Original number of particles: {len(df)}")
     print(f"Filtered number of particles: {len(filtered_df)}")
@@ -645,6 +642,7 @@ We now have a filtered results CSV file `results_match_template_60S_edit_intro.c
 
     print("Plots saved successfully!")
     ```
+   
 ----
 
 ## Step 6: Template refinement
@@ -672,6 +670,7 @@ particle_stack:
   original_template_size: [512, 512]
 defocus_refinement_config:
   enabled: true
+
   defocus_max:  100.0  # in Angstroms, relative to "best" particle defocus value
   defocus_min: -100.0  # in Angstroms, relative to "best" particle defocus value
   defocus_step: 20.0   # in Angstroms
