@@ -9,7 +9,7 @@
       
       
       
-        <link rel="prev" href="../..">
+        <link rel="prev" href="../match_template_intro/">
       
       
         <link rel="next" href="../../examples/01_basic_configuration/">
@@ -244,6 +244,28 @@
             Tutorials
           </label>
           <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../match_template_intro/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    2DTM Introduction
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
             
               
                 
@@ -1952,12 +1974,12 @@ In this tutorial, we walk through a basic example of doing batch processing with
 <li>A cluster with SLURM scheduling and GPU nodes available.</li>
 <li>Leopard-EM installed in the current Python environment.</li>
 </ol>
-<div class="admonition note">
-<p class="admonition-title">Why Leopard-EM doesn't handle batch processing internally</p>
+<details class="note">
+<summary>Why Leopard-EM doesn't handle batch processing internally</summary>
 <p>Leopard-EM is designed to be a flexible and modular Python package for 2DTM, and as such we focus on providing the core functionality for 2DTM workflows.
 Reproducibility is another key aspect of Leopard-EM, and we encourage users to have a one-to-one mapping between input configuration files and 2DTM results.
 This means that Leopard-EM does not inherently handle batch processing, but instead provides a simple interface for users to write their own 2DTM workflows specific to their computing environments and project needs.</p>
-</div>
+</details>
 <h2 id="pre-requisite-data-layout">Pre-requisite data layout</h2>
 <p>This tutorial assumes you are working within a directory with already processed micrographs and associated CTF estimations as well as a simulated reference volume named <code>ref_template.mrc</code>.
 Each micrograph has a unique name, and these micrographs are stored under the <code>micrographs/</code> directory.
@@ -2063,7 +2085,7 @@ However, this script is easily extensible to handle more complex cases.</p>
 │   ├── micrograph_99_diagnostic.txt
 │
 ├── base_match_template_config.yaml    &lt;-- New (contents above)
-├── populate_match_template_config.py  &lt;-- New (contents below)
+└── populate_match_template_config.py  &lt;-- New (contents below)
 </code></pre></div>
 <div class="highlight"><pre><span></span><code><span class="sd">&quot;&quot;&quot;Script to populate the base YAML configuration file for each micrograph.&quot;&quot;&quot;</span>
 
@@ -2234,7 +2256,7 @@ However, this script is easily extensible to handle more complex cases.</p>
 │   ├── ...
 │   ├── micrograph_99_match_template_config.yaml  &lt;-- New
 ├── base_match_template_config.yaml
-├── populate_match_template_config.py
+└── populate_match_template_config.py
 </code></pre></div>
 <div class="admonition note">
 <p class="admonition-title">Batch processing in Leopard-EM not depend on CTFFIND5</p>

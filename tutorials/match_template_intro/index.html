@@ -1,0 +1,3143 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="A step-by-step tutorial on running 2DTM using Leopard-EM">
+      
+      
+      
+      
+        <link rel="prev" href="../..">
+      
+      
+        <link rel="next" href="../batch_processing/">
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.6.5">
+    
+    
+      
+        <title>Introduction to 2DTM with Leopard-EM - Leopard-EM: Two-Dimensional Template Matching in Python</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.8608ea7d.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+    
+  </head>
+  
+  
+    <body dir="ltr">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#introduction-to-2dtm-with-leopard-em" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Leopard-EM: Two-Dimensional Template Matching in Python" class="md-header__button md-logo" aria-label="Leopard-EM: Two-Dimensional Template Matching in Python" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Leopard-EM: Two-Dimensional Template Matching in Python
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Introduction to 2DTM with Leopard-EM
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      <label class="md-header__button md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+      </label>
+      <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+    
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Leopard-EM: Two-Dimensional Template Matching in Python" class="md-nav__button md-logo" aria-label="Leopard-EM: Two-Dimensional Template Matching in Python" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Leopard-EM: Two-Dimensional Template Matching in Python
+  </label>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Home
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  <span class="md-ellipsis">
+    Tutorials
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            Tutorials
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  <span class="md-ellipsis">
+    2DTM Introduction
+    
+  </span>
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  <span class="md-ellipsis">
+    2DTM Introduction
+    
+  </span>
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#whats-covered-in-this-tutorial" class="md-nav__link">
+    <span class="md-ellipsis">
+      What's covered in this tutorial
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#data-and-computation-pre-requisites" class="md-nav__link">
+    <span class="md-ellipsis">
+      Data and computation pre-requisites
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Data and computation pre-requisites">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#computational-resources" class="md-nav__link">
+    <span class="md-ellipsis">
+      Computational resources
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#data" class="md-nav__link">
+    <span class="md-ellipsis">
+      Data
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Data">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#inspecting-the-micrograph" class="md-nav__link">
+    <span class="md-ellipsis">
+      Inspecting the micrograph
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-1-reference-template-simulation" class="md-nav__link">
+    <span class="md-ellipsis">
+      Step 1: Reference template simulation
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Step 1: Reference template simulation">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#template-simulation-process" class="md-nav__link">
+    <span class="md-ellipsis">
+      Template simulation process
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#python-script-for-template-simulation" class="md-nav__link">
+    <span class="md-ellipsis">
+      Python script for template simulation
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-2-initial-template-matching-process" class="md-nav__link">
+    <span class="md-ellipsis">
+      Step 2: Initial template matching process
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Step 2: Initial template matching process">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#optional-crop-the-micrograph-to-smaller-size" class="md-nav__link">
+    <span class="md-ellipsis">
+      (Optional) Crop the micrograph to smaller size
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#configure-the-template-matching-run" class="md-nav__link">
+    <span class="md-ellipsis">
+      Configure the template matching run
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#running-template-matching" class="md-nav__link">
+    <span class="md-ellipsis">
+      Running template matching
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-3-template-optimization" class="md-nav__link">
+    <span class="md-ellipsis">
+      Step 3: Template optimization
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Step 3: Template optimization">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#optimize-template-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      Optimize template configuration
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#running-the-optimize-template-program" class="md-nav__link">
+    <span class="md-ellipsis">
+      Running the optimize template program
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#optimization-results" class="md-nav__link">
+    <span class="md-ellipsis">
+      Optimization results
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#re-generating-optimized-templates" class="md-nav__link">
+    <span class="md-ellipsis">
+      Re-generating Optimized Templates
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-4-full-template-matching-run" class="md-nav__link">
+    <span class="md-ellipsis">
+      Step 4: Full template matching run
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Step 4: Full template matching run">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#full-match-template-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      Full match template configuration
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#running-the-search" class="md-nav__link">
+    <span class="md-ellipsis">
+      Running the search
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#results" class="md-nav__link">
+    <span class="md-ellipsis">
+      Results
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-5-quality-control-and-filtering-micrograph-edge-artifact" class="md-nav__link">
+    <span class="md-ellipsis">
+      Step 5: Quality control and filtering (micrograph edge artifact)
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Step 5: Quality control and filtering (micrograph edge artifact)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#identified-peak-distribution-in-x-y" class="md-nav__link">
+    <span class="md-ellipsis">
+      Identified peak distribution in x-y
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#particle-filtering-script-using-pandas" class="md-nav__link">
+    <span class="md-ellipsis">
+      Particle filtering script using Pandas
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-6-template-refinement" class="md-nav__link">
+    <span class="md-ellipsis">
+      Step 6: Template refinement
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Step 6: Template refinement">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#refinement-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      Refinement configuration
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#running-the-refinement" class="md-nav__link">
+    <span class="md-ellipsis">
+      Running the refinement
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#refinement-results" class="md-nav__link">
+    <span class="md-ellipsis">
+      Refinement results
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tutorial-summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      Tutorial summary
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../batch_processing/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Batch Processing
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  <span class="md-ellipsis">
+    Examples
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            Examples
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/01_basic_configuration/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Configuring Pydantic models in Python
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/02_extract_peak_info/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Extracting results from the template matching search
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/03_compare_scoring_metrics/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Comparing 2DTM scoring metrics
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/04_plotting_2dtm_results/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Visualizing 2DTM result
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/05_structure_reprojection/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Structure projections on an Image
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  <span class="md-ellipsis">
+    Programs
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            Programs
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../programs/overview/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Overview
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../programs/match_template/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Match Template details
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../programs/refine_template/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Refine Template details
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../programs/optimize_template/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Optimize Template details
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../programs/constrained_search/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Constrained Search details
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../data_formats/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Program Output Formats
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Contributing
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  <span class="md-ellipsis">
+    API Reference
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            API Reference
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7_1" >
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../autoapi/leopard_em/" class="md-nav__link ">
+              
+  
+  <span class="md-ellipsis">
+    leopard_em
+    
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_7_1" id="__nav_7_1_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_7_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7_1">
+            <span class="md-nav__icon md-icon"></span>
+            leopard_em
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7_1_1" >
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../autoapi/leopard_em/analysis/" class="md-nav__link ">
+              
+  
+  <span class="md-ellipsis">
+    analysis
+    
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_7_1_1" id="__nav_7_1_1_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_7_1_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7_1_1">
+            <span class="md-nav__icon md-icon"></span>
+            analysis
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/analysis/gev_fit_metric/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    gev_fit_metric
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/analysis/match_template_peaks/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    match_template_peaks
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/analysis/pvalue_metric/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    pvalue_metric
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/analysis/utils/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    utils
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/analysis/zscore_metric/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    zscore_metric
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7_1_2" >
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../autoapi/leopard_em/backend/" class="md-nav__link ">
+              
+  
+  <span class="md-ellipsis">
+    backend
+    
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_7_1_2" id="__nav_7_1_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_7_1_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7_1_2">
+            <span class="md-nav__icon md-icon"></span>
+            backend
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/backend/core_match_template/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    core_match_template
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/backend/core_refine_template/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    core_refine_template
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/backend/cross_correlation/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    cross_correlation
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/backend/process_results/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    process_results
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/backend/utils/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    utils
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7_1_3" >
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../autoapi/leopard_em/pydantic_models/" class="md-nav__link ">
+              
+  
+  <span class="md-ellipsis">
+    pydantic_models
+    
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_7_1_3" id="__nav_7_1_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_7_1_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7_1_3">
+            <span class="md-nav__icon md-icon"></span>
+            pydantic_models
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7_1_3_1" >
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../autoapi/leopard_em/pydantic_models/config/" class="md-nav__link ">
+              
+  
+  <span class="md-ellipsis">
+    config
+    
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_7_1_3_1" id="__nav_7_1_3_1_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="4" aria-labelledby="__nav_7_1_3_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7_1_3_1">
+            <span class="md-nav__icon md-icon"></span>
+            config
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/pydantic_models/config/computational_config/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    computational_config
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/pydantic_models/config/correlation_filters/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    correlation_filters
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/pydantic_models/config/defocus_search/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    defocus_search
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/pydantic_models/config/orientation_search/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    orientation_search
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/pydantic_models/config/pixel_size_search/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    pixel_size_search
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/pydantic_models/custom_types/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    custom_types
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7_1_3_3" >
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../autoapi/leopard_em/pydantic_models/data_structures/" class="md-nav__link ">
+              
+  
+  <span class="md-ellipsis">
+    data_structures
+    
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_7_1_3_3" id="__nav_7_1_3_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="4" aria-labelledby="__nav_7_1_3_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7_1_3_3">
+            <span class="md-nav__icon md-icon"></span>
+            data_structures
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/pydantic_models/data_structures/optics_group/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    optics_group
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/pydantic_models/data_structures/particle_stack/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    particle_stack
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/pydantic_models/formats/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    formats
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7_1_3_5" >
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../autoapi/leopard_em/pydantic_models/managers/" class="md-nav__link ">
+              
+  
+  <span class="md-ellipsis">
+    managers
+    
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_7_1_3_5" id="__nav_7_1_3_5_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="4" aria-labelledby="__nav_7_1_3_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7_1_3_5">
+            <span class="md-nav__icon md-icon"></span>
+            managers
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/pydantic_models/managers/constrained_search_manager/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    constrained_search_manager
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/pydantic_models/managers/match_template_manager/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    match_template_manager
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/pydantic_models/managers/optimize_template_manager/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    optimize_template_manager
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/pydantic_models/managers/refine_template_manager/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    refine_template_manager
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7_1_3_6" >
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../autoapi/leopard_em/pydantic_models/results/" class="md-nav__link ">
+              
+  
+  <span class="md-ellipsis">
+    results
+    
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_7_1_3_6" id="__nav_7_1_3_6_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="4" aria-labelledby="__nav_7_1_3_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7_1_3_6">
+            <span class="md-nav__icon md-icon"></span>
+            results
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/pydantic_models/results/match_template_result/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    match_template_result
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/pydantic_models/utils/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    utils
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7_1_4" >
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../autoapi/leopard_em/utils/" class="md-nav__link ">
+              
+  
+  <span class="md-ellipsis">
+    utils
+    
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_7_1_4" id="__nav_7_1_4_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_7_1_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7_1_4">
+            <span class="md-nav__icon md-icon"></span>
+            utils
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/utils/cross_correlation/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    cross_correlation
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/utils/data_io/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    data_io
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/utils/fourier_slice/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    fourier_slice
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#whats-covered-in-this-tutorial" class="md-nav__link">
+    <span class="md-ellipsis">
+      What's covered in this tutorial
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#data-and-computation-pre-requisites" class="md-nav__link">
+    <span class="md-ellipsis">
+      Data and computation pre-requisites
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Data and computation pre-requisites">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#computational-resources" class="md-nav__link">
+    <span class="md-ellipsis">
+      Computational resources
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#data" class="md-nav__link">
+    <span class="md-ellipsis">
+      Data
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Data">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#inspecting-the-micrograph" class="md-nav__link">
+    <span class="md-ellipsis">
+      Inspecting the micrograph
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-1-reference-template-simulation" class="md-nav__link">
+    <span class="md-ellipsis">
+      Step 1: Reference template simulation
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Step 1: Reference template simulation">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#template-simulation-process" class="md-nav__link">
+    <span class="md-ellipsis">
+      Template simulation process
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#python-script-for-template-simulation" class="md-nav__link">
+    <span class="md-ellipsis">
+      Python script for template simulation
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-2-initial-template-matching-process" class="md-nav__link">
+    <span class="md-ellipsis">
+      Step 2: Initial template matching process
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Step 2: Initial template matching process">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#optional-crop-the-micrograph-to-smaller-size" class="md-nav__link">
+    <span class="md-ellipsis">
+      (Optional) Crop the micrograph to smaller size
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#configure-the-template-matching-run" class="md-nav__link">
+    <span class="md-ellipsis">
+      Configure the template matching run
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#running-template-matching" class="md-nav__link">
+    <span class="md-ellipsis">
+      Running template matching
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-3-template-optimization" class="md-nav__link">
+    <span class="md-ellipsis">
+      Step 3: Template optimization
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Step 3: Template optimization">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#optimize-template-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      Optimize template configuration
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#running-the-optimize-template-program" class="md-nav__link">
+    <span class="md-ellipsis">
+      Running the optimize template program
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#optimization-results" class="md-nav__link">
+    <span class="md-ellipsis">
+      Optimization results
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#re-generating-optimized-templates" class="md-nav__link">
+    <span class="md-ellipsis">
+      Re-generating Optimized Templates
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-4-full-template-matching-run" class="md-nav__link">
+    <span class="md-ellipsis">
+      Step 4: Full template matching run
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Step 4: Full template matching run">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#full-match-template-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      Full match template configuration
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#running-the-search" class="md-nav__link">
+    <span class="md-ellipsis">
+      Running the search
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#results" class="md-nav__link">
+    <span class="md-ellipsis">
+      Results
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-5-quality-control-and-filtering-micrograph-edge-artifact" class="md-nav__link">
+    <span class="md-ellipsis">
+      Step 5: Quality control and filtering (micrograph edge artifact)
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Step 5: Quality control and filtering (micrograph edge artifact)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#identified-peak-distribution-in-x-y" class="md-nav__link">
+    <span class="md-ellipsis">
+      Identified peak distribution in x-y
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#particle-filtering-script-using-pandas" class="md-nav__link">
+    <span class="md-ellipsis">
+      Particle filtering script using Pandas
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-6-template-refinement" class="md-nav__link">
+    <span class="md-ellipsis">
+      Step 6: Template refinement
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Step 6: Template refinement">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#refinement-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      Refinement configuration
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#running-the-refinement" class="md-nav__link">
+    <span class="md-ellipsis">
+      Running the refinement
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#refinement-results" class="md-nav__link">
+    <span class="md-ellipsis">
+      Refinement results
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tutorial-summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      Tutorial summary
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+
+<h1 id="introduction-to-2dtm-with-leopard-em">Introduction to 2DTM with Leopard-EM</h1>
+<p>This introductory tutorial goes through the basics of running the <code>match_template</code> and <code>refine_template</code> programs using a 60S large ribosomal subunit (LSU) template with a micrograph of a yeast lamella.
+Here, we focus on understanding the basics of 2DTM which serves as the foundation for building more complex cryo-EM template matching workflows.</p>
+<h2 id="whats-covered-in-this-tutorial">What's covered in this tutorial</h2>
+<p>In this tutorial we will cover:</p>
+<ol>
+<li><strong>Simulate reference volume from PDB files</strong> - We  download a prepared 60S LSU structure and demonstrate how to simulate realistic cryo-EM reference volumes. These steps are similar for any other PDB structure.</li>
+<li><strong>Configure template matching runs</strong> - </li>
+<li><strong>Optimize 2DTM parameters (pixel size)</strong> - By using initial results, we can optimize parameters for later 2DTM searches to increase SNR and identify more particles.</li>
+<li><strong>Running full 2DTM with Leopard-EM</strong> - Initial Particle locations and orientations are found using the <code>match_template</code> program.</li>
+<li><strong>Refining particle parameters post-search</strong> - Particle orientation and defocus values (initially identified with <code>match_template</code>) are locally refined using the <code>refine_template</code> program.</li>
+</ol>
+<div class="admonition note">
+<p class="admonition-title">Code copy button (top-left)</p>
+<p>This tutorial includes <em>a lot</em> of code snippets.
+There is a copy button in the top-left corner of each code block which will copy the entire code block to your clipboard.</p>
+</div>
+<h2 id="data-and-computation-pre-requisites">Data and computation pre-requisites</h2>
+<h3 id="computational-resources">Computational resources</h3>
+<p>The <code>match_template</code> program requires a GPU for accelerated computation, and Leopard-EM only supports Linux operating systems.
+This tutorial also assumes you have Leopard-EM installed on your system.
+Please refer to the <a href="../../#installation">installation instructions</a> for more further details, but Leopard-EM <em>should</em> be installable via:</p>
+<div class="highlight"><pre><span></span><code>pip<span class="w"> </span>install<span class="w"> </span>leopard-em
+</code></pre></div>
+<h3 id="data">Data</h3>
+<p>Data used in this tutorial are hosted in <a href="https://zenodo.org/records/16423583">this Zenodo record</a>. Download the following files into some project directory on your machine:</p>
+<ul>
+<li><code>60S_aligned.pdb</code> - LSU structure processed from PDB 6Q8Y.</li>
+<li><code>xenon_131_000_0.0_DWS.mrc</code> - Full micrograph (4k by 4k) to search over</li>
+<li><code>xenon_131_000_0.0_DWS_cropped_4.mrc</code> - Cropped portion of micrograph (1k by 1k) to run optimizations on.</li>
+</ul>
+<p>This can be accomplished via the following command</p>
+<div class="highlight"><pre><span></span><code>zenodo_get<span class="w"> </span>https://zenodo.org/records/16423583<span class="w"> </span>--glob<span class="w"> </span>60S_aligned.pdb<span class="w"> </span>--glob<span class="w"> </span>xenon_131_000_0.0_DWS.mrc<span class="w"> </span>--glob<span class="w"> </span>xenon_131_000_0.0_DWS_cropped_4.mrc
+</code></pre></div>
+<p>Your project directory should now look like this:</p>
+<div class="highlight"><pre><span></span><code>leopardEM_intro/
+├── 60S_aligned.pdb
+├── xenon_131_000_0.0_DWS_cropped_4.mrc
+└── xenon_131_000_0.0_DWS.mrc
+</code></pre></div>
+<h4 id="inspecting-the-micrograph">Inspecting the micrograph</h4>
+<p>The micrograph of yeast cytoplasm contains ribosomes in various orientations and has typical features of cryo-EM data.
+Notably, the edge of the lamella is visible in the top right corner of the micrograph which we will revisit later in the tutorial for filtering purposes.</p>
+<p><img alt="Yeast lamella micrograph" src="../../static/match_template_intro_micrograph.png" /></p>
+<hr />
+<h2 id="step-1-reference-template-simulation">Step 1: Reference template simulation</h2>
+<p>Our objective is to generate a realistic 3D cyro-EM density map from the provided LSU PDB structure.
+This volume is needed for the 2D template match process.</p>
+<h3 id="template-simulation-process">Template simulation process</h3>
+<p>We will use the <a href="https://teamtomo.org"><strong>TeamTomo</strong></a> package <a href="https://github.com/teamtomo/ttsim3d"><code>ttsim3d</code></a> to simulate realistic cryo-EM conditions including:</p>
+<ul>
+<li><strong>Electron dose weighting</strong> - accounts for radiation damage during exposure</li>
+<li><strong>Modulation Transfer Function (MTF)</strong> - simulates detector response characteristics  </li>
+<li><strong>B-factor scaling</strong> - accounts for structural flexibility and motion blur</li>
+</ul>
+<!-- Leopard-EM includes `ttsim3d` when installed. -->
+<p>This simulation transforms our atomic PDB model into a realistic density map that matches what we expect to see in actual cryo-EM data.</p>
+<h3 id="python-script-for-template-simulation">Python script for template simulation</h3>
+<p>Create a new Python script <code>simulate_template.py</code> in your project directory with the following contents:</p>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">ttsim3d.models</span><span class="w"> </span><span class="kn">import</span> <span class="n">Simulator</span><span class="p">,</span> <span class="n">SimulatorConfig</span>
+
+<span class="c1"># Instantiate the configuration object</span>
+<span class="n">sim_conf</span> <span class="o">=</span> <span class="n">SimulatorConfig</span><span class="p">(</span>
+    <span class="n">voltage</span><span class="o">=</span><span class="mf">300.0</span><span class="p">,</span>  <span class="c1"># in keV</span>
+    <span class="n">apply_dose_weighting</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+    <span class="n">dose_start</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span>  <span class="c1"># in e-/A^2</span>
+    <span class="n">dose_end</span><span class="o">=</span><span class="mf">50.0</span><span class="p">,</span>  <span class="c1"># in e-/A^2</span>
+    <span class="n">dose_filter_modify_signal</span><span class="o">=</span><span class="s2">&quot;rel_diff&quot;</span><span class="p">,</span>
+    <span class="n">upsampling</span><span class="o">=-</span><span class="mi">1</span><span class="p">,</span>  <span class="c1"># auto</span>
+    <span class="n">mtf_reference</span><span class="o">=</span><span class="s2">&quot;falcon4EC_300kv&quot;</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="c1"># Instantiate the simulator</span>
+<span class="n">sim</span> <span class="o">=</span> <span class="n">Simulator</span><span class="p">(</span>
+    <span class="n">pdb_filepath</span><span class="o">=</span><span class="s2">&quot;60S_aligned.pdb&quot;</span><span class="p">,</span>
+    <span class="n">pixel_spacing</span><span class="o">=</span><span class="mf">0.95</span><span class="p">,</span>  <span class="c1"># Angstroms</span>
+    <span class="n">volume_shape</span><span class="o">=</span><span class="p">(</span><span class="mi">512</span><span class="p">,</span> <span class="mi">512</span><span class="p">,</span> <span class="mi">512</span><span class="p">),</span>
+    <span class="n">center_atoms</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+    <span class="n">remove_hydrogens</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+    <span class="n">b_factor_scaling</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span>
+    <span class="n">additional_b_factor</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+    <span class="n">simulator_config</span><span class="o">=</span><span class="n">sim_conf</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="c1"># Run the simulation and save to disk</span>
+<span class="n">mrc_filepath</span> <span class="o">=</span> <span class="s2">&quot;60S_map_px0.95_bscale0.5_intro.mrc&quot;</span>
+<span class="n">sim</span><span class="o">.</span><span class="n">export_to_mrc</span><span class="p">(</span><span class="n">mrc_filepath</span><span class="p">)</span>
+</code></pre></div>
+<p>Then, run the Python script:</p>
+<div class="highlight"><pre><span></span><code>python<span class="w"> </span>simulate_template.py
+</code></pre></div>
+<p>A new file should appear in your project directory.</p>
+<div class="highlight"><pre><span></span><code>leopardEM_intro/
+├── 60S_aligned.pdb
+├── 60S_map_px0.95_bscale0.5_intro.mrc  &lt;-- New
+├── simulate_template.py
+├── xenon_131_000_0.0_DWS_cropped_4.mrc
+└── xenon_131_000_0.0_DWS.mrc
+</code></pre></div>
+<hr />
+<h2 id="step-2-initial-template-matching-process">Step 2: Initial template matching process</h2>
+<p>During the initial template matching process, we begin by performing a test run on a smaller region of the image rather than the entire micrograph.
+This approach helps us validate that our program is functioning as expected and the high-confidence peaks identified in this initial search can be used for further optimization, such as pixel size, before processing many micrographs.</p>
+<p>Cropping the micrograph to its central region and reducing its size by a factor of four in each dimension (4,096 --&gt; 1,024 pixels) makes this initial search much faster thus making the optimization and debugging steps much faster.</p>
+<h3 id="optional-crop-the-micrograph-to-smaller-size">(Optional) Crop the micrograph to smaller size</h3>
+<p>The cropped micrograph <code>xenon_131_000_0.0_DWS_cropped_4.mrc</code> should already be downloaded in your project directory, but for completeness, here is a Python script that performs the cropping:</p>
+<details class="info">
+<summary>Micrograph cropping script</summary>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">mrcfile</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+
+<span class="c1"># Crop center of micrograph by division factor</span>
+<span class="n">INPUT_FILE</span> <span class="o">=</span> <span class="s2">&quot;xenon_131_000_0.0_DWS.mrc&quot;</span>
+<span class="n">DIVISION_FACTOR</span> <span class="o">=</span> <span class="mi">4</span>
+
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
+    <span class="k">with</span> <span class="n">mrcfile</span><span class="o">.</span><span class="n">open</span><span class="p">(</span><span class="n">INPUT_FILE</span><span class="p">,</span> <span class="n">permissive</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span> <span class="k">as</span> <span class="n">mrc</span><span class="p">:</span>
+        <span class="n">data</span> <span class="o">=</span> <span class="n">mrc</span><span class="o">.</span><span class="n">data</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">mrc</span><span class="o">.</span><span class="n">data</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mi">2</span> <span class="k">else</span> <span class="n">mrc</span><span class="o">.</span><span class="n">data</span>
+
+        <span class="c1"># Crop square in center of image</span>
+        <span class="n">h</span><span class="p">,</span> <span class="n">w</span> <span class="o">=</span> <span class="n">data</span><span class="o">.</span><span class="n">shape</span>
+        <span class="n">new_h</span><span class="p">,</span> <span class="n">new_w</span> <span class="o">=</span> <span class="n">h</span> <span class="o">//</span> <span class="n">DIVISION_FACTOR</span><span class="p">,</span> <span class="n">w</span> <span class="o">//</span> <span class="n">DIVISION_FACTOR</span>
+        <span class="n">start_h</span><span class="p">,</span> <span class="n">start_w</span> <span class="o">=</span> <span class="n">h</span> <span class="o">//</span> <span class="mi">2</span> <span class="o">-</span> <span class="n">new_h</span> <span class="o">//</span> <span class="mi">2</span><span class="p">,</span> <span class="n">w</span> <span class="o">//</span> <span class="mi">2</span> <span class="o">-</span> <span class="n">new_w</span> <span class="o">//</span> <span class="mi">2</span>
+
+        <span class="n">cropped</span> <span class="o">=</span> <span class="n">data</span><span class="p">[</span><span class="n">start_h</span><span class="p">:</span><span class="n">start_h</span> <span class="o">+</span> <span class="n">new_h</span><span class="p">,</span> <span class="n">start_w</span><span class="p">:</span><span class="n">start_w</span> <span class="o">+</span> <span class="n">new_w</span><span class="p">]</span>
+
+    <span class="c1"># Save cropped image</span>
+    <span class="n">output_file</span> <span class="o">=</span> <span class="n">INPUT_FILE</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">&quot;.mrc&quot;</span><span class="p">,</span> <span class="sa">f</span><span class="s2">&quot;_cropped_</span><span class="si">{</span><span class="n">DIVISION_FACTOR</span><span class="si">}</span><span class="s2">.mrc&quot;</span><span class="p">)</span>
+    <span class="k">with</span> <span class="n">mrcfile</span><span class="o">.</span><span class="n">new</span><span class="p">(</span><span class="n">output_file</span><span class="p">,</span> <span class="n">overwrite</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span> <span class="k">as</span> <span class="n">mrc_new</span><span class="p">:</span>
+        <span class="n">mrc_new</span><span class="o">.</span><span class="n">set_data</span><span class="p">(</span><span class="n">cropped</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">))</span>
+
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Cropped </span><span class="si">{</span><span class="n">data</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2"> to </span><span class="si">{</span><span class="n">cropped</span><span class="o">.</span><span class="n">shape</span><span class="si">}</span><span class="s2"> -&gt; </span><span class="si">{</span><span class="n">output_file</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</code></pre></div>
+</details>
+<h3 id="configure-the-template-matching-run">Configure the template matching run</h3>
+<p>Now we'll set up template matching run on the cropped image.
+We use a YAML configuration file to organize all the parameters in a clean, readable format rather than specifying them directly in Python code or passing them as command line arguments. Some benefits of using configuration files over large numbers of command line arguments are:</p>
+<ul>
+<li><strong>Reproducibility</strong> - exact parameters are saved and can be shared</li>
+<li><strong>Clarity</strong> - all settings are visible and easy to modify</li>
+<li><strong>Organization</strong> - complex parameter sets are well-structured</li>
+</ul>
+<p>Example YAML configurations for all programs can be found under the <code>programs/</code> directory on the GitHub page, and detailed documentation for each program is available on the <a href="../../programs/overview/">Program Documentation Overview</a> page.
+The template matching configuration for this tutorial is shown below; copy its contents into a new file <code>match_template_config_crop_intro.yaml</code>.</p>
+<div class="admonition note">
+<p class="admonition-title">CTF estimations for match template</p>
+<p>Defocus estimations per micrograph are necessary for running 2DTM, and we have previously run <a href="https://doi.org/10.7554/eLife.97227.3">CTFFIND5</a> to obtain the <code>optics_group.astigmatism_angle</code>, <code>optics_group.defocus_u</code>, and <code>optics_group.defocus_v</code> parameters.
+Using a different micrograph with this tutorial will require you to replace these values (along with any other optics changes) in the configuration file.</p>
+</div>
+<div class="highlight"><pre><span></span><code><span class="nt">micrograph_path</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">xenon_131_000_0.0_DWS_cropped_4.mrc</span>
+<span class="nt">template_volume_path</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">60S_map_px0.95_bscale0.5_intro.mrc</span>
+<span class="nt">computational_config</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">gpu_ids</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;all&quot;</span><span class="w">  </span><span class="c1"># Use all available GPUs</span>
+<span class="w">  </span><span class="nt">num_cpus</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">4</span><span class="w">     </span><span class="c1"># 4 CPUs per GPU</span>
+<span class="nt">defocus_search_config</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">  </span><span class="nt">defocus_max</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1200.0</span>
+<span class="w">  </span><span class="nt">defocus_min</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">-1200.0</span>
+<span class="w">  </span><span class="nt">defocus_step</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">200.0</span>
+<span class="nt">match_template_result</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">allow_file_overwrite</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">  </span><span class="nt">correlation_average_path</span><span class="p">:</span><span class="w">  </span><span class="l l-Scalar l-Scalar-Plain">cropped_correlation_average_intro.mrc</span>
+<span class="w">  </span><span class="nt">correlation_variance_path</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">cropped_correlation_variance_intro.mrc</span>
+<span class="w">  </span><span class="nt">mip_path</span><span class="p">:</span><span class="w">                  </span><span class="l l-Scalar l-Scalar-Plain">cropped_mip_intro.mrc</span>
+<span class="w">  </span><span class="nt">orientation_phi_path</span><span class="p">:</span><span class="w">      </span><span class="l l-Scalar l-Scalar-Plain">cropped_orientation_phi_intro.mrc</span>
+<span class="w">  </span><span class="nt">orientation_psi_path</span><span class="p">:</span><span class="w">      </span><span class="l l-Scalar l-Scalar-Plain">cropped_orientation_psi_intro.mrc</span>
+<span class="w">  </span><span class="nt">orientation_theta_path</span><span class="p">:</span><span class="w">    </span><span class="l l-Scalar l-Scalar-Plain">cropped_orientation_theta_intro.mrc</span>
+<span class="w">  </span><span class="nt">relative_defocus_path</span><span class="p">:</span><span class="w">     </span><span class="l l-Scalar l-Scalar-Plain">cropped_relative_defocus_intro.mrc</span>
+<span class="w">  </span><span class="nt">scaled_mip_path</span><span class="p">:</span><span class="w">           </span><span class="l l-Scalar l-Scalar-Plain">cropped_scaled_mip_intro.mrc</span>
+<span class="nt">optics_group</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">label</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">micrograph_1</span>
+<span class="w">  </span><span class="nt">amplitude_contrast_ratio</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.07</span>
+<span class="w">  </span><span class="nt">ctf_B_factor</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.0</span>
+<span class="w">  </span><span class="nt">astigmatism_angle</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">39.417260</span>
+<span class="w">  </span><span class="nt">defocus_u</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5978.758301</span>
+<span class="w">  </span><span class="nt">defocus_v</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5617.462402</span>
+<span class="w">  </span><span class="nt">phase_shift</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.0</span>
+<span class="w">  </span><span class="nt">pixel_size</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.95</span>
+<span class="w">  </span><span class="nt">spherical_aberration</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2.7</span>
+<span class="w">  </span><span class="nt">voltage</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">300.0</span>
+<span class="nt">orientation_search_config</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">base_grid_method</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">uniform</span>
+<span class="w">  </span><span class="nt">psi_step</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1.5</span><span class="w">    </span><span class="c1"># in degrees</span>
+<span class="w">  </span><span class="nt">theta_step</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2.5</span><span class="w">  </span><span class="c1"># in degrees</span>
+<span class="nt">preprocessing_filters</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">whitening_filter</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">    </span><span class="nt">do_power_spectrum</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">    </span><span class="nt">max_freq</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1.0</span>
+</code></pre></div>
+<p>In terms of configuration, that's it!
+We can move onto running the <code>match_template</code> program.</p>
+<h3 id="running-template-matching">Running template matching</h3>
+<p>Now, we move onto executing the template matching program based on the blueprint <a href="https://github.com/Lucaslab-Berkeley/Leopard-EM/blob/main/programs/match_template/run_match_template.py"><code>run_match_template.py</code></a> script.
+Create a new file <code>run_match_template.py</code> in your project directory with the following contents:</p>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">leopard_em.pydantic_models.managers</span><span class="w"> </span><span class="kn">import</span> <span class="n">MatchTemplateManager</span>
+
+<span class="n">YAML_CONFIG_PATH</span> <span class="o">=</span> <span class="s2">&quot;match_template_config_crop_intro.yaml&quot;</span>
+<span class="n">ORIENTATION_BATCH_SIZE</span> <span class="o">=</span> <span class="mi">8</span>  <span class="c1"># larger values may run faster</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">():</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Main function to run the match template program.&quot;&quot;&quot;</span>
+    <span class="n">mt_manager</span> <span class="o">=</span> <span class="n">MatchTemplateManager</span><span class="o">.</span><span class="n">from_yaml</span><span class="p">(</span><span class="n">YAML_CONFIG_PATH</span><span class="p">)</span>
+    <span class="n">mt_manager</span><span class="o">.</span><span class="n">run_match_template</span><span class="p">(</span><span class="n">ORIENTATION_BATCH_SIZE</span><span class="p">)</span>
+    <span class="n">df</span> <span class="o">=</span> <span class="n">mt_manager</span><span class="o">.</span><span class="n">results_to_dataframe</span><span class="p">(</span><span class="n">locate_peaks_kwargs</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;false_positives&quot;</span><span class="p">:</span> <span class="mf">1.0</span><span class="p">})</span>
+    <span class="n">df</span><span class="o">.</span><span class="n">to_csv</span><span class="p">(</span><span class="s2">&quot;results_match_template_crop_intro.csv&quot;</span><span class="p">)</span>
+
+
+<span class="c1"># NOTE: invoking from `if __name__ == &quot;__main__&quot;` is necessary</span>
+<span class="c1"># for proper multiprocessing/GPU-distribution behavior</span>
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
+    <span class="n">main</span><span class="p">()</span>
+</code></pre></div>
+<p>Now, run the script:</p>
+<div class="highlight"><pre><span></span><code>python<span class="w"> </span>run_match_template.py
+</code></pre></div>
+<p>After the program completes, a new CSV file along with several output MRC files should appear in the <code>results/</code> directory.
+Looking at the results CSV file, we've found <strong>14 peaks above the statistical threshold</strong>.
+While this is a modest number for the cropped region, these high-confidence detections provide valuable data for optimizing our template parameters.</p>
+<div class="highlight"><pre><span></span><code>leopardEM_intro/
+├── 60S_aligned.pdb
+├── 60S_map_px0.95_bscale0.5_intro.mrc
+├── cropped_correlation_average_intro.mrc   &lt;-- New
+├── cropped_correlation_variance_intro.mrc  &lt;-- New
+├── cropped_mip_intro.mrc                   &lt;-- New
+├── cropped_orientation_phi_intro.mrc       &lt;-- New
+├── cropped_orientation_psi_intro.mrc       &lt;-- New
+├── cropped_orientation_theta_intro.mrc     &lt;-- New
+├── cropped_relative_defocus_intro.mrc      &lt;-- New
+├── cropped_scaled_mip_intro.mrc            &lt;-- New
+├── match_template_config_crop_intro.yaml
+├── results_match_template_crop_intro.csv   &lt;-- New
+├── run_match_template.py
+├── simulate_template.py
+├── xenon_131_000_0.0_DWS.mrc
+└── xenon_131_000_0.0_DWS_cropped_4.mrc
+</code></pre></div>
+<hr />
+<h2 id="step-3-template-optimization">Step 3: Template optimization</h2>
+<p>Using the initial template matching results, we optimize critical parameters to improve 2DTM detections and sensitivity.
+Even small errors in parameters can significantly reduce 2DTM sensitivity.
+The most critical parameter to optimize is the pixel size used for template simulation, and the <code>optimize_template</code> program iteratively refines the pixel size.</p>
+<details class="note">
+<summary>Template optimization good practices</summary>
+<p>The common sources of pixel size errors are:</p>
+<ul>
+<li>PDB models built with incorrect pixel size calibration (±1-3% for cryo-EM maps)</li>
+<li>Inaccurate microscope magnification calibration</li>
+</ul>
+<p>Even small misalignments in the relative pixel size between the micrograph and model structure used for 2DTM can cause ~10-20% decrease in sensitivity.
+We <em>highly</em> recommend re-running this pixel size optimization procedure for each new combination of template structure and dataset.
+Who knows, you may find more peaks with higher confidences!</p>
+</details>
+<h3 id="optimize-template-configuration">Optimize template configuration</h3>
+<p>Let's create the optimization configuration (create <code>optimize_template_config_intro.yaml</code> in your project directory).</p>
+<div class="highlight"><pre><span></span><code><span class="nt">particle_stack</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">df_path</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">results_match_template_crop_intro.csv</span>
+<span class="w">  </span><span class="nt">extracted_box_size</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">528</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">528</span><span class="p p-Indicator">]</span>
+<span class="w">  </span><span class="nt">original_template_size</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">512</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">512</span><span class="p p-Indicator">]</span>
+<span class="nt">pixel_size_coarse_search</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">  </span><span class="nt">pixel_size_min</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">-0.05</span>
+<span class="w">  </span><span class="nt">pixel_size_max</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.05</span>
+<span class="w">  </span><span class="nt">pixel_size_step</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.01</span>
+<span class="nt">pixel_size_fine_search</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">  </span><span class="nt">pixel_size_min</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">-0.008</span>
+<span class="w">  </span><span class="nt">pixel_size_max</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.008</span>
+<span class="w">  </span><span class="nt">pixel_size_step</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.001</span>
+<span class="nt">preprocessing_filters</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">whitening_filter</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">do_power_spectrum</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">    </span><span class="nt">max_freq</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1.0</span>
+<span class="w">    </span><span class="nt">num_freq_bins</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">null</span>
+<span class="nt">computational_config</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">gpu_ids</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0</span>
+<span class="w">  </span><span class="nt">num_cpus</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2</span>
+<span class="nt">simulator</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">simulator_config</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">voltage</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">300.0</span>
+<span class="w">    </span><span class="nt">apply_dose_weighting</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">    </span><span class="nt">dose_start</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.0</span>
+<span class="w">    </span><span class="nt">dose_end</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">50.0</span>
+<span class="w">    </span><span class="nt">dose_filter_modify_signal</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;rel_diff&quot;</span>
+<span class="w">    </span><span class="nt">upsampling</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">-1</span><span class="w">  </span>
+<span class="w">    </span><span class="nt">mtf_reference</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;falcon4EC_300kv&quot;</span>
+<span class="w">  </span><span class="nt">pdb_filepath</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;60S_aligned.pdb&quot;</span>
+<span class="w">  </span><span class="nt">volume_shape</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">512</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">512</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">512</span><span class="p p-Indicator">]</span>
+<span class="w">  </span><span class="nt">b_factor_scaling</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.5</span>
+<span class="w">  </span><span class="nt">additional_b_factor</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0</span>
+<span class="w">  </span><span class="nt">pixel_spacing</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.95</span>
+<span class="w">  </span><span class="nt">center_atoms</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">  </span><span class="nt">remove_hydrogens</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</code></pre></div>
+<h3 id="running-the-optimize-template-program">Running the optimize template program</h3>
+<p>The <code>optimize_template</code> program is executed in much the same way as the <code>match_template</code> program.
+Create a new Python script <code>run_optimize_template.py</code> with the following contents</p>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">leopard_em.pydantic_models.managers</span><span class="w"> </span><span class="kn">import</span> <span class="n">OptimizeTemplateManager</span>
+
+<span class="n">OPTIMIZE_YAML_PATH</span> <span class="o">=</span> <span class="s2">&quot;optimize_template_config_intro.yaml&quot;</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Main function to run the optimize template program.&quot;&quot;&quot;</span>
+    <span class="n">otm</span> <span class="o">=</span> <span class="n">OptimizeTemplateManager</span><span class="o">.</span><span class="n">from_yaml</span><span class="p">(</span><span class="n">OPTIMIZE_YAML_PATH</span><span class="p">)</span>
+    <span class="n">otm</span><span class="o">.</span><span class="n">run_optimize_template</span><span class="p">(</span>
+        <span class="n">output_text_path</span><span class="o">=</span><span class="s2">&quot;optimize_template_results_intro.txt&quot;</span>
+    <span class="p">)</span>
+
+
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
+    <span class="n">main</span><span class="p">()</span>
+</code></pre></div>
+<p>Then again run the script.</p>
+<div class="highlight"><pre><span></span><code>python<span class="w"> </span>run_optimize_template.py
+</code></pre></div>
+<h3 id="optimization-results">Optimization results</h3>
+<p>Inspecting the new results file <code>optimize_template_results_intro.txt</code> we see the pixel size optimization determined that <strong>0.936 Å/pixel</strong> provides the best match to our experimental data (results may vary by ±0.002 Å).
+This represents a ~1.5% correction from our initial estimate of 0.95 Å/pixel - a small but important improvement.</p>
+<h3 id="re-generating-optimized-templates">Re-generating Optimized Templates</h3>
+<p>Now we'll regenerate our 60S template using the optimized pixel size.
+This updated template should provide better correlation scores and more reliable particle detection in the full template matching run.</p>
+<p>Create a new file <code>simulate_optimized_template.py</code> and run it like before.</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Re-simulate 60S map with optimized pixel size</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">ttsim3d.models</span><span class="w"> </span><span class="kn">import</span> <span class="n">Simulator</span><span class="p">,</span> <span class="n">SimulatorConfig</span>
+
+<span class="c1"># Instantiate the configuration object</span>
+<span class="n">sim_conf</span> <span class="o">=</span> <span class="n">SimulatorConfig</span><span class="p">(</span>
+    <span class="n">voltage</span><span class="o">=</span><span class="mf">300.0</span><span class="p">,</span>  <span class="c1"># in keV</span>
+    <span class="n">apply_dose_weighting</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+    <span class="n">dose_start</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span>  <span class="c1"># in e-/A^2</span>
+    <span class="n">dose_end</span><span class="o">=</span><span class="mf">50.0</span><span class="p">,</span>  <span class="c1"># in e-/A^2</span>
+    <span class="n">dose_filter_modify_signal</span><span class="o">=</span><span class="s2">&quot;rel_diff&quot;</span><span class="p">,</span>
+    <span class="n">upsampling</span><span class="o">=-</span><span class="mi">1</span><span class="p">,</span>  <span class="c1"># auto</span>
+    <span class="n">mtf_reference</span><span class="o">=</span><span class="s2">&quot;falcon4EC_300kv&quot;</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="c1"># Instantiate the simulator for 60S</span>
+<span class="n">sim</span> <span class="o">=</span> <span class="n">Simulator</span><span class="p">(</span>
+    <span class="n">pdb_filepath</span><span class="o">=</span><span class="s2">&quot;60S_aligned.pdb&quot;</span><span class="p">,</span>
+    <span class="n">pixel_spacing</span><span class="o">=</span><span class="mf">0.936</span><span class="p">,</span>  <span class="c1"># Optimized (Angstroms)</span>
+    <span class="n">volume_shape</span><span class="o">=</span><span class="p">(</span><span class="mi">512</span><span class="p">,</span> <span class="mi">512</span><span class="p">,</span> <span class="mi">512</span><span class="p">),</span>
+    <span class="n">center_atoms</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+    <span class="n">remove_hydrogens</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+    <span class="n">b_factor_scaling</span><span class="o">=</span><span class="mf">0.5</span><span class="p">,</span>
+    <span class="n">additional_b_factor</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span>
+    <span class="n">simulator_config</span><span class="o">=</span><span class="n">sim_conf</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="c1"># Run the simulation</span>
+<span class="n">mrc_filepath</span> <span class="o">=</span> <span class="s2">&quot;60S_map_px0.936_bscale0.5_intro.mrc&quot;</span>
+<span class="n">sim</span><span class="o">.</span><span class="n">export_to_mrc</span><span class="p">(</span><span class="n">mrc_filepath</span><span class="p">)</span>
+</code></pre></div>
+<p>We will now use the new <code>60S_map_px0.936_bscale0.5_intro.mrc</code> template in the full template matching process.</p>
+<hr />
+<h2 id="step-4-full-template-matching-run">Step 4: Full template matching run</h2>
+<p>With our optimized 60S template in hand, we're ready to move on to running template matching on the entire micrograph to locate and orient 60S ribosomes within our image.
+The full search is computationally intensive taking ~8 hours on an RTX A6000 ada GPU and parallelizes across multi-GPU systems.</p>
+<h3 id="full-match-template-configuration">Full match template configuration</h3>
+<p>The full match template configuration is is nearly identical to the previous cropped configuration, but this time we point it towards the full 4k by 4k micrograph.
+Create a new file <code>match_template_config_60S_intro.yaml</code> with the following contents.</p>
+<div class="highlight"><pre><span></span><code><span class="nt">micrograph_path</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">xenon_131_000_0.0_DWS.mrc</span>
+<span class="nt">template_volume_path</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">60S_map_px0.936_bscale0.5_intro.mrc</span>
+<span class="nt">computational_config</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">gpu_ids</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;all&quot;</span><span class="w">  </span><span class="c1"># Use all available GPUs</span>
+<span class="w">  </span><span class="nt">num_cpus</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">4</span><span class="w">     </span><span class="c1"># 4 CPUs per GPU</span>
+<span class="nt">defocus_search_config</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">  </span><span class="nt">defocus_max</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1200.0</span>
+<span class="w">  </span><span class="nt">defocus_min</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">-1200.0</span>
+<span class="w">  </span><span class="nt">defocus_step</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">200.0</span>
+<span class="nt">match_template_result</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">allow_file_overwrite</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">  </span><span class="nt">correlation_average_path</span><span class="p">:</span><span class="w">  </span><span class="l l-Scalar l-Scalar-Plain">output_correlation_average_intro.mrc</span>
+<span class="w">  </span><span class="nt">correlation_variance_path</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">output_correlation_variance_intro.mrc</span>
+<span class="w">  </span><span class="nt">mip_path</span><span class="p">:</span><span class="w">                  </span><span class="l l-Scalar l-Scalar-Plain">output_mip_intro.mrc</span>
+<span class="w">  </span><span class="nt">orientation_phi_path</span><span class="p">:</span><span class="w">      </span><span class="l l-Scalar l-Scalar-Plain">output_orientation_phi_intro.mrc</span>
+<span class="w">  </span><span class="nt">orientation_psi_path</span><span class="p">:</span><span class="w">      </span><span class="l l-Scalar l-Scalar-Plain">output_orientation_psi_intro.mrc</span>
+<span class="w">  </span><span class="nt">orientation_theta_path</span><span class="p">:</span><span class="w">    </span><span class="l l-Scalar l-Scalar-Plain">output_orientation_theta_intro.mrc</span>
+<span class="w">  </span><span class="nt">relative_defocus_path</span><span class="p">:</span><span class="w">     </span><span class="l l-Scalar l-Scalar-Plain">output_relative_defocus_intro.mrc</span>
+<span class="w">  </span><span class="nt">scaled_mip_path</span><span class="p">:</span><span class="w">           </span><span class="l l-Scalar l-Scalar-Plain">output_scaled_mip_intro.mrc</span>
+<span class="nt">optics_group</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">label</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">micrograph_1</span>
+<span class="w">  </span><span class="nt">amplitude_contrast_ratio</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.07</span>
+<span class="w">  </span><span class="nt">ctf_B_factor</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.0</span>
+<span class="w">  </span><span class="nt">astigmatism_angle</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">39.417260</span>
+<span class="w">  </span><span class="nt">defocus_u</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5978.758301</span>
+<span class="w">  </span><span class="nt">defocus_v</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5617.462402</span>
+<span class="w">  </span><span class="nt">phase_shift</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.0</span>
+<span class="w">  </span><span class="nt">pixel_size</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">0.936</span><span class="w">  </span><span class="c1"># Optimized pixel size</span>
+<span class="w">  </span><span class="nt">spherical_aberration</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2.7</span>
+<span class="w">  </span><span class="nt">voltage</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">300.0</span>
+<span class="nt">orientation_search_config</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">base_grid_method</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">uniform</span>
+<span class="w">  </span><span class="nt">psi_step</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1.5</span><span class="w">    </span><span class="c1"># in degrees</span>
+<span class="w">  </span><span class="nt">theta_step</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2.5</span><span class="w">  </span><span class="c1"># in degrees</span>
+<span class="nt">preprocessing_filters</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">whitening_filter</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">    </span><span class="nt">do_power_spectrum</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">    </span><span class="nt">max_freq</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1.0</span>
+</code></pre></div>
+<h3 id="running-the-search">Running the search</h3>
+<p>We will use the same <code>run_match_template.py</code> file, but we need to update which YAML configuration file the script reads and the output CSV file.
+Change the following lines in the script</p>
+<div class="highlight"><pre><span></span><code><span class="n">YAML_CONFIG_PATH</span> <span class="o">=</span> <span class="s2">&quot;match_template_config_60S_intro.yaml&quot;</span>  <span class="c1"># line 3</span>
+<span class="o">...</span>
+<span class="n">df</span><span class="o">.</span><span class="n">to_csv</span><span class="p">(</span><span class="s2">&quot;results/results_match_template_60S_intro.csv&quot;</span><span class="p">)</span>  <span class="c1"># line 12</span>
+</code></pre></div>
+<p>and run the Python script again</p>
+<div class="highlight"><pre><span></span><code>python<span class="w"> </span>run_match_template.py
+</code></pre></div>
+<details class="warning">
+<summary>Encountering CUDA Out of Memory Error</summary>
+<p>On GPUs with lower amounts of VRAM, you may encounter an out-of-memory error.
+Decrease the batch size to a lower value (e.g., <code>ORIENTATION_BATCH_SIZE = 4</code>) and try re-running the script.</p>
+</details>
+<h3 id="results">Results</h3>
+<p>Excellent!
+Once the template matching process finishes, there should be the following new files in the project directory.</p>
+<div class="highlight"><pre><span></span><code>leopardEM_intro/
+60S_aligned.pdb
+...
+output_correlation_average_intro.mrc    &lt;-- New
+output_correlation_variance_intro.mrc   &lt;-- New
+output_mip_intro.mrc                    &lt;-- New
+output_orientation_phi_intro.mrc        &lt;-- New
+output_orientation_psi_intro.mrc        &lt;-- New
+output_orientation_theta_intro.mrc      &lt;-- New
+output_relative_defocus_intro.mrc       &lt;-- New
+output_scaled_mip_intro.mrc             &lt;-- New
+results_match_template_60S_intro.csv    &lt;-- New
+results_match_template_crop_intro.csv
+run_match_template.py
+...
+xenon_131_000_0.0_DWS.mrc
+</code></pre></div>
+<p>Their exact contents and visualizing the results are discussed elsewhere in the documentation, and what we're most interested in is the <code>results/results_match_template_60S_intro.csv</code> file which contains all the information about our <strong>407 identified peaks above the statistical threshold</strong>.</p>
+<h2 id="step-5-quality-control-and-filtering-micrograph-edge-artifact">Step 5: Quality control and filtering (micrograph edge artifact)</h2>
+<p>Re-referencing the micrograph, we can clearly see the lamella edge is visible in the top-right corner.</p>
+<p>This region causes spurious correlations because of <strong>low correlation variance</strong> in dark regions which artificially inflates z-scores.</p>
+<h3 id="identified-peak-distribution-in-x-y">Identified peak distribution in x-y</h3>
+<p>Looking at the distribution of identified peaks from the 2DTM search (below), we can see a large concentration of peaks in this dark lamella edge.</p>
+<p><img alt="Distribution of identified peaks in the micrograph" src="../../static/match_template_intro_all_locations.png" /></p>
+<p><strong>For this tutorial</strong> we take a very simple approach by filtering peaks based both on the MIP (maximum intensity projection) and z-score values which removes these peaks with extremely low variance.
+We apply a filter that remove any particles where their correlation variance is less than <script type="math/tex"> 0.925 </script>.
+The normalization process for the approximately spherical 60S ribosome means the correlation variance should be around <script type="math/tex"> 1.0 </script> for real particles, and this is a reasonable cutoff for demonstration purposes.</p>
+<div class="admonition caution">
+<p class="admonition-title">Other approaches to deal with micrograph artifacts</p>
+<p>The approach we're taking works well <strong>for this case</strong> and there are many other approaches to deal with quality control for a variety of micrograph artifacts (e.g., ice contamination). Some other easy approaches, each with their own advantages and disadvantages, include:</p>
+<ol>
+<li>Cropping micrographs to exclude regions with artifacts.</li>
+<li>Masking/filtering results based on visual inspection.</li>
+<li>Replacing artifacts with noise before the 2DTM process.</li>
+</ol>
+<p>Leopard-EM focuses on providing an efficient and reproducible 2DTM algorithm.
+For this reason, we leave any pre- or post-processing methods in the hands of the user.</p>
+</div>
+<h3 id="particle-filtering-script-using-pandas">Particle filtering script using Pandas</h3>
+<p>2DTM information is tabulated on a par-particle bases in a csv file, and we use Pandas to filter the results as discussed above in the following Python script.
+Copy the following into a new file <code>filter_particles.py</code> and run it.</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">leopard_em.analysis.zscore_metric</span><span class="w"> </span><span class="kn">import</span> <span class="n">gaussian_noise_zscore_cutoff</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">():</span>
+    <span class="n">df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">read_csv</span><span class="p">(</span><span class="s2">&quot;results_match_template_60S_intro.csv&quot;</span><span class="p">)</span>
+
+    <span class="c1"># remove rows with low correlation variance</span>
+    <span class="n">filtered_df</span> <span class="o">=</span> <span class="n">df</span><span class="p">[</span><span class="n">df</span><span class="p">[</span><span class="s2">&quot;correlation_variance&quot;</span><span class="p">]</span> <span class="o">&gt;=</span> <span class="mf">0.925</span><span class="p">]</span>
+
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Original number of particles: </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">df</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Filtered number of particles: </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">filtered_df</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+
+    <span class="n">filtered_df</span><span class="o">.</span><span class="n">to_csv</span><span class="p">(</span><span class="s2">&quot;results_match_template_60S_edit_intro.csv&quot;</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
+    <span class="n">main</span><span class="p">()</span>
+</code></pre></div>
+<p>We now have a filtered results CSV file <code>results_match_template_60S_edit_intro.csv</code> with <strong>374 particles</strong>, and we can see new distribution of found peaks below.</p>
+<p><img alt="Distribution of filtered peaks in the micrograph" src="../../static/match_template_intro_filtered_locations.png" /></p>
+<details class="info">
+<summary>Python script for generating above plot images</summary>
+<p>The following is a very simple plotting script using matplotlib to visualize the distribution of particles before and after filtering. Note, you may need to install matplotlib via <code>pip install matplotlib</code> before running the script.</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">mrcfile</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">matplotlib.pyplot</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">plt</span>
+
+<span class="c1"># Load data</span>
+<span class="n">img</span> <span class="o">=</span> <span class="n">mrcfile</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="s2">&quot;xenon_131_000_0.0_DWS.mrc&quot;</span><span class="p">)</span>
+<span class="n">df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">read_csv</span><span class="p">(</span><span class="s2">&quot;results_match_template_60S_intro.csv&quot;</span><span class="p">)</span>
+<span class="n">df_filtered</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">read_csv</span><span class="p">(</span><span class="s2">&quot;results_match_template_60S_edit_intro.csv&quot;</span><span class="p">)</span>
+
+<span class="c1"># Plot 1: Only unfiltered data</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">figure</span><span class="p">(</span><span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">8</span><span class="p">,</span> <span class="mi">8</span><span class="p">))</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">imshow</span><span class="p">(</span><span class="n">img</span><span class="p">,</span> <span class="n">cmap</span><span class="o">=</span><span class="s2">&quot;gray&quot;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">scatter</span><span class="p">(</span>
+    <span class="n">df</span><span class="p">[</span><span class="s2">&quot;pos_x_img&quot;</span><span class="p">],</span> <span class="n">df</span><span class="p">[</span><span class="s2">&quot;pos_y_img&quot;</span><span class="p">],</span> <span class="n">c</span><span class="o">=</span><span class="s2">&quot;red&quot;</span><span class="p">,</span> <span class="n">s</span><span class="o">=</span><span class="mi">30</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s2">&quot;All&quot;</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.4</span><span class="p">,</span> <span class="n">marker</span><span class="o">=</span><span class="s2">&quot;x&quot;</span>
+<span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">axis</span><span class="p">(</span><span class="s2">&quot;off&quot;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">legend</span><span class="p">()</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">savefig</span><span class="p">(</span><span class="s2">&quot;match_template_intro_all_locations.png&quot;</span><span class="p">,</span> <span class="n">dpi</span><span class="o">=</span><span class="mi">200</span><span class="p">,</span> <span class="n">bbox_inches</span><span class="o">=</span><span class="s2">&quot;tight&quot;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+
+<span class="c1"># Plot 2: Both filtered and unfiltered data</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">figure</span><span class="p">(</span><span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">8</span><span class="p">,</span> <span class="mi">8</span><span class="p">))</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">imshow</span><span class="p">(</span><span class="n">img</span><span class="p">,</span> <span class="n">cmap</span><span class="o">=</span><span class="s2">&quot;gray&quot;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">scatter</span><span class="p">(</span>
+    <span class="n">df</span><span class="p">[</span><span class="s2">&quot;pos_x_img&quot;</span><span class="p">],</span> <span class="n">df</span><span class="p">[</span><span class="s2">&quot;pos_y_img&quot;</span><span class="p">],</span> <span class="n">c</span><span class="o">=</span><span class="s2">&quot;red&quot;</span><span class="p">,</span> <span class="n">s</span><span class="o">=</span><span class="mi">30</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s2">&quot;All&quot;</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.4</span><span class="p">,</span> <span class="n">marker</span><span class="o">=</span><span class="s2">&quot;x&quot;</span>
+<span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">scatter</span><span class="p">(</span>
+    <span class="n">df_filtered</span><span class="p">[</span><span class="s2">&quot;pos_x_img&quot;</span><span class="p">],</span>
+    <span class="n">df_filtered</span><span class="p">[</span><span class="s2">&quot;pos_y_img&quot;</span><span class="p">],</span>
+    <span class="n">c</span><span class="o">=</span><span class="s2">&quot;blue&quot;</span><span class="p">,</span>
+    <span class="n">s</span><span class="o">=</span><span class="mi">30</span><span class="p">,</span>
+    <span class="n">marker</span><span class="o">=</span><span class="s2">&quot;o&quot;</span><span class="p">,</span>
+    <span class="n">label</span><span class="o">=</span><span class="s2">&quot;Filtered&quot;</span><span class="p">,</span>
+    <span class="n">alpha</span><span class="o">=</span><span class="mf">0.4</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">axis</span><span class="p">(</span><span class="s2">&quot;off&quot;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">legend</span><span class="p">()</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">savefig</span><span class="p">(</span><span class="s2">&quot;match_template_intro_filtered_locations.png&quot;</span><span class="p">,</span> <span class="n">dpi</span><span class="o">=</span><span class="mi">200</span><span class="p">,</span> <span class="n">bbox_inches</span><span class="o">=</span><span class="s2">&quot;tight&quot;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Plots saved successfully!&quot;</span><span class="p">)</span>
+</code></pre></div>
+</details>
+<hr />
+<h2 id="step-6-template-refinement">Step 6: Template refinement</h2>
+<p>Our objective now is to improve the accuracy of particle location and orientation estimates through local refinement.
+This is accomplished using the <code>refine_template</code> program which performs a local search around the initial estimates from <code>match_template</code>.
+Key difference between <code>match_template</code> and <code>refine_template</code> are:</p>
+<ul>
+<li><code>match_template</code> performs a global search over the entire micrograph and orientation space which is computationally expensive.</li>
+<li><code>refine_template</code> performs a local search around known particles with finer angular and defocus sampling. Local searches are much faster.</li>
+</ul>
+<h3 id="refinement-configuration">Refinement configuration</h3>
+<p>At its most basic, the refinement configuration tells the program where particles are located in the micrograph, how to extract their particle images, and what orientation and defocus values to sample locally.
+Our original template volume produces projections of 512 by 512 pixels, so we'll set the extracted box size to 518 by 518 pixels to provide some small margin of movement during refinement.
+Generally, the extracted box size should be 4-24 pixels larger than the template projection size.</p>
+<p>Create a new file <code>refine_template_config_60S_intro.yaml</code> with the following contents.</p>
+<div class="highlight"><pre><span></span><code><span class="nt">template_volume_path</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">60S_map_px0.936_bscale0.5_intro.mrc</span>
+<span class="nt">particle_stack</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">df_path</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">results_match_template_60S_edit_intro.csv</span>
+<span class="w">  </span><span class="nt">extracted_box_size</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">518</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">518</span><span class="p p-Indicator">]</span>
+<span class="w">  </span><span class="nt">original_template_size</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">512</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">512</span><span class="p p-Indicator">]</span>
+<span class="nt">defocus_refinement_config</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+
+<span class="w">  </span><span class="nt">defocus_max</span><span class="p">:</span><span class="w">  </span><span class="l l-Scalar l-Scalar-Plain">100.0</span><span class="w">  </span><span class="c1"># in Angstroms, relative to &quot;best&quot; particle defocus value</span>
+<span class="w">  </span><span class="nt">defocus_min</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">-100.0</span><span class="w">  </span><span class="c1"># in Angstroms, relative to &quot;best&quot; particle defocus value</span>
+<span class="w">  </span><span class="nt">defocus_step</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">20.0</span><span class="w">   </span><span class="c1"># in Angstroms</span>
+<span class="nt">orientation_refinement_config</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">  </span><span class="nt">psi_step_coarse</span><span class="p">:</span><span class="w">     </span><span class="l l-Scalar l-Scalar-Plain">1.5</span><span class="w">  </span><span class="c1"># in degrees</span>
+<span class="w">  </span><span class="nt">psi_step_fine</span><span class="p">:</span><span class="w">       </span><span class="l l-Scalar l-Scalar-Plain">0.1</span><span class="w">  </span><span class="c1"># in degrees</span>
+<span class="w">  </span><span class="nt">theta_step_coarse</span><span class="p">:</span><span class="w">   </span><span class="l l-Scalar l-Scalar-Plain">2.5</span><span class="w">  </span><span class="c1"># in degrees</span>
+<span class="w">  </span><span class="nt">theta_step_fine</span><span class="p">:</span><span class="w">     </span><span class="l l-Scalar l-Scalar-Plain">0.1</span><span class="w">  </span><span class="c1"># in degrees</span>
+<span class="nt">pixel_size_refinement_config</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
+<span class="nt">preprocessing_filters</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">whitening_filter</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">do_power_spectrum</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">    </span><span class="nt">max_freq</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1.0</span>
+<span class="w">    </span><span class="nt">num_freq_bins</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">null</span>
+<span class="nt">computational_config</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">gpu_ids</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;all&quot;</span>
+<span class="w">  </span><span class="nt">num_cpus</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span><span class="w">  </span><span class="c1"># 1 CPU per GPU</span>
+</code></pre></div>
+<h3 id="running-the-refinement">Running the refinement</h3>
+<p>The refinement program is executed in a similar manner to the previous programs.
+Again, we use the included blueprint script <a href="https://github.com/Lucaslab-Berkeley/Leopard-EM/blob/main/programs/refine_template/run_refine_template.py"><code>run_refine_template.py</code></a> from the GitHub repository.
+Create a new Python script <code>run_refine_template.py</code> with the following contents:</p>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">leopard_em.pydantic_models.managers</span><span class="w"> </span><span class="kn">import</span> <span class="n">RefineTemplateManager</span>
+
+<span class="n">YAML_CONFIG_PATH</span> <span class="o">=</span> <span class="s2">&quot;refine_template_config_60S_intro.yaml&quot;</span>
+<span class="n">DATAFRAME_OUTPUT_PATH</span> <span class="o">=</span> <span class="s2">&quot;results_refine_template_60S_intro.csv&quot;</span>
+<span class="n">PARTICLE_BATCH_SIZE</span> <span class="o">=</span> <span class="mi">64</span>  <span class="c1"># Tune this values based on GPU memory</span>
+
+<span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+    <span class="n">rt_manager</span> <span class="o">=</span> <span class="n">RefineTemplateManager</span><span class="o">.</span><span class="n">from_yaml</span><span class="p">(</span><span class="n">YAML_CONFIG_PATH</span><span class="p">)</span>
+    <span class="n">rt_manager</span><span class="o">.</span><span class="n">run_refine_template</span><span class="p">(</span><span class="n">DATAFRAME_OUTPUT_PATH</span><span class="p">,</span> <span class="n">PARTICLE_BATCH_SIZE</span><span class="p">)</span>
+
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
+    <span class="n">main</span><span class="p">()</span>
+</code></pre></div>
+<p>Then run the script:</p>
+<div class="highlight"><pre><span></span><code>python<span class="w"> </span>run_refine_template.py
+</code></pre></div>
+<h3 id="refinement-results">Refinement results</h3>
+<p>We now have a set of particle locations and orientations with improved orientation and defocus estimates along with improved z-scores.
+These results are saved in an updated CSV file <code>results_refine_template_60S_intro.csv</code>.</p>
+<p>The introductory tutorial is now complete, and you should now have solid understanding of the standard 2DTM workflow using Leopard-EM.
+Feel free to explore other parts of the documentation to learn more about how you can use these refined results to visualize particles, such as with <a href="../../examples/04_plotting_2dtm_results/">Visualizing 2DTM Results</a>, or the exact <a href="../../data_formats/">data formats which Leopard-EM uses</a>.</p>
+<h2 id="tutorial-summary">Tutorial summary</h2>
+<p>Throughout this tutorial, we've covered the essential steps in the "standard 2DTM workflow" by identifying 60S ribosomes using Leopard-EM.
+You've learned how to</p>
+<ol>
+<li>Simulate reference volumes from PDB structures using <code>ttsim3d</code>.</li>
+<li>Configure and run 2DTM searches with the <code>match_template</code> program in Leopard-EM.</li>
+<li>(once per dataset) Optimize the pixel size using the <code>optimize_template</code> program.</li>
+<li>Perform a full 2DTM search on a micrograph to identify particle locations and orientations.</li>
+<li>(optional) Filter results to remove spurious detections caused by micrograph artifacts.</li>
+<li>Refine particle parameters using the <code>refine_template</code> program for improved accuracy.</li>
+</ol>
+
+
+
+
+
+
+
+  
+  
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    <script id="__config" type="application/json">{"base": "../..", "features": ["content.code.copy"], "search": "../../assets/javascripts/workers/search.f8cc74c7.min.js", "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.f1b6f286.min.js"></script>
+      
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.4/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script>
+      
+    
+  </body>
+</html>
