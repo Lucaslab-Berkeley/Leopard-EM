@@ -202,21 +202,15 @@ class RefineTemplateManager(BaseModel2DTM):
         df_refined["refined_phi"] = result["refined_euler_angles"][:, 0]
 
         # Defocus
-        # Check if refined_relative_defocus already exists in the dataframe
-        if "refined_relative_defocus" in df_refined.columns:
-            df_refined["refined_relative_defocus"] = (
-                result["refined_defocus_offset"]
-                + df_refined["refined_relative_defocus"]
-            )
-        else:
-            # If not, create it from relative_defocus
-            df_refined["refined_relative_defocus"] = (
-                result["refined_defocus_offset"] + df_refined["relative_defocus"]
-            )
+        df_refined["refined_relative_defocus"] = (
+            result["refined_defocus_offset"]
+            + self.particle_stack.get_relative_defocus().cpu().numpy()
+        )
 
         # Pixel size
         df_refined["refined_pixel_size"] = (
-            result["refined_pixel_size_offset"] + df_refined["pixel_size"]
+            result["refined_pixel_size_offset"]
+            + self.particle_stack.get_pixel_size().cpu().numpy()
         )
 
         # Cross-correlation statistics

@@ -143,6 +143,16 @@ def core_match_template(
         )
         num_cuda_streams = total_cc_per_batch
 
+    # Ensure the tensors are all on the CPU. The _core_match_template_single_gpu
+    # function will move them onto the correct device.
+    image_dft = image_dft.cpu()
+    template_dft = template_dft.cpu()
+    ctf_filters = ctf_filters.cpu()
+    whitening_filter_template = whitening_filter_template.cpu()
+    defocus_values = defocus_values.cpu()
+    pixel_values = pixel_values.cpu()
+    euler_angles = euler_angles.cpu()
+
     ##############################################################
     ### Pre-multiply the whitening filter with the CTF filters ###
     ##############################################################
@@ -219,7 +229,7 @@ def construct_multi_gpu_match_template_kwargs(
     orientation_batch_size: int,
     num_cuda_streams: int,
     devices: list[torch.device],
-) -> list[dict[str, torch.Tensor | int]]:
+) -> list[dict[str, torch.Tensor | torch.device | int]]:
     """Split orientations between requested devices.
 
     See the `core_match_template` function for further descriptions of the
@@ -261,14 +271,15 @@ def construct_multi_gpu_match_template_kwargs(
     for device, euler_angles_device in zip(devices, euler_angles_split):
         # Allocate and construct the kwargs for this device
         kwargs = {
-            "image_dft": image_dft.to(device),
-            "template_dft": template_dft.to(device),
-            "euler_angles": euler_angles_device.to(device),
-            "projective_filters": projective_filters.to(device),
-            "defocus_values": defocus_values.to(device),
-            "pixel_values": pixel_values.to(device),
+            "image_dft": image_dft,
+            "template_dft": template_dft,
+            "euler_angles": euler_angles_device,
+            "projective_filters": projective_filters,
+            "defocus_values": defocus_values,
+            "pixel_values": pixel_values,
             "orientation_batch_size": orientation_batch_size,
             "num_cuda_streams": num_cuda_streams,
+            "device": device,
         }
 
         kwargs_per_device.append(kwargs)
@@ -277,6 +288,8 @@ def construct_multi_gpu_match_template_kwargs(
 
 
 # pylint: disable=too-many-locals
+# pylint: disable=too-many-arguments
+# pylint: disable=too-many-positional-arguments
 def _core_match_template_single_gpu(
     result_dict: dict,
     device_id: int,
@@ -288,11 +301,9 @@ def _core_match_template_single_gpu(
     pixel_values: torch.Tensor,
     orientation_batch_size: int,
     num_cuda_streams: int,
+    device: torch.device,
 ) -> None:
     """Single-GPU call for template matching.
-
-    NOTE: All tensors *must* be allocated on the same device. By calling the
-    user-facing `core_match_template` function this is handled automatically.
 
     NOTE: The result_dict is a shared dictionary between processes and updated in-place
     with this processes's results under the 'device_id' key.
@@ -316,10 +327,10 @@ def _core_match_template_single_gpu(
         4 devices has shape (orientations // 4, 3).
     projective_filters : torch.Tensor
         Multiplied 'ctf_filters' with 'whitening_filter_template'. Has shape
-        (defocus_batch, h, w // 2 + 1). Is RFFT and not fftshifted.
+        (num_Cs, num_defocus, h, w // 2 + 1). Is RFFT and not fftshifted.
     defocus_values : torch.Tensor
         What defoucs values correspond with the CTF filters. Has shape
-        (defocus_batch,).
+        (num_defocus,).
     pixel_values : torch.Tensor
         What pixel size values correspond with the CTF filters. Has shape
         (pixel_size_batch,).
@@ -327,16 +338,28 @@ def _core_match_template_single_gpu(
         The number of projections to calculate the correlation for at once.
     num_cuda_streams : int
         Number of CUDA streams to use for parallelizing cross-correlation computation.
+    device : torch.device
+        Device to run the computation on. All tensors must be allocated on this device.
 
     Returns
     -------
     None
     """
-    device = image_dft.device
     image_shape_real = (image_dft.shape[0], image_dft.shape[1] * 2 - 2)  # adj. for RFFT
 
     # Create CUDA streams for parallel computation
     streams = [torch.cuda.Stream(device=device) for _ in range(num_cuda_streams)]
+
+    ########################################
+    ### Pass all tensors onto the device ###
+    ########################################
+
+    image_dft = image_dft.to(device)
+    template_dft = template_dft.to(device)
+    euler_angles = euler_angles.to(device)
+    projective_filters = projective_filters.to(device)
+    defocus_values = defocus_values.to(device)
+    pixel_values = pixel_values.to(device)
 
     ################################################
     ### Initialize the tracked output statistics ###
@@ -402,9 +425,9 @@ def _core_match_template_single_gpu(
         dynamic_ncols=True,
         position=device.index,
         mininterval=1,  # Slow down to reduce number of lines written
-        smoothing=0.05,
+        smoothing=0.02,
         unit="corr",
-        unit_scale=total_projections / num_batches,
+        unit_scale=int(total_projections / num_batches) + 1,
     )
 
     ##################################
@@ -445,6 +468,12 @@ def _core_match_template_single_gpu(
             image_shape_real[1],
         )
 
+    # Synchronization barrier post-computation
+    for stream in streams:
+        stream.synchronize()
+
+    torch.cuda.synchronize(device)
+
     # NOTE: Need to send all tensors back to the CPU as numpy arrays for the shared
     # process dictionary. This is a workaround for now
     result = {
@@ -462,3 +491,7 @@ def _core_match_template_single_gpu(
     # Place the results in the shared multi-process manager dictionary so accessible
     # by the main process.
     result_dict[device_id] = result
+
+    # Final cleanup to release all tensors from this GPU
+    torch.cuda.empty_cache()
+    torch.cuda.ipc_collect()
