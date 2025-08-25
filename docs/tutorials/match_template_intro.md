@@ -450,7 +450,7 @@ Create a new file `match_template_config_60S_intro.yaml` with the following cont
 
 ```yaml
 micrograph_path: xenon_131_000_0.0_DWS.mrc
-template_volume_path: 60S_map_px0.95_bscale0.5_intro.mrc
+template_volume_path: 60S_map_px0.936_bscale0.5_intro.mrc
 computational_config:
   gpu_ids: "all"  # Use all available GPUs
   num_cpus: 4     # 4 CPUs per GPU
@@ -477,7 +477,7 @@ optics_group:
   defocus_u: 5978.758301
   defocus_v: 5617.462402
   phase_shift: 0.0
-  pixel_size: 0.95
+  pixel_size: 0.936  # Optimized pixel size
   spherical_aberration: 2.7
   voltage: 300.0
 orientation_search_config:
@@ -531,20 +531,21 @@ This region causes spurious correlations because of **low correlation variance**
 
 ### Identified peak distribution in x-y
 
-Looking at the distribution of identified peaks from the 2DTM search, we can see a large concentration of peaks in this dark lamella edge.
+Looking at the distribution of identified peaks from the 2DTM search (below), we can see a large concentration of peaks in this dark lamella edge.
 
 
 TODO: include image
 
 
 **For this tutorial** we take a very simple approach by filtering peaks based both on the MIP (maximum intensity projection) and z-score values which removes these peaks with extremely low variance.
+We require the MIP value to be at least 80% of the z-score for each particle.
 
-!!! "Other approaches to deal with micrograph artifacts"
-
-    The approach we're taking works well **for this case** and there are many other approaches to deal with quality control for a variety of micrograph artifacts (e.g., ice contamination). These include:
+!!! caution "Other approaches to deal with micrograph artifacts"
+    
+    The approach we're taking works well **for this case** and there are many other approaches to deal with quality control for a variety of micrograph artifacts (e.g., ice contamination). Some other easy approaches, each with their own advantages and disadvantages, include:
 
     1. Cropping micrographs to exclude regions with artifacts.
-    2. Masking results based on visual inspection.
+    2. Masking/filtering results based on visual inspection.
     3. Replacing artifacts with noise before the 2DTM process.
 
     Leopard-EM focuses on providing an efficient and reproducible 2DTM algorithm.
@@ -553,3 +554,113 @@ TODO: include image
 ### Particle filtering script using Pandas
 
 2DTM information is tabulated on a par-particle bases in a csv file, and we use Pandas to filter the results as discussed above in the following Python script.
+Copy the following into a new file `filter_particles.py` and run it.
+
+```python
+import pandas as pd
+from leopard_em.analysis.zscore_metric import gaussian_noise_zscore_cutoff
+
+def main():
+    df = pd.read_csv("results_match_template_60S_intro.csv")
+
+    # remove rows where 'mip' is less than 80% of 'scaled_mip'
+    filtered_df = df[df["mip"] >= 0.8 * df["scaled_mip"]]
+
+    print(f"Original number of particles: {len(df)}")
+    print(f"Filtered number of particles: {len(filtered_df)}")
+
+    filtered_df.to_csv("results_match_template_60S_edit_intro.csv", index=False)
+
+if __name__ == "__main__":
+    main()
+```
+
+We now have a filtered results CSV file `results_match_template_60S_edit_intro.csv` with **XXXXX particles**.
+
+----
+
+## Step 6: Template refinement
+
+Our objective now is to improve the accuracy of particle location and orientation estimates through local refinement.
+This is accomplished using the `refine_template` program which performs a local search around the initial estimates from `match_template`.
+Key difference between `match_template` and `refine_template` are:
+
+- `match_template` performs a global search over the entire micrograph and orientation space which is computationally expensive.
+- `refine_template` performs a local search around known particles with finer angular and defocus sampling. Local searches are much faster.
+
+### Refinement configuration
+
+At its most basic, the refinement configuration tells the program where particles are located in the micrograph, how to extract their particle images, and what orientation and defocus values to sample locally.
+Our original template volume produces projections of 512 by 512 pixels, so we'll set the extracted box size to 518 by 518 pixels to provide some small margin of movement during refinement.
+Generally, the extracted box size should be 4-24 pixels larger than the template projection size.
+
+Create a new file `refine_template_config_60S_intro.yaml` with the following contents.
+
+```yaml
+template_volume_path: maps/60S_map_px0.936_bscale0.5.mrc
+particle_stack:
+  df_path: results/results_match_template_60S_edit.csv
+  extracted_box_size: [512, 512]
+  original_template_size: [512, 512]
+defocus_refinement_config:
+  enabled: false
+  defocus_max:  100.0  # in Angstroms, relative to "best" particle defocus value
+  defocus_min: -100.0  # in Angstroms, relative to "best" particle defocus value
+  defocus_step: 20.0   # in Angstroms
+orientation_refinement_config:
+  enabled: false
+  psi_step_coarse:     1.5   # in degrees
+  psi_step_fine:       0.05  # in degrees
+  theta_step_coarse:   2.5   # in degrees
+  theta_step_fine:     0.05  # in degrees
+preprocessing_filters:
+  whitening_filter:
+    do_power_spectrum: true
+    enabled: true
+    max_freq: 1.0
+    num_freq_bins: null
+computational_config:
+  gpu_ids: "all"
+  num_cpus: 1  # 1 CPU per GPU
+```
+
+### Running the refinement
+
+The refinement program is executed in a similar manner to the previous programs.
+Again, we use the included blueprint script [`run_refine_template.py`](https://github.com/Lucaslab-Berkeley/Leopard-EM/blob/main/programs/refine_template/run_refine_template.py) from the GitHub repository.
+Create a new Python script `run_refine_template.py` with the following contents:
+
+```python
+from leopard_em.pydantic_models.managers import RefineTemplateManager
+
+YAML_CONFIG_PATH = "refine_template_config_60S_intro.yaml"
+DATAFRAME_OUTPUT_PATH = "results_refine_template_60S_intro.csv"
+PARTICLE_BATCH_SIZE = 64  # Tune this values based on GPU memory
+
+def main() -> None:
+    rt_manager = RefineTemplateManager.from_yaml(YAML_CONFIG_PATH)
+    rt_manager.run_refine_template(DATAFRAME_OUTPUT_PATH, PARTICLE_BATCH_SIZE)
+
+if __name__ == "__main__":
+    main()
+```
+
+### Refinement results
+
+We now have a set of particle locations and orientations with improved orientation and defocus estimates along with improved z-scores.
+These results are saved in an updated CSV file `results_refine_template_60S_intro.csv`.
+
+The introductory tutorial is now complete, and you should now have solid understanding of the standard 2DTM workflow using Leopard-EM.
+Feel free to explore other parts of the documentation to learn more about how you can use these refined results to visualize particles, such as with [Visualizing 2DTM Results](visualizing_2dtm_results.md), or the exact [data formats which Leopard-EM uses](data_formats.md).
+
+## Tutorial summary
+
+Throughout this tutorial, we've covered the essential steps in the "standard 2DTM workflow" by identifying 60S ribosomes using Leopard-EM.
+You've learned how to
+
+1. Simulate reference volumes from PDB structures using `ttsim3d`.
+2. Configure and run 2DTM searches with the `match_template` program in Leopard-EM.
+3. (once per dataset) Optimize the pixel size using the `optimize_template` program.
+4. Perform a full 2DTM search on a micrograph to identify particle locations and orientations.
+5. (optional) Filter results to remove spurious detections caused by micrograph artifacts.
+6. Refine particle parameters using the `refine_template` program for improved accuracy.
