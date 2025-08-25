@@ -552,8 +552,8 @@ Looking at the distribution of identified peaks from the 2DTM search (below), we
 ![Distribution of identified peaks in the micrograph](../static/match_template_intro_all_locations.png)
 
 **For this tutorial** we take a very simple approach by filtering peaks based both on the MIP (maximum intensity projection) and z-score values which removes these peaks with extremely low variance.
-We apply a filter that remove any particles where their correlation variance is less than $0.925$.
-The normalization process for the approximately spherical 60S ribosome means the correlation variance should be around $1.0$ for real particles, and this is a reasonable cutoff for demonstration purposes.
+We apply a filter that remove any particles where their correlation variance is less than \( 0.925 \).
+The normalization process for the approximately spherical 60S ribosome means the correlation variance should be around \( 1.0 \) for real particles, and this is a reasonable cutoff for demonstration purposes.
 
 !!! caution "Other approaches to deal with micrograph artifacts"
     
