@@ -12,7 +12,7 @@ The pre-requisites for this tutorial are:
 4. A cluster with SLURM scheduling and GPU nodes available.
 5. Leopard-EM installed in the current Python environment.
 
-!!! note "Why Leopard-EM doesn't handle batch processing internally"
+??? note "Why Leopard-EM doesn't handle batch processing internally"
 
     Leopard-EM is designed to be a flexible and modular Python package for 2DTM, and as such we focus on providing the core functionality for 2DTM workflows.
     Reproducibility is another key aspect of Leopard-EM, and we encourage users to have a one-to-one mapping between input configuration files and 2DTM results.
@@ -140,7 +140,7 @@ After creating a new file with the following code and saving it as `populate_mat
 │   ├── micrograph_99_diagnostic.txt
 │
 ├── base_match_template_config.yaml    <-- New (contents above)
-├── populate_match_template_config.py  <-- New (contents below)
+└── populate_match_template_config.py  <-- New (contents below)
 ```
 
 ```python
@@ -320,7 +320,7 @@ Our project directory structure should now look like this:
 │   ├── ...
 │   ├── micrograph_99_match_template_config.yaml  <-- New
 ├── base_match_template_config.yaml
-├── populate_match_template_config.py
+└── populate_match_template_config.py
 ```
 
 !!! note "Batch processing in Leopard-EM not depend on CTFFIND5"
