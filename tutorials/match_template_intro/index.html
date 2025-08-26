@@ -527,35 +527,11 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#step-5-quality-control-and-filtering-micrograph-edge-artifact" class="md-nav__link">
+  <a href="#step-5-data-inspection-step" class="md-nav__link">
     <span class="md-ellipsis">
-      Step 5: Quality control and filtering (micrograph edge artifact)
+      Step 5: Data inspection step
     </span>
   </a>
-  
-    <nav class="md-nav" aria-label="Step 5: Quality control and filtering (micrograph edge artifact)">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#identified-peak-distribution-in-x-y" class="md-nav__link">
-    <span class="md-ellipsis">
-      Identified peak distribution in x-y
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#particle-filtering-script-using-pandas" class="md-nav__link">
-    <span class="md-ellipsis">
-      Particle filtering script using Pandas
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
   
 </li>
       
@@ -2375,35 +2351,11 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#step-5-quality-control-and-filtering-micrograph-edge-artifact" class="md-nav__link">
+  <a href="#step-5-data-inspection-step" class="md-nav__link">
     <span class="md-ellipsis">
-      Step 5: Quality control and filtering (micrograph edge artifact)
+      Step 5: Data inspection step
     </span>
   </a>
-  
-    <nav class="md-nav" aria-label="Step 5: Quality control and filtering (micrograph edge artifact)">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#identified-peak-distribution-in-x-y" class="md-nav__link">
-    <span class="md-ellipsis">
-      Identified peak distribution in x-y
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#particle-filtering-script-using-pandas" class="md-nav__link">
-    <span class="md-ellipsis">
-      Particle filtering script using Pandas
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
   
 </li>
       
@@ -2481,7 +2433,7 @@ Here, we focus on understanding the basics of 2DTM which serves as the foundatio
 <p>In this tutorial we will cover:</p>
 <ol>
 <li><strong>Simulate reference volume from PDB files</strong> - We  download a prepared 60S LSU structure and demonstrate how to simulate realistic cryo-EM reference volumes. These steps are similar for any other PDB structure.</li>
-<li><strong>Configure template matching runs</strong> - </li>
+<li><strong>Configure template matching runs</strong> - How to define orientation and defocus search parameters as well as running the <code>match_template</code> program.</li>
 <li><strong>Optimize 2DTM parameters (pixel size)</strong> - By using initial results, we can optimize parameters for later 2DTM searches to increase SNR and identify more particles.</li>
 <li><strong>Running full 2DTM with Leopard-EM</strong> - Initial Particle locations and orientations are found using the <code>match_template</code> program.</li>
 <li><strong>Refining particle parameters post-search</strong> - Particle orientation and defocus values (initially identified with <code>match_template</code>) are locally refined using the <code>refine_template</code> program.</li>
@@ -2516,7 +2468,7 @@ Please refer to the <a href="../../#installation">installation instructions</a> 
 </code></pre></div>
 <h4 id="inspecting-the-micrograph">Inspecting the micrograph</h4>
 <p>The micrograph of yeast cytoplasm contains ribosomes in various orientations and has typical features of cryo-EM data.
-Notably, the edge of the lamella is visible in the top right corner of the micrograph which we will revisit later in the tutorial for filtering purposes.</p>
+Notably, the edge of the lamella is visible in the top right corner of the micrograph which we will revisit later in this tutorial to make sure this artifact does not cause spurious detections.</p>
 <p><img alt="Yeast lamella micrograph" src="../../static/match_template_intro_micrograph.png" /></p>
 <hr />
 <h2 id="step-1-reference-template-simulation">Step 1: Reference template simulation</h2>
@@ -2913,30 +2865,39 @@ run_match_template.py
 ...
 xenon_131_000_0.0_DWS.mrc
 </code></pre></div>
-<p>Their exact contents and visualizing the results are discussed elsewhere in the documentation, and what we're most interested in is the <code>results/results_match_template_60S_intro.csv</code> file which contains all the information about our <strong>407 identified peaks above the statistical threshold</strong>.</p>
-<h2 id="step-5-quality-control-and-filtering-micrograph-edge-artifact">Step 5: Quality control and filtering (micrograph edge artifact)</h2>
-<p>Re-referencing the micrograph, we can clearly see the lamella edge is visible in the top-right corner.</p>
-<p>This region causes spurious correlations because of <strong>low correlation variance</strong> in dark regions which artificially inflates z-scores.</p>
-<h3 id="identified-peak-distribution-in-x-y">Identified peak distribution in x-y</h3>
-<p>Looking at the distribution of identified peaks from the 2DTM search (below), we can see a large concentration of peaks in this dark lamella edge.</p>
+<p>Their exact contents and visualizing the results are discussed elsewhere in the documentation, and what we're most interested in is the <code>results_match_template_60S_intro.csv</code> file which contains all the information about our <strong>407 identified peaks above the statistical threshold</strong>.</p>
+<h2 id="step-5-data-inspection-step">Step 5: Data inspection step</h2>
+<p>Re-referencing the micrograph, we can clearly see the dark lamella edge is visible in the top-right corner.
+It is good practice to make sure artifacts in your micrographs are not causing spurious detections and apply a filtering strategy if necessary.
+<strong>In this case</strong>, we don't see any ribosome detections within the dark region or along its boundary.</p>
+<!-- This region causes spurious correlations because of **low correlation variance** in dark regions which artificially inflates z-scores.
+
+### Identified peak distribution in x-y
+
+Looking at the distribution of identified peaks from the 2DTM search (below), we can see a large concentration of peaks in this dark lamella edge. -->
+
 <p><img alt="Distribution of identified peaks in the micrograph" src="../../static/match_template_intro_all_locations.png" /></p>
-<p><strong>For this tutorial</strong> we take a very simple approach by filtering peaks based both on the MIP (maximum intensity projection) and z-score values which removes these peaks with extremely low variance.
-We apply a filter that remove any particles where their correlation variance is less than <script type="math/tex"> 0.925 </script>.
-The normalization process for the approximately spherical 60S ribosome means the correlation variance should be around <script type="math/tex"> 1.0 </script> for real particles, and this is a reasonable cutoff for demonstration purposes.</p>
-<div class="admonition caution">
-<p class="admonition-title">Other approaches to deal with micrograph artifacts</p>
-<p>The approach we're taking works well <strong>for this case</strong> and there are many other approaches to deal with quality control for a variety of micrograph artifacts (e.g., ice contamination). Some other easy approaches, each with their own advantages and disadvantages, include:</p>
-<ol>
-<li>Cropping micrographs to exclude regions with artifacts.</li>
-<li>Masking/filtering results based on visual inspection.</li>
-<li>Replacing artifacts with noise before the 2DTM process.</li>
-</ol>
-<p>Leopard-EM focuses on providing an efficient and reproducible 2DTM algorithm.
-For this reason, we leave any pre- or post-processing methods in the hands of the user.</p>
-</div>
-<h3 id="particle-filtering-script-using-pandas">Particle filtering script using Pandas</h3>
-<p>2DTM information is tabulated on a par-particle bases in a csv file, and we use Pandas to filter the results as discussed above in the following Python script.
-Copy the following into a new file <code>filter_particles.py</code> and run it.</p>
+<!-- 
+**For this tutorial** we take a very simple approach by filtering peaks based both on the MIP (maximum intensity projection) and z-score values which removes these peaks with extremely low variance.
+We apply a filter that remove any particles where their correlation variance is less than \( 0.925 \).
+The normalization process for the approximately spherical 60S ribosome means the correlation variance should be around \( 1.0 \) for real particles, and this is a reasonable cutoff for demonstration purposes.
+
+!!! caution "Other approaches to deal with micrograph artifacts"
+
+    The approach we're taking works well **for this case** and there are many other approaches to deal with quality control for a variety of micrograph artifacts (e.g., ice contamination). Some other easy approaches, each with their own advantages and disadvantages, include:
+
+    1. Cropping micrographs to exclude regions with artifacts.
+    2. Masking/filtering results based on visual inspection.
+    3. Replacing artifacts with noise before the 2DTM process.
+
+    Leopard-EM focuses on providing an efficient and reproducible 2DTM algorithm.
+    For this reason, we leave any pre- or post-processing methods in the hands of the user.
+
+### Particle filtering script using Pandas
+
+2DTM information is tabulated on a par-particle bases in a csv file, and we use Pandas to filter the results as discussed above in the following Python script.
+Copy the following into a new file `filter_particles.py` and run it.
+
 <div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
 <span class="kn">from</span><span class="w"> </span><span class="nn">leopard_em.analysis.zscore_metric</span><span class="w"> </span><span class="kn">import</span> <span class="n">gaussian_noise_zscore_cutoff</span>
 
@@ -2954,11 +2915,15 @@ Copy the following into a new file <code>filter_particles.py</code> and run it.<
 <span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
     <span class="n">main</span><span class="p">()</span>
 </code></pre></div>
-<p>We now have a filtered results CSV file <code>results_match_template_60S_edit_intro.csv</code> with <strong>374 particles</strong>, and we can see new distribution of found peaks below.</p>
-<p><img alt="Distribution of filtered peaks in the micrograph" src="../../static/match_template_intro_filtered_locations.png" /></p>
+
+We now have a filtered results CSV file `results_match_template_60S_edit_intro.csv` with **374 particles**, and we can see new distribution of found peaks below.
+
+![Distribution of filtered peaks in the micrograph](../static/match_template_intro_filtered_locations.png) -->
+
+<p>Since we are confident in our detections, we can move onto the template refinement process.</p>
 <details class="info">
 <summary>Python script for generating above plot images</summary>
-<p>The following is a very simple plotting script using matplotlib to visualize the distribution of particles before and after filtering. Note, you may need to install matplotlib via <code>pip install matplotlib</code> before running the script.</p>
+<p>The following is a very simple plotting script using matplotlib to visualize the distribution of particles. Note, you may need to install matplotlib via <code>pip install matplotlib</code> before running the script.</p>
 <div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">mrcfile</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
 <span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
@@ -2967,7 +2932,6 @@ Copy the following into a new file <code>filter_particles.py</code> and run it.<
 <span class="c1"># Load data</span>
 <span class="n">img</span> <span class="o">=</span> <span class="n">mrcfile</span><span class="o">.</span><span class="n">read</span><span class="p">(</span><span class="s2">&quot;xenon_131_000_0.0_DWS.mrc&quot;</span><span class="p">)</span>
 <span class="n">df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">read_csv</span><span class="p">(</span><span class="s2">&quot;results_match_template_60S_intro.csv&quot;</span><span class="p">)</span>
-<span class="n">df_filtered</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">read_csv</span><span class="p">(</span><span class="s2">&quot;results_match_template_60S_edit_intro.csv&quot;</span><span class="p">)</span>
 
 <span class="c1"># Plot 1: Only unfiltered data</span>
 <span class="n">plt</span><span class="o">.</span><span class="n">figure</span><span class="p">(</span><span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">8</span><span class="p">,</span> <span class="mi">8</span><span class="p">))</span>
@@ -2978,26 +2942,6 @@ Copy the following into a new file <code>filter_particles.py</code> and run it.<
 <span class="n">plt</span><span class="o">.</span><span class="n">axis</span><span class="p">(</span><span class="s2">&quot;off&quot;</span><span class="p">)</span>
 <span class="n">plt</span><span class="o">.</span><span class="n">legend</span><span class="p">()</span>
 <span class="n">plt</span><span class="o">.</span><span class="n">savefig</span><span class="p">(</span><span class="s2">&quot;match_template_intro_all_locations.png&quot;</span><span class="p">,</span> <span class="n">dpi</span><span class="o">=</span><span class="mi">200</span><span class="p">,</span> <span class="n">bbox_inches</span><span class="o">=</span><span class="s2">&quot;tight&quot;</span><span class="p">)</span>
-<span class="n">plt</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
-
-<span class="c1"># Plot 2: Both filtered and unfiltered data</span>
-<span class="n">plt</span><span class="o">.</span><span class="n">figure</span><span class="p">(</span><span class="n">figsize</span><span class="o">=</span><span class="p">(</span><span class="mi">8</span><span class="p">,</span> <span class="mi">8</span><span class="p">))</span>
-<span class="n">plt</span><span class="o">.</span><span class="n">imshow</span><span class="p">(</span><span class="n">img</span><span class="p">,</span> <span class="n">cmap</span><span class="o">=</span><span class="s2">&quot;gray&quot;</span><span class="p">)</span>
-<span class="n">plt</span><span class="o">.</span><span class="n">scatter</span><span class="p">(</span>
-    <span class="n">df</span><span class="p">[</span><span class="s2">&quot;pos_x_img&quot;</span><span class="p">],</span> <span class="n">df</span><span class="p">[</span><span class="s2">&quot;pos_y_img&quot;</span><span class="p">],</span> <span class="n">c</span><span class="o">=</span><span class="s2">&quot;red&quot;</span><span class="p">,</span> <span class="n">s</span><span class="o">=</span><span class="mi">30</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s2">&quot;All&quot;</span><span class="p">,</span> <span class="n">alpha</span><span class="o">=</span><span class="mf">0.4</span><span class="p">,</span> <span class="n">marker</span><span class="o">=</span><span class="s2">&quot;x&quot;</span>
-<span class="p">)</span>
-<span class="n">plt</span><span class="o">.</span><span class="n">scatter</span><span class="p">(</span>
-    <span class="n">df_filtered</span><span class="p">[</span><span class="s2">&quot;pos_x_img&quot;</span><span class="p">],</span>
-    <span class="n">df_filtered</span><span class="p">[</span><span class="s2">&quot;pos_y_img&quot;</span><span class="p">],</span>
-    <span class="n">c</span><span class="o">=</span><span class="s2">&quot;blue&quot;</span><span class="p">,</span>
-    <span class="n">s</span><span class="o">=</span><span class="mi">30</span><span class="p">,</span>
-    <span class="n">marker</span><span class="o">=</span><span class="s2">&quot;o&quot;</span><span class="p">,</span>
-    <span class="n">label</span><span class="o">=</span><span class="s2">&quot;Filtered&quot;</span><span class="p">,</span>
-    <span class="n">alpha</span><span class="o">=</span><span class="mf">0.4</span><span class="p">,</span>
-<span class="p">)</span>
-<span class="n">plt</span><span class="o">.</span><span class="n">axis</span><span class="p">(</span><span class="s2">&quot;off&quot;</span><span class="p">)</span>
-<span class="n">plt</span><span class="o">.</span><span class="n">legend</span><span class="p">()</span>
-<span class="n">plt</span><span class="o">.</span><span class="n">savefig</span><span class="p">(</span><span class="s2">&quot;match_template_intro_filtered_locations.png&quot;</span><span class="p">,</span> <span class="n">dpi</span><span class="o">=</span><span class="mi">200</span><span class="p">,</span> <span class="n">bbox_inches</span><span class="o">=</span><span class="s2">&quot;tight&quot;</span><span class="p">)</span>
 <span class="n">plt</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
 
 <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Plots saved successfully!&quot;</span><span class="p">)</span>
@@ -3019,7 +2963,7 @@ Generally, the extracted box size should be 4-24 pixels larger than the template
 <p>Create a new file <code>refine_template_config_60S_intro.yaml</code> with the following contents.</p>
 <div class="highlight"><pre><span></span><code><span class="nt">template_volume_path</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">60S_map_px0.936_bscale0.5_intro.mrc</span>
 <span class="nt">particle_stack</span><span class="p">:</span>
-<span class="w">  </span><span class="nt">df_path</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">results_match_template_60S_edit_intro.csv</span>
+<span class="w">  </span><span class="nt">df_path</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">results_match_template_60S_intro.csv</span>
 <span class="w">  </span><span class="nt">extracted_box_size</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">518</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">518</span><span class="p p-Indicator">]</span>
 <span class="w">  </span><span class="nt">original_template_size</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">512</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">512</span><span class="p p-Indicator">]</span>
 <span class="nt">defocus_refinement_config</span><span class="p">:</span>
@@ -3079,7 +3023,7 @@ You've learned how to</p>
 <li>Configure and run 2DTM searches with the <code>match_template</code> program in Leopard-EM.</li>
 <li>(once per dataset) Optimize the pixel size using the <code>optimize_template</code> program.</li>
 <li>Perform a full 2DTM search on a micrograph to identify particle locations and orientations.</li>
-<li>(optional) Filter results to remove spurious detections caused by micrograph artifacts.</li>
+<li>Inspect results on top of the micrograph to ensure they make contextual sense (no spurious detections).</li>
 <li>Refine particle parameters using the <code>refine_template</code> program for improved accuracy.</li>
 </ol>
 
