@@ -13,7 +13,7 @@ Here, we focus on understanding the basics of 2DTM which serves as the foundatio
 In this tutorial we will cover:
 
 1. **Simulate reference volume from PDB files** - We  download a prepared 60S LSU structure and demonstrate how to simulate realistic cryo-EM reference volumes. These steps are similar for any other PDB structure.
-2. **Configure template matching runs** - 
+2. **Configure template matching runs** - How to define orientation and defocus search parameters as well as running the `match_template` program.
 3. **Optimize 2DTM parameters (pixel size)** - By using initial results, we can optimize parameters for later 2DTM searches to increase SNR and identify more particles.
 4. **Running full 2DTM with Leopard-EM** - Initial Particle locations and orientations are found using the `match_template` program.
 5. **Refining particle parameters post-search** - Particle orientation and defocus values (initially identified with `match_template`) are locally refined using the `refine_template` program.
@@ -61,7 +61,7 @@ leopardEM_intro/
 #### Inspecting the micrograph
 
 The micrograph of yeast cytoplasm contains ribosomes in various orientations and has typical features of cryo-EM data.
-Notably, the edge of the lamella is visible in the top right corner of the micrograph which we will revisit later in the tutorial for filtering purposes.
+Notably, the edge of the lamella is visible in the top right corner of the micrograph which we will revisit later in this tutorial to make sure this artifact does not cause spurious detections.
 
 ![Yeast lamella micrograph](../static/match_template_intro_micrograph.png)
 
@@ -537,20 +537,22 @@ run_match_template.py
 xenon_131_000_0.0_DWS.mrc
 ```
 
-Their exact contents and visualizing the results are discussed elsewhere in the documentation, and what we're most interested in is the `results/results_match_template_60S_intro.csv` file which contains all the information about our **407 identified peaks above the statistical threshold**.
+Their exact contents and visualizing the results are discussed elsewhere in the documentation, and what we're most interested in is the `results_match_template_60S_intro.csv` file which contains all the information about our **407 identified peaks above the statistical threshold**.
 
-## Step 5: Quality control and filtering (micrograph edge artifact)
+## Step 5: Data inspection step
 
-Re-referencing the micrograph, we can clearly see the lamella edge is visible in the top-right corner.
+Re-referencing the micrograph, we can clearly see the dark lamella edge is visible in the top-right corner.
+It is good practice to make sure artifacts in your micrographs are not causing spurious detections and apply a filtering strategy if necessary.
+**In this case**, we don't see any ribosome detections within the dark region or along its boundary.
 
-This region causes spurious correlations because of **low correlation variance** in dark regions which artificially inflates z-scores.
+<!-- This region causes spurious correlations because of **low correlation variance** in dark regions which artificially inflates z-scores.
 
 ### Identified peak distribution in x-y
 
-Looking at the distribution of identified peaks from the 2DTM search (below), we can see a large concentration of peaks in this dark lamella edge.
+Looking at the distribution of identified peaks from the 2DTM search (below), we can see a large concentration of peaks in this dark lamella edge. -->
 
 ![Distribution of identified peaks in the micrograph](../static/match_template_intro_all_locations.png)
-
+<!-- 
 **For this tutorial** we take a very simple approach by filtering peaks based both on the MIP (maximum intensity projection) and z-score values which removes these peaks with extremely low variance.
 We apply a filter that remove any particles where their correlation variance is less than \( 0.925 \).
 The normalization process for the approximately spherical 60S ribosome means the correlation variance should be around \( 1.0 \) for real particles, and this is a reasonable cutoff for demonstration purposes.
@@ -592,11 +594,13 @@ if __name__ == "__main__":
 
 We now have a filtered results CSV file `results_match_template_60S_edit_intro.csv` with **374 particles**, and we can see new distribution of found peaks below.
 
-![Distribution of filtered peaks in the micrograph](../static/match_template_intro_filtered_locations.png)
+![Distribution of filtered peaks in the micrograph](../static/match_template_intro_filtered_locations.png) -->
+
+Since we are confident in our detections, we can move onto the template refinement process.
 
 ??? info "Python script for generating above plot images"
 
-    The following is a very simple plotting script using matplotlib to visualize the distribution of particles before and after filtering. Note, you may need to install matplotlib via `pip install matplotlib` before running the script.
+    The following is a very simple plotting script using matplotlib to visualize the distribution of particles. Note, you may need to install matplotlib via `pip install matplotlib` before running the script.
 
     ```python
     import mrcfile
@@ -607,7 +611,6 @@ We now have a filtered results CSV file `results_match_template_60S_edit_intro.c
     # Load data
     img = mrcfile.read("xenon_131_000_0.0_DWS.mrc")
     df = pd.read_csv("results_match_template_60S_intro.csv")
-    df_filtered = pd.read_csv("results_match_template_60S_edit_intro.csv")
 
     # Plot 1: Only unfiltered data
     plt.figure(figsize=(8, 8))
@@ -618,26 +621,6 @@ We now have a filtered results CSV file `results_match_template_60S_edit_intro.c
     plt.axis("off")
     plt.legend()
     plt.savefig("match_template_intro_all_locations.png", dpi=200, bbox_inches="tight")
-    plt.close()
-
-    # Plot 2: Both filtered and unfiltered data
-    plt.figure(figsize=(8, 8))
-    plt.imshow(img, cmap="gray")
-    plt.scatter(
-        df["pos_x_img"], df["pos_y_img"], c="red", s=30, label="All", alpha=0.4, marker="x"
-    )
-    plt.scatter(
-        df_filtered["pos_x_img"],
-        df_filtered["pos_y_img"],
-        c="blue",
-        s=30,
-        marker="o",
-        label="Filtered",
-        alpha=0.4,
-    )
-    plt.axis("off")
-    plt.legend()
-    plt.savefig("match_template_intro_filtered_locations.png", dpi=200, bbox_inches="tight")
     plt.close()
 
     print("Plots saved successfully!")
@@ -665,7 +648,7 @@ Create a new file `refine_template_config_60S_intro.yaml` with the following con
 ```yaml
 template_volume_path: 60S_map_px0.936_bscale0.5_intro.mrc
 particle_stack:
-  df_path: results_match_template_60S_edit_intro.csv
+  df_path: results_match_template_60S_intro.csv
   extracted_box_size: [518, 518]
   original_template_size: [512, 512]
 defocus_refinement_config:
@@ -737,5 +720,5 @@ You've learned how to
 2. Configure and run 2DTM searches with the `match_template` program in Leopard-EM.
 3. (once per dataset) Optimize the pixel size using the `optimize_template` program.
 4. Perform a full 2DTM search on a micrograph to identify particle locations and orientations.
-5. (optional) Filter results to remove spurious detections caused by micrograph artifacts.
+5. Inspect results on top of the micrograph to ensure they make contextual sense (no spurious detections).
 6. Refine particle parameters using the `refine_template` program for improved accuracy.
