@@ -10,7 +10,7 @@ Leopard-EM (**L**ocation & ori**E**ntati**O**n of **PAR**ticles found using two-
 Check out the [online documentation](https://lucaslab-berkeley.github.io/Leopard-EM/) for more details about using, configuring, and analyzing data from the Leopard-EM Python package.
 
 > [!IMPORTANT]
-> **If you use Leopard-EM in your research, please these linked references:** [Citation](README.md#Citation) (bottom of this page).
+> **If you use Leopard-EM in your research, please include these linked references:** [Citation](README.md#Citation) (bottom of this page).
 
 
 ## Basic Installation
