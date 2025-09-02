@@ -2112,11 +2112,25 @@
 
 <h1 id="leopard-em">Leopard-EM</h1>
 <p>Welcome to the <strong>L</strong>ocation &amp; ori<strong>E</strong>ntati<strong>O</strong>n of <strong>PAR</strong>ticles found using two-<strong>D</strong>imensional t<strong>E</strong>mplate <strong>M</strong>atching (Leopard-EM) online documentation!
-Leopard-EM is a Python implementation of Two-Dimensional Template Matching (2DTM) which itself is a data processing method in cryo-EM for locating and orienting particles using a reference structure.
-This package currently reflects the functionality described in Lucas, <em>et al.</em> (2021)<sup id="fnref:1"><a class="footnote-ref" href="#fn:1">1</a></sup> with additional programs to maximize the usefulness of 2DTM as well as other user-friendly features for integrating into broader data science workflows.</p>
-<div class="admonition note">
+Leopard-EM is a GPU-accelerated Python package for running Two-Dimensional Template Matching (2DTM) on cryo-EM data and building 2DTM into more complex workflows.
+Leopard-EM is built with flexibility, extensibility, and reproducibility in mind.
+2DTM is an emerging cryo-EM data processing method for locating <em>and</em> orienting particles using a reference structure through exhaustive orientation sampling<sup id="fnref:1"><a class="footnote-ref" href="#fn:1">1</a></sup><sup>,</sup><sup id="fnref:2"><a class="footnote-ref" href="#fn:2">2</a></sup>.</p>
+<!-- This package currently reflects the functionality described in Lucas, *et al.* (2021)[^1] with additional programs to maximize the usefulness of 2DTM as well as other user-friendly features for integrating into broader data science workflows. -->
+
+<div class="admonition info">
 <p class="admonition-title">Citing this work</p>
-<p>If you use Leopard-EM in your research, please cite (coming soon!).</p>
+<p>If you use Leopard-EM in your research, please cite the <a href="https://doi.org/10.1101/2025.08.26.672452">Leopard-EM pre-print</a>.
+<!-- <code>@article {Giammar2025.08.26.672452,
+    author = {Giammar, Matthew David and Dickerson, Joshua Luke and Hall, Laina Nicole and Lucas, Bronwyn Ayla},
+    title = {Leopard-EM: An extensible 2DTM package to accelerate in situ structural biology},
+    elocation-id = {2025.08.26.672452},
+    year = {2025},
+    doi = {10.1101/2025.08.26.672452},
+    publisher = {Cold Spring Harbor Laboratory},
+    URL = {https://www.biorxiv.org/content/early/2025/08/29/2025.08.26.672452},
+    eprint = {https://www.biorxiv.org/content/early/2025/08/29/2025.08.26.672452.full.pdf},
+    journal = {bioRxiv}
+}</code> --></p>
 </div>
 <h2 id="installation">Installation</h2>
 <h3 id="requirements">Requirements</h3>
@@ -2277,7 +2291,10 @@ See the <a href="#for-developers">Installation -- For Developers</a> section for
 <hr />
 <ol>
 <li id="fn:1">
-<p>Lucas BA, Himes BA, Xue L, Grant T, Mahamid J, Grigorieff N. Locating macromolecular assemblies in cells by 2D template matching with cisTEM. Elife. 2021 Jun 11;10:e68946. doi: 10.7554/eLife.68946. PMID: 34114559; PMCID: PMC8219381.&#160;<a class="footnote-backref" href="#fnref:1" title="Jump back to footnote 1 in the text">&#8617;</a></p>
+<p>Lucas BA, Himes BA, Xue L, Grant T, Mahamid J, Grigorieff N. Locating macromolecular assemblies in cells by 2D template matching with cisTEM. Elife. 2021 Jun 11;10:e68946. doi: https://doi.org/10.7554/eLife.68946. PMID: 34114559; PMCID: PMC8219381.&#160;<a class="footnote-backref" href="#fnref:1" title="Jump back to footnote 1 in the text">&#8617;</a></p>
+</li>
+<li id="fn:2">
+<p>Leopard-EM: An extensible 2DTM package to accelerate in situ structural biology. Matthew David Giammar, Joshua Luke Dickerson, Laina Nicole Hall, Bronwyn Ayla Lucas. bioRxiv 2025.08.26.672452; doi: https://doi.org/10.1101/2025.08.26.672452&#160;<a class="footnote-backref" href="#fnref:2" title="Jump back to footnote 2 in the text">&#8617;</a></p>
 </li>
 </ol>
 </div>
