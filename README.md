@@ -9,10 +9,9 @@
 Leopard-EM (**L**ocation & ori**E**ntati**O**n of **PAR**ticles found using two-**D**imensional t**E**mplate **M**atching) is a python package for running two-dimensional template matching (2DTM) on cryo-EM images.
 Check out the [online documentation](https://lucaslab-berkeley.github.io/Leopard-EM/) for more details about using, configuring, and analyzing data from the Leopard-EM Python package.
 
-<!-- ## Documentation and Examples
+> [!IMPORTANT]
+> **If you use Leopard-EM in your research, please these linked references:** [Citation](README.md#Citation) (bottom of this page).
 
-See the `/examples` directory for a set of Jupyter notebooks demonstrating some basic usage of the package.
-More extensive documentation can be found at (TODO: Add link to documentation site). -->
 
 ## Basic Installation
 
@@ -84,3 +83,23 @@ pip install -e '.[dev,test, docs]'
 ```
 
 Further information on development and contributing to the repo can be found in our online documentation.
+
+## Citation
+
+If you use Leopard-EM in your research, please include the following citations in your biblography:
+
+- [Leopard-EM pre-print](https://doi.org/10.1101/2025.08.26.672452)
+> ```
+> @article {Giammar2025.08.26.672452,
+>	author = {Giammar, Matthew David and Dickerson, Joshua Luke and Hall, Laina Nicole and Lucas, Bronwyn Ayla},
+>	title = {Leopard-EM: An extensible 2DTM package to accelerate in situ structural biology},
+>	elocation-id = {2025.08.26.672452},
+>	year = {2025},
+>	doi = {10.1101/2025.08.26.672452},
+>	publisher = {Cold Spring Harbor Laboratory},
+>	URL = {https://www.biorxiv.org/content/early/2025/08/29/2025.08.26.672452},
+>	eprint = {https://www.biorxiv.org/content/early/2025/08/29/2025.08.26.672452.full.pdf},
+>	journal = {bioRxiv}
+> }
+> ```
+
