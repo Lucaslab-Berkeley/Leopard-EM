@@ -149,9 +149,6 @@ def extract_peaks_and_statistics_gev(
     total_correlation_positions : int
         Total number of correlation positions calculated during template matching. Must
         be provided if `z_score_cutoff` is not provided (needed for the noise model).
-    num_bins : int, optional
-        Number of bins to use for histogram when fitting GEV distribution. Default is
-        128.
     false_positives : float, optional
         Number of false positives to allow in the image (over all pixels). Default is
         1.0 which corresponds to a single false-positive.
