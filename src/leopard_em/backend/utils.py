@@ -1,8 +1,7 @@
 """Utility and helper functions associated with the backend of Leopard-EM."""
 
 import warnings
-from multiprocessing import Manager, Process
-from typing import Any, Callable, Optional, TypeVar
+from typing import Any, Callable, TypeVar
 
 import torch
 
@@ -227,74 +226,6 @@ def do_iteration_statistics_updates(
     correlation_squared_sum += (cross_correlation.view(-1, img_h, img_w) ** 2).sum(
         dim=0
     )
-
-
-def run_multiprocess_jobs(
-    target: Callable,
-    kwargs_list: list[dict[str, Any]],
-    extra_args: tuple[Any, ...] = (),
-    extra_kwargs: Optional[dict[str, Any]] = None,
-) -> dict[Any, Any]:
-    """Helper function for running multiple processes on the same target function.
-
-    Spawns multiple processes to run the same target function with different keyword
-    arguments, aggregates results in a shared dictionary, and returns them.
-
-    Parameters
-    ----------
-    target : Callable
-        The function that each process will execute. It must accept at least two
-        positional arguments: a shared dict and a unique index.
-    kwargs_list : list[dict[str, Any]]
-        A list of dictionaries containing keyword arguments for each process.
-    extra_args : tuple[Any, ...], optional
-        Additional positional arguments to pass to the target (prepending the shared
-        parameters).
-    extra_kwargs : Optional[dict[str, Any]], optional
-        Additional common keyword arguments for all processes.
-
-    Returns
-    -------
-    dict[Any, Any]
-        Aggregated results stored in the shared dictionary.
-
-    Example
-    -------
-    ```
-    def worker_fn(result_dict, idx, param1, param2):
-        result_dict[idx] = param1 + param2
-
-
-    kwargs_per_process = [
-        {"param1": 1, "param2": 2},
-        {"param1": 3, "param2": 4},
-    ]
-    results = run_multiprocess_jobs(worker_fn, kwargs_per_process)
-    print(results)
-    # {0: 3, 1: 7}
-    ```
-    """
-    if extra_kwargs is None:
-        extra_kwargs = {}
-
-    # Manager object for shared result data as a dictionary
-    manager = Manager()
-    result_dict = manager.dict()
-    processes: list[Process] = []
-
-    for i, kwargs in enumerate(kwargs_list):
-        args = (*extra_args, result_dict, i)
-
-        # Merge per-process kwargs with common kwargs.
-        proc_kwargs = {**extra_kwargs, **kwargs}
-        p = Process(target=target, args=args, kwargs=proc_kwargs)
-        processes.append(p)
-        p.start()
-
-    for p in processes:
-        p.join()
-
-    return dict(result_dict)
 
 
 # These are compiled normalization and stat update functions
