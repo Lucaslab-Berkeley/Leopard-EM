@@ -53,10 +53,10 @@ class SharedWorkIndexQueue:
 
             return (start_idx, end_idx)
 
-    def get_progress(self) -> float:
-        """Get the current progress of the work queue as a fraction."""
+    def get_current_index(self) -> int:
+        """Get the current progress of the work queue (as an integer)."""
         with self.lock:
-            return float(self.next_index / self.total_indices)
+            return self.next_index.value
 
 
 def run_multiprocess_jobs(
@@ -64,6 +64,8 @@ def run_multiprocess_jobs(
     kwargs_list: list[dict[str, Any]],
     extra_args: tuple[Any, ...] = (),
     extra_kwargs: Optional[dict[str, Any]] = None,
+    track_tqdm_progress: bool = False,
+    post_start_callback: Optional[Callable] = None,
 ) -> dict[Any, Any]:
     """Helper function for running multiple processes on the same target function.
 
@@ -82,6 +84,8 @@ def run_multiprocess_jobs(
         parameters).
     extra_kwargs : Optional[dict[str, Any]], optional
         Additional common keyword arguments for all processes.
+    post_start_callback Optional[Callable], optional
+        Callback function to call after all processes have been started.
 
     Returns
     -------
@@ -120,6 +124,9 @@ def run_multiprocess_jobs(
         p = Process(target=target, args=args, kwargs=proc_kwargs)
         processes.append(p)
         p.start()
+
+    if post_start_callback is not None:
+        post_start_callback()
 
     for p in processes:
         p.join()

@@ -3,8 +3,12 @@
 # Following pylint error ignored because torc.fft.* is not recognized as callable
 # pylint: disable=E1102
 
+from typing import Union
 import warnings
 from multiprocessing import set_start_method
+import time
+import tqdm
+from functools import partial
 
 import roma
 import torch
@@ -26,6 +30,28 @@ torch.set_grad_enabled(False)
 
 # Set multiprocessing start method to spawn
 set_start_method("spawn", force=True)
+
+
+def monitor_match_template_progress(
+    queue: "SharedWorkIndexQueue",
+    pbar: tqdm.tqdm,
+    scaling_factor: Union[float, int] = 1,
+    poll_interval: float = 1.0,
+) -> None:
+    """Helper function for periodic polling of shared queue by tqdm."""
+    last_progress = 0
+    while True:
+        progress = queue.get_current_index()
+        delta = progress - last_progress
+
+        if delta > 0:
+            pbar.update(delta * scaling_factor)
+            last_progress = progress
+
+        if last_progress >= queue.total_indices:
+            break
+
+        time.sleep(poll_interval)
 
 
 ###########################################################
@@ -153,6 +179,9 @@ def core_match_template(
     ##############################################################
 
     projective_filters = ctf_filters * whitening_filter_template[None, None, ...]
+    total_projections = (
+        euler_angles.shape[0] * defocus_values.shape[0] * pixel_values.shape[0]
+    )
 
     ############################################################
     ### Shared queue mechanism and multiprocessing arguments ###
@@ -165,6 +194,21 @@ def core_match_template(
         total_indices=euler_angles.shape[0],
         batch_size=orientation_batch_size,
         prefetch_size=10,
+    )
+
+    # Progress bar for global search *across all devices*
+    pbar = tqdm.tqdm(
+        total=index_queue.total_indices,
+        desc="2DTM progress",
+        dynamic_ncols=True,
+        smoothing=0.02,
+        unit="corr",
+        unit_scale=defocus_values.shape[0] * pixel_values.shape[0],
+    )
+    progress_callback = partial(
+        monitor_match_template_progress,
+        queue=index_queue,
+        pbar=pbar,
     )
 
     kwargs_per_device = []
@@ -187,6 +231,7 @@ def core_match_template(
     result_dict = run_multiprocess_jobs(
         target=_core_match_template_single_gpu,
         kwargs_list=kwargs_per_device,
+        post_start_callback=progress_callback,
     )
 
     # Get the aggregated results
@@ -200,9 +245,6 @@ def core_match_template(
     correlation_sum = aggregated_results["correlation_sum"]
     correlation_squared_sum = aggregated_results["correlation_squared_sum"]
 
-    total_projections = (
-        euler_angles.shape[0] * defocus_values.shape[0] * pixel_values.shape[0]
-    )
     mip_scaled = torch.empty_like(mip)
     mip, mip_scaled, correlation_mean, correlation_variance = scale_mip(
         mip=mip,
