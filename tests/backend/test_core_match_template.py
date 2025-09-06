@@ -29,7 +29,7 @@ YAML_PATH = (
     Path(__file__).parent
     / "../tmp/test_match_template_xenon_216_000_0.0_DWS_config.yaml"
 ).resolve()
-ZENODO_URL = "https://zenodo.org/records/17069607"
+ZENODO_URL = "https://zenodo.org/records/17069838"
 ORIENTATION_BATCH_SIZE = 20
 
 
@@ -40,10 +40,7 @@ def download_comparison_data() -> None:
 
 def setup_match_template_manager() -> MatchTemplateManager:
     """Instantiate the manager object and run the template matching program."""
-    mt_manager = MatchTemplateManager.from_yaml(YAML_PATH)
-    mt_manager.make_backend_core_function_kwargs()
-
-    return mt_manager
+    return MatchTemplateManager.from_yaml(YAML_PATH)
 
 
 def mrcfile_allclose(path_a: str, path_b: str, **kwargs) -> bool:
