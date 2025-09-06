@@ -45,6 +45,7 @@ nav:
     - Optimize Template details:  programs/optimize_template.md
     - Constrained Search details: programs/constrained_search.md
   - Program Output Formats: data_formats.md
+  - Common Issues: common_issues.md
   #   - Analyzing Match Template Results: examples/analyzing_results.md
   # - Pydantic Model API: api/pydantic_models.md
   # - Backend API: api/backend.md
