@@ -3,9 +3,11 @@
 # Following pylint error ignored because torc.fft.* is not recognized as callable
 # pylint: disable=E1102
 
-import math
+import time
 import warnings
+from functools import partial
 from multiprocessing import set_start_method
+from typing import Union
 
 import roma
 import torch
@@ -14,14 +16,12 @@ import tqdm
 from leopard_em.backend.cross_correlation import (
     do_streamed_orientation_cross_correlate,
 )
+from leopard_em.backend.distributed import SharedWorkIndexQueue, run_multiprocess_jobs
 from leopard_em.backend.process_results import (
     aggregate_distributed_results,
     scale_mip,
 )
-from leopard_em.backend.utils import (
-    do_iteration_statistics_updates_compiled,
-    run_multiprocess_jobs,
-)
+from leopard_em.backend.utils import do_iteration_statistics_updates_compiled
 
 DEFAULT_STATISTIC_DTYPE = torch.float32
 
@@ -30,6 +30,86 @@ torch.set_grad_enabled(False)
 
 # Set multiprocessing start method to spawn
 set_start_method("spawn", force=True)
+
+
+def monitor_match_template_progress(
+    queue: "SharedWorkIndexQueue",
+    pbar: tqdm.tqdm,
+    device_pbars: dict[int, tqdm.tqdm],
+    poll_interval: float = 1.0,  # in seconds
+) -> None:
+    """Helper function for periodic polling of shared queue by tqdm."""
+    last_progress = 0
+    last_per_device = [0] * len(device_pbars)
+
+    while True:
+        progress = queue.get_current_index()
+        delta = progress - last_progress
+
+        # Update the global search progress bar
+        if delta > 0:
+            pbar.update(delta)
+            last_progress = progress
+
+        # Update each of the progress bars for each device
+        device_counts = queue.get_process_counts()
+        for i, dv_pbar in enumerate(device_pbars.values()):
+            delta = device_counts[i] - last_per_device[i]
+            if delta > 0:
+                dv_pbar.update(delta)
+                last_per_device[i] = device_counts[i]
+
+        # Done with tracking when progress reaches the end of the queue
+        if last_progress >= queue.total_indices:
+            break
+
+        time.sleep(poll_interval)
+
+
+def setup_progress_tracking(
+    index_queue: "SharedWorkIndexQueue", unit_scale: Union[float, int], num_devices: int
+) -> tuple[tqdm.tqdm, dict[int, tqdm.tqdm]]:
+    """Setup global and per-device tqdm progress bars for template matching.
+
+    Parameters
+    ----------
+    index_queue : SharedWorkIndexQueue
+        The shared work queue tracking global indices.
+    unit_scale : Union[float, int]
+        Scaling factor to apply to units
+    num_devices : int
+        Number of GPU devices being used.
+
+    Returns
+    -------
+    tuple[tqdm.tqdm, dict[int, tqdm.tqdm]]
+        Global progress bar and dictionary of per-device progress bars.
+    """
+    # Global progress bar
+    global_pbar = tqdm.tqdm(
+        total=index_queue.total_indices,
+        desc="2DTM progress",
+        dynamic_ncols=True,
+        smoothing=0.02,
+        unit="corr",
+        unit_scale=unit_scale,
+    )
+
+    # Per-device progress bars
+    device_pbars = {
+        i: tqdm.tqdm(
+            desc=f"GPU {i}",
+            dynamic_ncols=True,
+            smoothing=0.02,
+            unit="corr",
+            unit_scale=unit_scale,
+            position=i + 1,  # place below the global bar
+            leave=True,
+        )
+        for i in range(num_devices)
+    }
+
+    return global_pbar, device_pbars
 
 
 ###########################################################
@@ -118,7 +198,6 @@ def core_match_template(
             - "correlation_sum": Sum of cross-correlation values for each pixel.
             - "correlation_squared_sum": Sum of squared cross-correlation values for
               each pixel.
-            - "total_projections": Total number of projections calculated.
             - "total_orientations": Total number of orientations searched.
             - "total_defocus": Total number of defocus values searched.
     """
@@ -158,29 +237,58 @@ def core_match_template(
     ##############################################################
 
     projective_filters = ctf_filters * whitening_filter_template[None, None, ...]
+    total_projections = (
+        euler_angles.shape[0] * defocus_values.shape[0] * pixel_values.shape[0]
+    )
 
-    #########################################
-    ### Split orientations across devices ###
-    #########################################
+    ############################################################
+    ### Shared queue mechanism and multiprocessing arguments ###
+    ############################################################
 
     if isinstance(device, torch.device):
         device = [device]
 
-    kwargs_per_device = construct_multi_gpu_match_template_kwargs(
-        image_dft=image_dft,
-        template_dft=template_dft,
-        euler_angles=euler_angles,
-        projective_filters=projective_filters,
-        defocus_values=defocus_values,
-        pixel_values=pixel_values,
-        orientation_batch_size=orientation_batch_size,
-        num_cuda_streams=num_cuda_streams,
-        devices=device,
+    index_queue = SharedWorkIndexQueue(
+        total_indices=euler_angles.shape[0],
+        batch_size=orientation_batch_size,
+        prefetch_size=10,
+        num_processes=len(device),
     )
+
+    # Progress tracking for global search and correlations per-device
+    global_pbar, device_pbars = setup_progress_tracking(
+        index_queue=index_queue,
+        unit_scale=defocus_values.shape[0] * pixel_values.shape[0],
+        num_devices=len(device),
+    )
+    progress_callback = partial(
+        monitor_match_template_progress,
+        queue=index_queue,
+        pbar=global_pbar,
+        device_pbars=device_pbars,
+    )
+
+    kwargs_per_device = []
+    for d in device:
+        kwargs = {
+            "index_queue": index_queue,
+            "image_dft": image_dft,
+            "template_dft": template_dft,
+            "euler_angles": euler_angles,
+            "projective_filters": projective_filters,
+            "defocus_values": defocus_values,
+            "pixel_values": pixel_values,
+            "orientation_batch_size": orientation_batch_size,
+            "num_cuda_streams": num_cuda_streams,
+            "device": d,
+        }
+
+        kwargs_per_device.append(kwargs)
 
     result_dict = run_multiprocess_jobs(
         target=_core_match_template_single_gpu,
         kwargs_list=kwargs_per_device,
+        post_start_callback=progress_callback,
     )
 
     # Get the aggregated results
@@ -193,7 +301,6 @@ def core_match_template(
     best_defocus = aggregated_results["best_defocus"]
     correlation_sum = aggregated_results["correlation_sum"]
     correlation_squared_sum = aggregated_results["correlation_squared_sum"]
-    total_projections = aggregated_results["total_projections"]
 
     mip_scaled = torch.empty_like(mip)
     mip, mip_scaled, correlation_mean, correlation_variance = scale_mip(
@@ -219,80 +326,13 @@ def core_match_template(
     }
 
 
-def construct_multi_gpu_match_template_kwargs(
-    image_dft: torch.Tensor,
-    template_dft: torch.Tensor,
-    euler_angles: torch.Tensor,
-    projective_filters: torch.Tensor,
-    defocus_values: torch.Tensor,
-    pixel_values: torch.Tensor,
-    orientation_batch_size: int,
-    num_cuda_streams: int,
-    devices: list[torch.device],
-) -> list[dict[str, torch.Tensor | torch.device | int]]:
-    """Split orientations between requested devices.
-
-    See the `core_match_template` function for further descriptions of the
-    input parameters.
-
-    Parameters
-    ----------
-    image_dft : torch.Tensor
-        dft of image
-    template_dft : torch.Tensor
-        dft of template
-    euler_angles : torch.Tensor
-        euler angles to search
-    projective_filters : torch.Tensor
-        filters to apply to each projection
-    defocus_values : torch.Tensor
-        corresponding defocus values for each filter
-    pixel_values : torch.Tensor
-        corresponding pixel size values for each filter
-    orientation_batch_size : int
-        number of projections to calculate at once
-    num_cuda_streams : int
-        number of CUDA streams to use for parallelizing cross-correlation computation
-    devices : list[torch.device]
-        list of devices to split the orientations across
-
-    Returns
-    -------
-    list[dict[str, torch.Tensor | int]]
-        List of dictionaries containing the kwargs to call the single-GPU
-        function. Each index in the list corresponds to a different device,
-        and all tensors in the dictionary have been allocated to that device.
-    """
-    kwargs_per_device = []
-
-    # Split the euler angles across devices
-    euler_angles_split = euler_angles.chunk(len(devices))
-
-    for device, euler_angles_device in zip(devices, euler_angles_split):
-        # Allocate and construct the kwargs for this device
-        kwargs = {
-            "image_dft": image_dft,
-            "template_dft": template_dft,
-            "euler_angles": euler_angles_device,
-            "projective_filters": projective_filters,
-            "defocus_values": defocus_values,
-            "pixel_values": pixel_values,
-            "orientation_batch_size": orientation_batch_size,
-            "num_cuda_streams": num_cuda_streams,
-            "device": device,
-        }
-
-        kwargs_per_device.append(kwargs)
-
-    return kwargs_per_device
-
-
 # pylint: disable=too-many-locals
 # pylint: disable=too-many-arguments
 # pylint: disable=too-many-positional-arguments
 def _core_match_template_single_gpu(
     result_dict: dict,
     device_id: int,
+    index_queue: SharedWorkIndexQueue,
     image_dft: torch.Tensor,
     template_dft: torch.Tensor,
     euler_angles: torch.Tensor,
@@ -315,6 +355,9 @@ def _core_match_template_single_gpu(
     device_id : int
         ID of the device which computation is running on. Results will be stored
         in the dictionary with this key.
+    index_queue : SharedWorkIndexQueue
+        Torch multiprocessing object for retrieving the next batch of orientations to
+        process during the 2DTM search.
     image_dft : torch.Tensor
         Real-fourier transform (RFFT) of the image with large image filters
         already applied. Has shape (H, W // 2 + 1).
@@ -408,65 +451,50 @@ def _core_match_template_single_gpu(
         size=image_shape_real, dtype=DEFAULT_STATISTIC_DTYPE, device=device
     )
 
-    ########################################################
-    ### Setup iterator object with tqdm for progress bar ###
-    ########################################################
-
-    total_projections = (
-        euler_angles.shape[0] * defocus_values.shape[0] * pixel_values.shape[0]
-    )
-
-    num_batches = math.ceil(euler_angles.shape[0] / orientation_batch_size)
-    orientation_batch_iterator = tqdm.tqdm(
-        range(num_batches),
-        desc=f"Progress on device: {device.index}",
-        leave=True,
-        total=num_batches,
-        dynamic_ncols=True,
-        position=device.index,
-        mininterval=1,  # Slow down to reduce number of lines written
-        smoothing=0.02,
-        unit="corr",
-        unit_scale=int(total_projections / num_batches) + 1,
-    )
-
     ##################################
     ### Start the orientation loop ###
     ##################################
 
-    for i in orientation_batch_iterator:
-        euler_angles_batch = euler_angles[
-            i * orientation_batch_size : (i + 1) * orientation_batch_size
-        ]
-        rot_matrix = roma.euler_to_rotmat(
-            "ZYZ", euler_angles_batch, degrees=True, device=device
-        )
+    while True:
+        indices = index_queue.get_next_indices(process_id=device_id)
+        if indices is None:
+            break
 
-        cross_correlation = do_streamed_orientation_cross_correlate(
-            image_dft=image_dft,
-            template_dft=template_dft,
-            rotation_matrices=rot_matrix,
-            projective_filters=projective_filters,
-            streams=streams,
-        )
+        # Fetching more than orientation_batch_size, so need inner loop
+        start_idx, end_idx = indices
 
-        # Update the tracked statistics through compiled function
-        do_iteration_statistics_updates_compiled(
-            cross_correlation,
-            euler_angles_batch,
-            defocus_values,
-            pixel_values,
-            mip,
-            best_phi,
-            best_theta,
-            best_psi,
-            best_defocus,
-            best_pixel_size,
-            correlation_sum,
-            correlation_squared_sum,
-            image_shape_real[0],
-            image_shape_real[1],
-        )
+        for i in range(start_idx, end_idx, orientation_batch_size):
+            batch_end = min(i + orientation_batch_size, end_idx)
+            euler_angles_batch = euler_angles[i:batch_end]
+            rot_matrix = roma.euler_to_rotmat(
+                "ZYZ", euler_angles_batch, degrees=True, device=device
+            )
+
+            cross_correlation = do_streamed_orientation_cross_correlate(
+                image_dft=image_dft,
+                template_dft=template_dft,
+                rotation_matrices=rot_matrix,
+                projective_filters=projective_filters,
+                streams=streams,
+            )
+
+            # Update the tracked statistics through compiled function
+            do_iteration_statistics_updates_compiled(
+                cross_correlation,
+                euler_angles_batch,
+                defocus_values,
+                pixel_values,
+                mip,
+                best_phi,
+                best_theta,
+                best_psi,
+                best_defocus,
+                best_pixel_size,
+                correlation_sum,
+                correlation_squared_sum,
+                image_shape_real[0],
+                image_shape_real[1],
+            )
 
     # Synchronization barrier post-computation
     for stream in streams:
@@ -485,7 +513,6 @@ def _core_match_template_single_gpu(
         "best_pixel_size": best_pixel_size.cpu().numpy(),
         "correlation_sum": correlation_sum.cpu().numpy(),
         "correlation_squared_sum": correlation_squared_sum.cpu().numpy(),
-        "total_projections": total_projections,
     }
 
     # Place the results in the shared multi-process manager dictionary so accessible
