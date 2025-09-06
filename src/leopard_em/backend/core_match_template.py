@@ -3,15 +3,15 @@
 # Following pylint error ignored because torc.fft.* is not recognized as callable
 # pylint: disable=E1102
 
-from typing import Union
-import warnings
-from multiprocessing import set_start_method
 import time
-import tqdm
+import warnings
 from functools import partial
+from multiprocessing import set_start_method
+from typing import Union
 
 import roma
 import torch
+import tqdm
 
 from leopard_em.backend.cross_correlation import (
     do_streamed_orientation_cross_correlate,
@@ -35,23 +35,81 @@ set_start_method("spawn", force=True)
 def monitor_match_template_progress(
     queue: "SharedWorkIndexQueue",
     pbar: tqdm.tqdm,
-    scaling_factor: Union[float, int] = 1,
-    poll_interval: float = 1.0,
+    device_pbars: dict[int, tqdm.tqdm],
+    poll_interval: float = 1.0,  # in seconds
 ) -> None:
     """Helper function for periodic polling of shared queue by tqdm."""
     last_progress = 0
+    last_per_device = [0] * len(device_pbars)
+
     while True:
         progress = queue.get_current_index()
         delta = progress - last_progress
 
+        # Update the global search progress bar
         if delta > 0:
-            pbar.update(delta * scaling_factor)
+            pbar.update(delta)
             last_progress = progress
 
+        # Update each of the progress bars for each device
+        device_counts = queue.get_process_counts()
+        for i, dv_pbar in enumerate(device_pbars.values()):
+            delta = device_counts[i] - last_per_device[i]
+            if delta > 0:
+                dv_pbar.update(delta)
+                last_per_device[i] = device_counts[i]
+
+        # Done with tracking when progress reaches the end of the queue
         if last_progress >= queue.total_indices:
             break
 
         time.sleep(poll_interval)
+
+
+def setup_progress_tracking(
+    index_queue: "SharedWorkIndexQueue", unit_scale: Union[float, int], num_devices: int
+) -> tuple[tqdm.tqdm, dict[int, tqdm.tqdm]]:
+    """Setup global and per-device tqdm progress bars for template matching.
+
+    Parameters
+    ----------
+    index_queue : SharedWorkIndexQueue
+        The shared work queue tracking global indices.
+    unit_scale : Union[float, int]
+        Scaling factor to apply to units
+    num_devices : int
+        Number of GPU devices being used.
+
+    Returns
+    -------
+    tuple[tqdm.tqdm, dict[int, tqdm.tqdm]]
+        Global progress bar and dictionary of per-device progress bars.
+    """
+    # Global progress bar
+    global_pbar = tqdm.tqdm(
+        total=index_queue.total_indices,
+        desc="2DTM progress",
+        dynamic_ncols=True,
+        smoothing=0.02,
+        unit="corr",
+        unit_scale=unit_scale,
+    )
+
+    # Per-device progress bars
+    device_pbars = {
+        i: tqdm.tqdm(
+            desc=f"GPU {i}",
+            dynamic_ncols=True,
+            smoothing=0.02,
+            unit="corr",
+            unit_scale=unit_scale,
+            position=i + 1,  # place below the global bar
+            leave=True,
+        )
+        for i in range(num_devices)
+    }
+
+    return global_pbar, device_pbars
 
 
 ###########################################################
@@ -194,21 +252,20 @@ def core_match_template(
         total_indices=euler_angles.shape[0],
         batch_size=orientation_batch_size,
         prefetch_size=10,
+        num_processes=len(device),
     )
 
-    # Progress bar for global search *across all devices*
-    pbar = tqdm.tqdm(
-        total=index_queue.total_indices,
-        desc="2DTM progress",
-        dynamic_ncols=True,
-        smoothing=0.02,
-        unit="corr",
+    # Progress tracking for global search and correlations per-device
+    global_pbar, device_pbars = setup_progress_tracking(
+        index_queue=index_queue,
         unit_scale=defocus_values.shape[0] * pixel_values.shape[0],
+        num_devices=len(device),
     )
     progress_callback = partial(
         monitor_match_template_progress,
         queue=index_queue,
-        pbar=pbar,
+        pbar=global_pbar,
+        device_pbars=device_pbars,
     )
 
     kwargs_per_device = []
@@ -399,7 +456,7 @@ def _core_match_template_single_gpu(
     ##################################
 
     while True:
-        indices = index_queue.get_next_indices()
+        indices = index_queue.get_next_indices(process_id=device_id)
         if indices is None:
             break
 
