@@ -1,10 +1,18 @@
 """Utility and helper functions associated with the backend of Leopard-EM."""
 
 import os
+import re
 import warnings
 from typing import Any, Callable, TypeVar
 
 import torch
+
+# Suppress the specific deprecation warnings from PyTorch internals
+warnings.filterwarnings(
+    "ignore",
+    category=UserWarning,
+    message=re.escape("Logical operators 'and' and 'or' are deprecated for non-scalar"),
+)
 
 F = TypeVar("F", bound=Callable[..., Any])
 
@@ -219,21 +227,19 @@ def do_iteration_statistics_updates(
     # using torch.where directly
     update_mask = max_values > mip
 
-    mip = torch.where(update_mask, max_values, mip)
-    best_phi = torch.where(update_mask, euler_angles[max_orientation_idx, 0], best_phi)
-    best_theta = torch.where(
-        update_mask, euler_angles[max_orientation_idx, 1], best_theta
-    )
-    best_psi = torch.where(update_mask, euler_angles[max_orientation_idx, 2], best_psi)
-    best_defocus = torch.where(
-        update_mask, defocus_values[max_defocus_idx], best_defocus
-    )
-    best_pixel_size = torch.where(
-        update_mask, pixel_values[max_cs_idx], best_pixel_size
-    )
+    # pylint: disable=line-too-long
+    # fmt: off
+    torch.where(update_mask, max_values, mip, out=mip)
+    torch.where(update_mask, euler_angles[max_orientation_idx, 0], best_phi, out=best_phi)  # noqa: E501
+    torch.where(update_mask, euler_angles[max_orientation_idx, 1], best_theta, out=best_theta)  # noqa: E501
+    torch.where(update_mask, euler_angles[max_orientation_idx, 2], best_psi, out=best_psi)  # noqa: E501
+    torch.where(update_mask, defocus_values[max_defocus_idx], best_defocus, out=best_defocus)  # noqa: E501
+    torch.where(update_mask, pixel_values[max_cs_idx], best_pixel_size, out=best_pixel_size)  # noqa: E501
+    # fmt: on
+    # pylint: enable=line-too-long
 
-    correlation_sum = correlation_sum + cc_reshaped.sum(dim=0)
-    correlation_squared_sum = correlation_squared_sum + (cc_reshaped**2).sum(dim=0)
+    correlation_sum += cc_reshaped.sum(dim=0)
+    correlation_squared_sum += (cc_reshaped**2).sum(dim=0)
 
 
 # These are compiled normalization and stat update functions
@@ -241,5 +247,7 @@ normalize_template_projection_compiled = attempt_torch_compilation(
     normalize_template_projection, backend="inductor", mode="default"
 )
 do_iteration_statistics_updates_compiled = attempt_torch_compilation(
-    do_iteration_statistics_updates, backend="inductor", mode="max-autotune"
+    do_iteration_statistics_updates,
+    backend="inductor",
+    mode="max-autotune-no-cudagraphs",
 )

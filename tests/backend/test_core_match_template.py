@@ -57,13 +57,13 @@ def mrcfile_allclose(path_a: str, path_b: str, **kwargs) -> bool:
 @pytest.mark.slow
 def test_core_match_template():
     download_comparison_data()
-    # mt_manager = setup_match_template_manager()
+    mt_manager = setup_match_template_manager()
 
-    # # Run the match template program
-    # mt_manager.run_match_template(
-    #     orientation_batch_size=ORIENTATION_BATCH_SIZE,
-    #     do_result_export=True,  # Saves the statistics immediately upon completion
-    # )
+    # Run the match template program
+    mt_manager.run_match_template(
+        orientation_batch_size=ORIENTATION_BATCH_SIZE,
+        do_result_export=True,  # Saves the statistics immediately upon completion
+    )
 
     # Ensure the MIPs are the same, if they are not then there's an issue...
     assert mrcfile_allclose(
