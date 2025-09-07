@@ -6,6 +6,7 @@ from typing import Any, Callable, Optional
 import torch.multiprocessing as mp
 
 
+# pylint: disable=too-many-instance-attributes
 class SharedWorkIndexQueue:
     """Simple queue class for managing a shared index counter tracking work.
 
@@ -34,6 +35,7 @@ class SharedWorkIndexQueue:
 
     next_index: mp.Value
     process_counts: mp.Array
+    error_flag: mp.Value
     num_processes: int
     total_indices: int
     batch_size: int
@@ -49,6 +51,7 @@ class SharedWorkIndexQueue:
     ):
         self.next_index = mp.Value("i", 0)  # Shared counter
         self.process_counts = mp.Array("i", [0] * num_processes)
+        self.error_flag = mp.Value("i", 0)  # 0 = no error, 1 = error occurred
         self.num_processes = num_processes
         self.total_indices = total_indices
         self.batch_size = batch_size
@@ -93,6 +96,16 @@ class SharedWorkIndexQueue:
         with self.lock:
             return list(self.process_counts)
 
+    def error_occurred(self) -> bool:
+        """Check if an error has occurred in any process."""
+        with self.lock:
+            return bool(self.error_flag.value == 1)
+
+    def set_error_flag(self) -> None:
+        """Set the error flag to indicate an error has occurred."""
+        with self.lock:
+            self.error_flag.value = 1
+
 
 def run_multiprocess_jobs(
     target: Callable,
@@ -125,6 +138,11 @@ def run_multiprocess_jobs(
     -------
     dict[Any, Any]
         Aggregated results stored in the shared dictionary.
+
+    Raises
+    ------
+    RuntimeError
+        If any child process encounters an error.
 
     Example
     -------

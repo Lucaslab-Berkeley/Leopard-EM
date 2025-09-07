@@ -151,22 +151,11 @@ def normalize_template_projection(
     return projections
 
 
-# NOTE: Disabling pylint for number of argument since these all need updated in-place
-# and is more efficient than packing into some other type of object.
-# pylint: disable=too-many-locals
-# pylint: disable=too-many-arguments
-# pylint: disable=too-many-positional-arguments
 def do_iteration_statistics_updates(
     cross_correlation: torch.Tensor,
-    euler_angles: torch.Tensor,
-    defocus_values: torch.Tensor,
-    pixel_values: torch.Tensor,
+    current_indexes: torch.Tensor,
     mip: torch.Tensor,
-    best_phi: torch.Tensor,
-    best_theta: torch.Tensor,
-    best_psi: torch.Tensor,
-    best_defocus: torch.Tensor,
-    best_pixel_size: torch.Tensor,
+    best_global_index: torch.Tensor,
     correlation_sum: torch.Tensor,
     correlation_squared_sum: torch.Tensor,
     img_h: int,
@@ -185,26 +174,21 @@ def do_iteration_statistics_updates(
     Parameters
     ----------
     cross_correlation : torch.Tensor
-        Cross-correlation values for the current iteration. Has either shape
-        (batch, H, W) or (defocus, orientations, H, W).
-    euler_angles : torch.Tensor
-        Euler angles for the current iteration. Has shape (orientations, 3).
-    defocus_values : torch.Tensor
-        Defocus values for the current iteration. Has shape (defocus,).
-    pixel_values : torch.Tensor
-        Pixel size values for the current iteration. Has shape (pixel_size_batch,).
+        Cross-correlation values for the current iteration. Has shape
+        (num_cs, num_defocus, num_orientations, H, W) where 'num_cs' are the number of
+        different pixel sizes (controlled by spherical aberration Cs) in the
+        cross-correlation batch, 'num_defocus' are the number of different defocus
+        values in the cross-correlation batch, and 'num_orientations' are the number of
+        different orientations in the cross-correlation batch.
+    current_indexes : torch.Tensor
+        The global search indexes for the *current* batch of pixel sizes, defocus
+        values, and orientations. Has shape `num_cs * num_defocus * num_orientations`
+        to uniquely identify the set of pixel sizes, defocus values, and orientations
+        associated with the batch from the global search space.
     mip : torch.Tensor
         Maximum intensity projection of the cross-correlation values.
-    best_phi : torch.Tensor
-        Best phi angle for each pixel.
-    best_theta : torch.Tensor
-        Best theta angle for each pixel.
-    best_psi : torch.Tensor
-        Best psi angle for each pixel.
-    best_defocus : torch.Tensor
-        Best defocus value for each pixel.
-    best_pixel_size : torch.Tensor
-        Best pixel size value for each pixel.
+    best_global_index : torch.Tensor
+        Previous best global search indexes. Has shape (H, W) and is int32 type.
     correlation_sum : torch.Tensor
         Sum of cross-correlation values for each pixel.
     correlation_squared_sum : torch.Tensor
@@ -214,29 +198,21 @@ def do_iteration_statistics_updates(
     img_w : int
         Width of the cross-correlation values.
     """
-    num_cs, num_defocs, num_orientations = cross_correlation.shape[0:3]
-
-    # Flatten the batch dimensions for faster processing
     cc_reshaped = cross_correlation.view(-1, img_h, img_w)
 
+    # Need two passes for maxima operator for memory efficiency
+    # and to distinguish between batch position which would both update
     max_values, max_indices = torch.max(cc_reshaped, dim=0)
-    max_cs_idx = (max_indices // (num_defocs * num_orientations)) % num_cs
-    max_defocus_idx = (max_indices // num_orientations) % num_defocs
-    max_orientation_idx = max_indices % num_orientations
 
-    # using torch.where directly
+    # Do masked updates with torch.where directly (in-place)
     update_mask = max_values > mip
-
-    # pylint: disable=line-too-long
-    # fmt: off
     torch.where(update_mask, max_values, mip, out=mip)
-    torch.where(update_mask, euler_angles[max_orientation_idx, 0], best_phi, out=best_phi)  # noqa: E501
-    torch.where(update_mask, euler_angles[max_orientation_idx, 1], best_theta, out=best_theta)  # noqa: E501
-    torch.where(update_mask, euler_angles[max_orientation_idx, 2], best_psi, out=best_psi)  # noqa: E501
-    torch.where(update_mask, defocus_values[max_defocus_idx], best_defocus, out=best_defocus)  # noqa: E501
-    torch.where(update_mask, pixel_values[max_cs_idx], best_pixel_size, out=best_pixel_size)  # noqa: E501
-    # fmt: on
-    # pylint: enable=line-too-long
+    torch.where(
+        update_mask,
+        current_indexes[max_indices],
+        best_global_index,
+        out=best_global_index,
+    )
 
     correlation_sum += cc_reshaped.sum(dim=0)
     correlation_squared_sum += (cc_reshaped**2).sum(dim=0)

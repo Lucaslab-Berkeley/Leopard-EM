@@ -19,6 +19,7 @@ from leopard_em.backend.cross_correlation import (
 from leopard_em.backend.distributed import SharedWorkIndexQueue, run_multiprocess_jobs
 from leopard_em.backend.process_results import (
     aggregate_distributed_results,
+    decode_global_search_index,
     scale_mip,
 )
 from leopard_em.backend.utils import do_iteration_statistics_updates_compiled
@@ -38,32 +39,47 @@ def monitor_match_template_progress(
     device_pbars: dict[int, tqdm.tqdm],
     poll_interval: float = 1.0,  # in seconds
 ) -> None:
-    """Helper function for periodic polling of shared queue by tqdm."""
+    """Helper function for periodic polling of shared queue by tqdm.
+
+    This function monitors the progress of template matching and updates progress bars.
+    """
     last_progress = 0
     last_per_device = [0] * len(device_pbars)
 
-    while True:
-        progress = queue.get_current_index()
-        delta = progress - last_progress
+    try:
+        while True:
+            if queue.error_occurred():
+                raise RuntimeError("Exiting due to error in another process.")
+            progress = queue.get_current_index()
+            delta = progress - last_progress
 
-        # Update the global search progress bar
-        if delta > 0:
-            pbar.update(delta)
-            last_progress = progress
-
-        # Update each of the progress bars for each device
-        device_counts = queue.get_process_counts()
-        for i, dv_pbar in enumerate(device_pbars.values()):
-            delta = device_counts[i] - last_per_device[i]
+            # Update the global search progress bar
             if delta > 0:
-                dv_pbar.update(delta)
-                last_per_device[i] = device_counts[i]
+                pbar.update(delta)
+                last_progress = progress
 
-        # Done with tracking when progress reaches the end of the queue
-        if last_progress >= queue.total_indices:
-            break
+            # Update each of the progress bars for each device
+            device_counts = queue.get_process_counts()
+            for i, dv_pbar in enumerate(device_pbars.values()):
+                delta = device_counts[i] - last_per_device[i]
+                if delta > 0:
+                    dv_pbar.update(delta)
+                    last_per_device[i] = device_counts[i]
 
-        time.sleep(poll_interval)
+            # Done with tracking when progress reaches the end of the queue
+            if last_progress >= queue.total_indices:
+                break
+
+            time.sleep(poll_interval)
+    except Exception as e:
+        print(f"Error occurred: {e}")
+        queue.set_error_flag()
+        raise e
+    finally:
+        # Clean up progress bars
+        for dv_pbar in device_pbars.values():
+            dv_pbar.close()
+        pbar.close()
 
 
 def setup_progress_tracking(
@@ -295,12 +311,14 @@ def core_match_template(
     partial_results = [result_dict[i] for i in range(len(kwargs_per_device))]
     aggregated_results = aggregate_distributed_results(partial_results)
     mip = aggregated_results["mip"]
-    best_phi = aggregated_results["best_phi"]
-    best_theta = aggregated_results["best_theta"]
-    best_psi = aggregated_results["best_psi"]
-    best_defocus = aggregated_results["best_defocus"]
+    best_global_index = aggregated_results["best_global_index"]
     correlation_sum = aggregated_results["correlation_sum"]
     correlation_squared_sum = aggregated_results["correlation_squared_sum"]
+
+    # Map from global search index to the best defocus & angles
+    best_phi, best_theta, best_psi, best_defocus = decode_global_search_index(
+        best_global_index, pixel_values, defocus_values, euler_angles
+    )
 
     mip_scaled = torch.empty_like(mip)
     mip, mip_scaled, correlation_mean, correlation_variance = scale_mip(
@@ -401,8 +419,22 @@ def _core_match_template_single_gpu(
     template_dft = template_dft.to(device)
     euler_angles = euler_angles.to(device)
     projective_filters = projective_filters.to(device)
-    defocus_values = defocus_values.to(device)
-    pixel_values = pixel_values.to(device)
+    # defocus_values = defocus_values.to(device)
+    # pixel_values = pixel_values.to(device)
+
+    num_orientations = euler_angles.shape[0]
+    num_defocus = defocus_values.shape[0]
+    num_cs = pixel_values.shape[0]
+
+    local_to_global_idx_increment = torch.tensor(
+        [
+            df * num_orientations + cs * num_defocus * num_orientations
+            for cs in range(num_cs)
+            for df in range(num_defocus)
+        ],
+        dtype=torch.int32,
+        device=device,
+    )
 
     ################################################
     ### Initialize the tracked output statistics ###
@@ -414,35 +446,8 @@ def _core_match_template_single_gpu(
         dtype=DEFAULT_STATISTIC_DTYPE,
         device=device,
     )
-    best_phi = torch.full(
-        size=image_shape_real,
-        fill_value=-1000.0,
-        dtype=DEFAULT_STATISTIC_DTYPE,
-        device=device,
-    )
-    best_theta = torch.full(
-        size=image_shape_real,
-        fill_value=-1000.0,
-        dtype=DEFAULT_STATISTIC_DTYPE,
-        device=device,
-    )
-    best_psi = torch.full(
-        size=image_shape_real,
-        fill_value=-1000.0,
-        dtype=DEFAULT_STATISTIC_DTYPE,
-        device=device,
-    )
-    best_defocus = torch.full(
-        size=image_shape_real,
-        fill_value=float("inf"),
-        dtype=DEFAULT_STATISTIC_DTYPE,
-        device=device,
-    )
-    best_pixel_size = torch.full(
-        size=image_shape_real,
-        fill_value=float("inf"),
-        dtype=DEFAULT_STATISTIC_DTYPE,
-        device=device,
+    best_global_index = torch.full(
+        image_shape_real, fill_value=-1, dtype=torch.int32, device=device
     )
     correlation_sum = torch.zeros(
         size=image_shape_real, dtype=DEFAULT_STATISTIC_DTYPE, device=device
@@ -456,45 +461,58 @@ def _core_match_template_single_gpu(
     ##################################
 
     while True:
-        indices = index_queue.get_next_indices(process_id=device_id)
-        if indices is None:
-            break
+        if index_queue.error_occurred():
+            raise RuntimeError("Exiting due to error in another process.")
 
-        # Fetching more than orientation_batch_size, so need inner loop
-        start_idx, end_idx = indices
+        try:
+            indices = index_queue.get_next_indices(process_id=device_id)
+            if indices is None:
+                break
 
-        for i in range(start_idx, end_idx, orientation_batch_size):
-            batch_end = min(i + orientation_batch_size, end_idx)
-            euler_angles_batch = euler_angles[i:batch_end]
-            rot_matrix = roma.euler_to_rotmat(
-                "ZYZ", euler_angles_batch, degrees=True, device=device
-            )
+            # Fetching more than orientation_batch_size, so need inner loop
+            start_idx, end_idx = indices
 
-            cross_correlation = do_streamed_orientation_cross_correlate(
-                image_dft=image_dft,
-                template_dft=template_dft,
-                rotation_matrices=rot_matrix,
-                projective_filters=projective_filters,
-                streams=streams,
-            )
+            for i in range(start_idx, end_idx, orientation_batch_size):
+                euler_angles_batch = euler_angles[i : i + orientation_batch_size]
+                rot_matrix = roma.euler_to_rotmat(
+                    "ZYZ", euler_angles_batch, degrees=True, device=device
+                )
 
-            # Update the tracked statistics through compiled function
-            do_iteration_statistics_updates_compiled(
-                cross_correlation,
-                euler_angles_batch,
-                defocus_values,
-                pixel_values,
-                mip,
-                best_phi,
-                best_theta,
-                best_psi,
-                best_defocus,
-                best_pixel_size,
-                correlation_sum,
-                correlation_squared_sum,
-                image_shape_real[0],
-                image_shape_real[1],
-            )
+                # Calculate the global search indices. These act as if the entire search
+                # space of bach shape (num_cs, num_defocus, num_orientations) had been
+                # flattened into one contiguous dimension.
+                indices = torch.arange(
+                    i,
+                    i + orientation_batch_size,
+                    dtype=torch.int32,
+                    device=device,
+                )
+                batch_search_indices = indices + local_to_global_idx_increment[:, None]
+                batch_search_indices = batch_search_indices.flatten()
+
+                cross_correlation = do_streamed_orientation_cross_correlate(
+                    image_dft=image_dft,
+                    template_dft=template_dft,
+                    rotation_matrices=rot_matrix,
+                    projective_filters=projective_filters,
+                    streams=streams,
+                )
+
+                # Update the tracked statistics
+                do_iteration_statistics_updates_compiled(
+                    cross_correlation=cross_correlation,
+                    current_indexes=batch_search_indices,
+                    mip=mip,
+                    best_global_index=best_global_index,
+                    correlation_sum=correlation_sum,
+                    correlation_squared_sum=correlation_squared_sum,
+                    img_h=image_shape_real[0],
+                    img_w=image_shape_real[1],
+                )
+        except Exception as e:
+            index_queue.set_error_flag()
+            print(f"Error occurred in process {device_id}: {e}")
+            raise e
 
     # Synchronization barrier post-computation
     for stream in streams:
@@ -506,11 +524,7 @@ def _core_match_template_single_gpu(
     # process dictionary. This is a workaround for now
     result = {
         "mip": mip.cpu().numpy(),
-        "best_phi": best_phi.cpu().numpy(),
-        "best_theta": best_theta.cpu().numpy(),
-        "best_psi": best_psi.cpu().numpy(),
-        "best_defocus": best_defocus.cpu().numpy(),
-        "best_pixel_size": best_pixel_size.cpu().numpy(),
+        "best_global_index": best_global_index.cpu().numpy(),
         "correlation_sum": correlation_sum.cpu().numpy(),
         "correlation_squared_sum": correlation_squared_sum.cpu().numpy(),
     }
