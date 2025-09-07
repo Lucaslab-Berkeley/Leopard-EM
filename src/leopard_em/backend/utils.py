@@ -1,10 +1,18 @@
 """Utility and helper functions associated with the backend of Leopard-EM."""
 
 import os
+import re
 import warnings
 from typing import Any, Callable, TypeVar
 
 import torch
+
+# Suppress the specific deprecation warnings from PyTorch internals
+warnings.filterwarnings(
+    "ignore",
+    category=UserWarning,
+    message=re.escape("Logical operators 'and' and 'or' are deprecated for non-scalar"),
+)
 
 F = TypeVar("F", bound=Callable[..., Any])
 
@@ -204,7 +212,6 @@ def do_iteration_statistics_updates(
 
     # using torch.where directly
     update_mask = max_values > mip
-
     torch.where(update_mask, max_values, mip, out=mip)
     torch.where(
         update_mask,
@@ -222,5 +229,7 @@ normalize_template_projection_compiled = attempt_torch_compilation(
     normalize_template_projection, backend="inductor", mode="default"
 )
 do_iteration_statistics_updates_compiled = attempt_torch_compilation(
-    do_iteration_statistics_updates, backend="inductor", mode="max-autotune"
+    do_iteration_statistics_updates,
+    backend="inductor",
+    mode="max-autotune-no-cudagraphs",
 )
