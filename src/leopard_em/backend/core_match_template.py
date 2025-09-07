@@ -39,12 +39,17 @@ def monitor_match_template_progress(
     device_pbars: dict[int, tqdm.tqdm],
     poll_interval: float = 1.0,  # in seconds
 ) -> None:
-    """Helper function for periodic polling of shared queue by tqdm."""
+    """Helper function for periodic polling of shared queue by tqdm.
+
+    This function monitors the progress of template matching and updates progress bars.
+    """
     last_progress = 0
     last_per_device = [0] * len(device_pbars)
 
     try:
         while True:
+            if queue.error_occurred():
+                raise RuntimeError("Exiting due to error in another process.")
             progress = queue.get_current_index()
             delta = progress - last_progress
 
@@ -67,7 +72,14 @@ def monitor_match_template_progress(
 
             time.sleep(poll_interval)
     except Exception as e:
+        print(f"Error occurred: {e}")
+        queue.set_error_flag()
         raise e
+    finally:
+        # Clean up progress bars
+        for dv_pbar in device_pbars.values():
+            dv_pbar.close()
+        pbar.close()
 
 
 def setup_progress_tracking(
@@ -449,51 +461,58 @@ def _core_match_template_single_gpu(
     ##################################
 
     while True:
-        indices = index_queue.get_next_indices(process_id=device_id)
-        if indices is None:
-            break
+        if index_queue.error_occurred():
+            raise RuntimeError("Exiting due to error in another process.")
 
-        # Fetching more than orientation_batch_size, so need inner loop
-        start_idx, end_idx = indices
+        try:
+            indices = index_queue.get_next_indices(process_id=device_id)
+            if indices is None:
+                break
 
-        # NOTE: Adding orientation_batch_size to end so last batch is fully calculated
-        for i in range(start_idx, end_idx, orientation_batch_size):
-            euler_angles_batch = euler_angles[i : i + orientation_batch_size]
-            rot_matrix = roma.euler_to_rotmat(
-                "ZYZ", euler_angles_batch, degrees=True, device=device
-            )
+            # Fetching more than orientation_batch_size, so need inner loop
+            start_idx, end_idx = indices
 
-            # Calculate the global search indices. These act as if the entire search
-            # space of bach shape (num_cs, num_defocus, num_orientations) had been
-            # flattened into one contiguous dimension.
-            indices = torch.arange(
-                i,
-                i + orientation_batch_size,
-                dtype=torch.int32,
-                device=device,
-            )
-            batch_search_indices = indices + local_to_global_idx_increment[:, None]
-            batch_search_indices = batch_search_indices.flatten()
+            for i in range(start_idx, end_idx, orientation_batch_size):
+                euler_angles_batch = euler_angles[i : i + orientation_batch_size]
+                rot_matrix = roma.euler_to_rotmat(
+                    "ZYZ", euler_angles_batch, degrees=True, device=device
+                )
 
-            cross_correlation = do_streamed_orientation_cross_correlate(
-                image_dft=image_dft,
-                template_dft=template_dft,
-                rotation_matrices=rot_matrix,
-                projective_filters=projective_filters,
-                streams=streams,
-            )
+                # Calculate the global search indices. These act as if the entire search
+                # space of bach shape (num_cs, num_defocus, num_orientations) had been
+                # flattened into one contiguous dimension.
+                indices = torch.arange(
+                    i,
+                    i + orientation_batch_size,
+                    dtype=torch.int32,
+                    device=device,
+                )
+                batch_search_indices = indices + local_to_global_idx_increment[:, None]
+                batch_search_indices = batch_search_indices.flatten()
 
-            # Update the tracked statistics
-            do_iteration_statistics_updates_compiled(
-                cross_correlation=cross_correlation,
-                current_indexes=batch_search_indices,
-                mip=mip,
-                best_global_index=best_global_index,
-                correlation_sum=correlation_sum,
-                correlation_squared_sum=correlation_squared_sum,
-                img_h=image_shape_real[0],
-                img_w=image_shape_real[1],
-            )
+                cross_correlation = do_streamed_orientation_cross_correlate(
+                    image_dft=image_dft,
+                    template_dft=template_dft,
+                    rotation_matrices=rot_matrix,
+                    projective_filters=projective_filters,
+                    streams=streams,
+                )
+
+                # Update the tracked statistics
+                do_iteration_statistics_updates_compiled(
+                    cross_correlation=cross_correlation,
+                    current_indexes=batch_search_indices,
+                    mip=mip,
+                    best_global_index=best_global_index,
+                    correlation_sum=correlation_sum,
+                    correlation_squared_sum=correlation_squared_sum,
+                    img_h=image_shape_real[0],
+                    img_w=image_shape_real[1],
+                )
+        except Exception as e:
+            index_queue.set_error_flag()
+            print(f"Error occurred in process {device_id}: {e}")
+            raise e
 
     # Synchronization barrier post-computation
     for stream in streams:
