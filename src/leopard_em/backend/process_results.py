@@ -38,8 +38,7 @@ def aggregate_distributed_results(
         for result in results
     ]
 
-    # Find which device had the highest MIP for each pixel and index stats accordingly.
-    # Results after 'take_along_axis' have extra dimension at idx 0.
+    # Stack results from all devices into a single array. Dim 0 is device index
     mips = np.stack([result["mip"] for result in results], axis=0)
     best_phi = np.stack([result["best_phi"] for result in results], axis=0)
     best_theta = np.stack([result["best_theta"] for result in results], axis=0)
@@ -69,11 +68,6 @@ def aggregate_distributed_results(
         [result["correlation_squared_sum"] for result in results], axis=0
     ).sum(axis=0)
 
-    # NOTE: Currently only tracking total number of projections for statistics,
-    # but could be future case where number of projections calculated on each
-    # device is necessary for some statistical computation.
-    total_projections = sum(result["total_projections"] for result in results)
-
     # Cast back to torch tensors on the CPU
     mip_max = torch.from_numpy(mip_max)
     best_phi = torch.from_numpy(best_phi)
@@ -92,7 +86,6 @@ def aggregate_distributed_results(
         "best_defocus": best_defocus,
         "correlation_sum": correlation_sum,
         "correlation_squared_sum": correlation_squared_sum,
-        "total_projections": total_projections,
     }
 
 
