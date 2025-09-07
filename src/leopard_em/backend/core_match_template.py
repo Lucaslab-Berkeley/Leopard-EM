@@ -67,7 +67,7 @@ def monitor_match_template_progress(
 
             time.sleep(poll_interval)
     except Exception as e:
-        raise (e)
+        raise e
 
 
 def setup_progress_tracking(

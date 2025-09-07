@@ -71,6 +71,8 @@ def decode_global_search_index(
     euler_angles: torch.Tensor,  # (num_orientations, 3)
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """Decode flattened global indices back into (cs, defocus, orientation)."""
+    _ = pixel_values  # Unused, but possible to add in future
+
     # num_cs = pixel_values.shape[0]
     num_defocus = defocus_values.shape[0]
     num_orientations = euler_angles.shape[0]

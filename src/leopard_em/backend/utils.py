@@ -151,11 +151,6 @@ def normalize_template_projection(
     return projections
 
 
-# NOTE: Disabling pylint for number of argument since these all need updated in-place
-# and is more efficient than packing into some other type of object.
-# pylint: disable=too-many-locals
-# pylint: disable=too-many-arguments
-# pylint: disable=too-many-positional-arguments
 def do_iteration_statistics_updates(
     cross_correlation: torch.Tensor,
     current_indexes: torch.Tensor,
@@ -203,14 +198,13 @@ def do_iteration_statistics_updates(
     img_w : int
         Width of the cross-correlation values.
     """
-    num_cs, num_defocs, num_orientations = cross_correlation.shape[0:3]
-
-    # Flatten the batch dimensions for faster processing
     cc_reshaped = cross_correlation.view(-1, img_h, img_w)
 
+    # Need two passes for maxima operator for memory efficiency
+    # and to distinguish between batch position which would both update
     max_values, max_indices = torch.max(cc_reshaped, dim=0)
 
-    # using torch.where directly
+    # Do masked updates with torch.where directly (in-place)
     update_mask = max_values > mip
     torch.where(update_mask, max_values, mip, out=mip)
     torch.where(
