@@ -3,6 +3,7 @@
 from multiprocessing import Manager, Process
 from typing import Any, Callable, Optional
 
+import torch.distributed as dist
 import torch.multiprocessing as mp
 
 
@@ -107,12 +108,69 @@ class SharedWorkIndexQueue:
             self.error_flag.value = 1
 
 
+def _rpc_get_next_indices(
+    rref_queue: Any, process_id: int
+) -> Optional[tuple[int, int]]:
+    """Helper function for RPC call to get next indices from SharedWorkIndexQueue."""
+    return rref_queue.local_value().get_next_indices(process_id)  # type: ignore[no-any-return]
+
+
+def _rpc_error_occurred(rref_queue: Any) -> bool:
+    """Helper function for RPC call to check if an error has occurred."""
+    return rref_queue.local_value().error_occurred()  # type: ignore[no-any-return]
+
+
+def _rpc_set_error_flag(rref_queue: Any) -> None:
+    """Helper function for RPC call to set the error flag."""
+    rref_queue.local_value().set_error_flag()
+
+
+class RemoteSharedWorkIndexQueue:
+    """Torch RPC wrapper around SharedWorkIndexQueue class for multi-node runs."""
+
+    master_name: str
+    rank: int
+    rref_queue: Any  # torch.distributed.rpc.RRef[SharedWorkIndexQueue]
+
+    def __init__(self, master_name: str, rank: int, index_queue: SharedWorkIndexQueue):
+        self.master_name = master_name
+        self.rank = rank
+        self.num_processes = index_queue.num_processes
+        self.rref_queue = dist.rpc.RRef(index_queue)
+
+    def get_next_indices(self, process_id: int) -> Optional[tuple[int, int]]:
+        """Get the next set of indices to process returning None if all work is done."""
+        global_process_id = self.rank * self.num_processes + process_id
+        result = dist.rpc.rpc_sync(
+            to=self.master_name,
+            func=_rpc_get_next_indices,
+            args=(self.rref_queue, global_process_id),
+        )
+        return tuple(result) if result is not None else None
+
+    def error_occurred(self) -> bool:
+        """Check if an error has occurred in any process."""
+        return bool(
+            dist.rpc.rpc_sync(
+                to=self.master_name, func=_rpc_error_occurred, args=(self.rref_queue,)
+            )
+        )
+
+    def set_error_flag(self) -> None:
+        """Set the error flag to indicate an error has occurred."""
+        dist.rpc.rpc_sync(
+            to=self.master_name, func=_rpc_set_error_flag, args=(self.rref_queue,)
+        )
+
+
 def run_multiprocess_jobs(
     target: Callable,
     kwargs_list: list[dict[str, Any]],
     extra_args: tuple[Any, ...] = (),
     extra_kwargs: Optional[dict[str, Any]] = None,
     post_start_callback: Optional[Callable] = None,
+    world_size: int = 1,
+    rank: int = 0,
 ) -> dict[Any, Any]:
     """Helper function for running multiple processes on the same target function.
 
@@ -133,6 +191,12 @@ def run_multiprocess_jobs(
         Additional common keyword arguments for all processes.
     post_start_callback : Optional[Callable], optional
         Callback function to call after all processes have been started.
+    world_size : int, optional
+        The total number of nodes in a distributed setting. Default is 1 to be
+        compatible with non-distributed runs.
+    rank : int, optional
+        The rank of the current node in a distributed setting. Default is 0 to be
+        compatible with non-distributed runs.
 
     Returns
     -------
@@ -160,6 +224,7 @@ def run_multiprocess_jobs(
     # {0: 3, 1: 7}
     ```
     """
+    _ = world_size  # Unused but kept for signature compatibility
     if extra_kwargs is None:
         extra_kwargs = {}
 
@@ -169,7 +234,7 @@ def run_multiprocess_jobs(
     processes: list[Process] = []
 
     for i, kwargs in enumerate(kwargs_list):
-        args = (*extra_args, result_dict, i)
+        args = (*extra_args, result_dict, i + rank * len(kwargs_list))
 
         # Merge per-process kwargs with common kwargs.
         proc_kwargs = {**extra_kwargs, **kwargs}
