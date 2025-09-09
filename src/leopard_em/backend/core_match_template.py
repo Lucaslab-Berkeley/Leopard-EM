@@ -3,7 +3,6 @@
 # Following pylint error ignored because torc.fft.* is not recognized as callable
 # pylint: disable=E1102
 
-import os
 import time
 import warnings
 from functools import partial
@@ -12,14 +11,12 @@ from typing import Any, Union
 
 import roma
 import torch
-import torch.distributed as dist
 import tqdm
 
 from leopard_em.backend.cross_correlation import (
     do_streamed_orientation_cross_correlate,
 )
 from leopard_em.backend.distributed import (
-    RemoteSharedWorkIndexQueue,
     SharedWorkIndexQueue,
     run_multiprocess_jobs,
 )
@@ -276,6 +273,17 @@ def core_match_template(
         prefetch_size=10,
         num_processes=len(device),
     )
+    global_pbar, device_pbars = setup_progress_tracking(
+        index_queue=index_queue,
+        unit_scale=defocus_values.shape[0] * pixel_values.shape[0],
+        num_devices=len(device),
+    )
+    progress_callback = partial(
+        monitor_match_template_progress,
+        queue=index_queue,
+        pbar=global_pbar,
+        device_pbars=device_pbars,
+    )
 
     kwargs_per_device = []
     for d in device:
@@ -294,36 +302,11 @@ def core_match_template(
 
         kwargs_per_device.append(kwargs)
 
-    ############################################################################
-    ### Conditional execution based on distributed multi-node or single-node ###
-    ############################################################################
-
-    world_size = int(os.environ.get("WORLD_SIZE", 1))
-    is_distributed = world_size > 1
-
-    # Call into the distributed multi-node function which uses different logic for
-    # launching jobs and tracking progress
-    if is_distributed:
-        result_dict = _core_match_template_distributed(
-            index_queue, kwargs_per_device, device
-        )
-    else:
-        global_pbar, device_pbars = setup_progress_tracking(
-            index_queue=index_queue,
-            unit_scale=defocus_values.shape[0] * pixel_values.shape[0],
-            num_devices=len(device),
-        )
-        progress_callback = partial(
-            monitor_match_template_progress,
-            queue=index_queue,
-            pbar=global_pbar,
-            device_pbars=device_pbars,
-        )
-        result_dict = run_multiprocess_jobs(
-            target=_core_match_template_single_gpu,
-            kwargs_list=kwargs_per_device,
-            post_start_callback=progress_callback,
-        )
+    result_dict = run_multiprocess_jobs(
+        target=_core_match_template_single_gpu,
+        kwargs_list=kwargs_per_device,
+        post_start_callback=progress_callback,
+    )
 
     # Get the aggregated results
     partial_results = [result_dict[i] for i in range(len(kwargs_per_device))]
@@ -362,124 +345,11 @@ def core_match_template(
     }
 
 
-def _core_match_template_distributed(
-    index_queue: SharedWorkIndexQueue,
-    kwargs_per_device: list[dict[str, Any]],
-    device: list[torch.device],
-) -> dict[int, dict[str, Any]]:
-    """Distributed multi-node core match template function."""
-    # Initialize the torch distributed process group
-    dist.init_process_group(backend="nccl")
-    world_size = dist.get_world_size()
-    rank = dist.get_rank()
-
-    # Initialize RPC for lightweight communication around index queue
-    # NOTE: "worker0" is the main node responsible for progress tracking
-    node_name = f"worker{rank}"
-    dist.rpc.init_rpc(name=node_name, rank=rank, world_size=world_size)
-
-    # Creating new index queue since there are more processes
-    new_index_queue = SharedWorkIndexQueue(
-        total_indices=index_queue.total_indices,
-        batch_size=index_queue.batch_size,
-        prefetch_size=index_queue.prefetch_size,
-        num_processes=world_size * len(device),  # Assuming heterogeneous
-    )
-    remote_index_queue = RemoteSharedWorkIndexQueue(
-        master_name="worker0", rank=rank, index_queue=new_index_queue
-    )
-
-    # Broadcasting tensors to the other nodes
-    orientation_batch_size = kwargs_per_device[0]["orientation_batch_size"]
-    num_cuda_streams = kwargs_per_device[0]["num_cuda_streams"]
-    if rank == 0:
-        image_dft_b = kwargs_per_device[0]["image_dft"]
-        template_dft_b = kwargs_per_device[0]["template_dft"]
-        euler_angles_b = kwargs_per_device[0]["euler_angles"]
-        projective_filters_b = kwargs_per_device[0]["projective_filters"]
-        defocus_values_b = kwargs_per_device[0]["defocus_values"]
-        pixel_values_b = kwargs_per_device[0]["pixel_values"]
-    else:
-        image_dft_b = torch.empty_like(kwargs_per_device[0]["image_dft"])
-        template_dft_b = torch.empty_like(kwargs_per_device[0]["template_dft"])
-        euler_angles_b = torch.empty_like(kwargs_per_device[0]["euler_angles"])
-        projective_filters_b = torch.empty_like(
-            kwargs_per_device[0]["projective_filters"]
-        )
-        defocus_values_b = torch.empty_like(kwargs_per_device[0]["defocus_values"])
-        pixel_values_b = torch.empty_like(kwargs_per_device[0]["pixel_values"])
-
-    dist.broadcast(tensor=image_dft_b, src=0)
-    dist.broadcast(tensor=template_dft_b, src=0)
-    dist.broadcast(tensor=euler_angles_b, src=0)
-    dist.broadcast(tensor=projective_filters_b, src=0)
-    dist.broadcast(tensor=defocus_values_b, src=0)
-    dist.broadcast(tensor=pixel_values_b, src=0)
-
-    # Re-setting up the single GPU kwargs
-    new_kwargs_per_device = []
-    for d in device:
-        new_kwargs = {
-            "index_queue": remote_index_queue if rank != 0 else new_index_queue,
-            "image_dft": image_dft_b,
-            "template_dft": template_dft_b,
-            "euler_angles": euler_angles_b,
-            "projective_filters": projective_filters_b,
-            "defocus_values": defocus_values_b,
-            "pixel_values": pixel_values_b,
-            "orientation_batch_size": orientation_batch_size,
-            "num_cuda_streams": num_cuda_streams,
-            "device": d,
-        }
-        new_kwargs_per_device.append(new_kwargs)
-
-    # Setup progress tracking on the main node
-    if rank == 0:
-        global_pbar, device_pbars = setup_progress_tracking(
-            index_queue=new_index_queue,
-            unit_scale=defocus_values_b.shape[0] * pixel_values_b.shape[0],
-            num_devices=world_size * len(device),
-        )
-        progress_callback = partial(
-            monitor_match_template_progress,
-            queue=new_index_queue,
-            pbar=global_pbar,
-            device_pbars=device_pbars,
-        )
-    else:
-        progress_callback = None
-
-    result_dict = run_multiprocess_jobs(
-        target=_core_match_template_single_gpu,
-        kwargs_list=new_kwargs_per_device,
-        post_start_callback=progress_callback,
-        world_size=world_size,
-        rank=rank,
-    )
-
-    # Gather results from all ranks and merge into a single dict on rank 0
-    gathered = [None] * (world_size * len(device))
-    dist.all_gather_object(gathered, result_dict)
-
-    if rank == 0:
-        for i, res in enumerate(gathered):
-            if res is not None:
-                result_dict[i] = res
-
-    # Shutdown RPC
-    dist.rpc.shutdown()
-    dist.barrier()
-    dist.destroy_process_group()
-
-    return result_dict if rank == 0 else {}
-
-
 # pylint: disable=too-many-locals
 # pylint: disable=too-many-arguments
 # pylint: disable=too-many-positional-arguments
 def _core_match_template_single_gpu(
-    result_dict: dict,
-    device_id: int,
+    rank: int,
     index_queue: SharedWorkIndexQueue,
     image_dft: torch.Tensor,
     template_dft: torch.Tensor,
@@ -490,18 +360,13 @@ def _core_match_template_single_gpu(
     orientation_batch_size: int,
     num_cuda_streams: int,
     device: torch.device,
-) -> None:
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """Single-GPU call for template matching.
-
-    NOTE: The result_dict is a shared dictionary between processes and updated in-place
-    with this processes's results under the 'device_id' key.
 
     Parameters
     ----------
-    result_dict : dict
-        Dictionary to store the results in.
-    device_id : int
-        ID of the device which computation is running on. Results will be stored
+    rank : int
+        Rank of the device which computation is running on. Results will be stored
         in the dictionary with this key.
     index_queue : SharedWorkIndexQueue
         Torch multiprocessing object for retrieving the next batch of orientations to
@@ -534,7 +399,14 @@ def _core_match_template_single_gpu(
 
     Returns
     -------
-    None
+    tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]
+        Tuple containing the following tensors:
+            - mip: Maximum intensity projection of the cross-correlation values across
+              orientation and defocus search space.
+            - best_global_index: Global index of the best match for each pixel.
+            - correlation_sum: Sum of cross-correlation values for each pixel.
+            - correlation_squared_sum: Sum of squared cross-correlation values for
+              each pixel.
     """
     image_shape_real = (image_dft.shape[0], image_dft.shape[1] * 2 - 2)  # adj. for RFFT
 
@@ -549,8 +421,6 @@ def _core_match_template_single_gpu(
     template_dft = template_dft.to(device)
     euler_angles = euler_angles.to(device)
     projective_filters = projective_filters.to(device)
-    # defocus_values = defocus_values.to(device)
-    # pixel_values = pixel_values.to(device)
 
     num_orientations = euler_angles.shape[0]
     num_defocus = defocus_values.shape[0]
@@ -595,7 +465,7 @@ def _core_match_template_single_gpu(
             raise RuntimeError("Exiting due to error in another process.")
 
         try:
-            indices = index_queue.get_next_indices(process_id=device_id)
+            indices = index_queue.get_next_indices(process_id=rank)
             if indices is None:
                 break
 
@@ -641,7 +511,7 @@ def _core_match_template_single_gpu(
                 )
         except Exception as e:
             index_queue.set_error_flag()
-            print(f"Error occurred in process {device_id}: {e}")
+            print(f"Error occurred in process {rank}: {e}")
             raise e
 
     # Synchronization barrier post-computation
@@ -649,6 +519,25 @@ def _core_match_template_single_gpu(
         stream.synchronize()
 
     torch.cuda.synchronize(device)
+
+    return mip, best_global_index, correlation_sum, correlation_squared_sum
+
+
+def _core_match_template_multiprocess_wrapper(
+    result_dict: dict, *args: tuple[Any], **kwargs: dict[str, Any]
+) -> None:
+    """Wrapper around _core_match_template_single_gpu for use with multiprocessing.
+
+    This function places results into a shared dictionary for retrieval by the main
+    core_match_template function. These results are stored under the 'rank' key, and
+    they need to exist on the CPU as numpy arrays for the shared dictionary.
+
+    See the _core_match_template_single_gpu function for parameter descriptions.
+    """
+    rank = kwargs["rank"]
+    mip, best_global_index, correlation_sum, correlation_squared_sum = (
+        _core_match_template_single_gpu(**kwargs)  # type: ignore[arg-type]
+    )
 
     # NOTE: Need to send all tensors back to the CPU as numpy arrays for the shared
     # process dictionary. This is a workaround for now
@@ -661,7 +550,7 @@ def _core_match_template_single_gpu(
 
     # Place the results in the shared multi-process manager dictionary so accessible
     # by the main process.
-    result_dict[device_id] = result
+    result_dict[rank] = result
 
     # Final cleanup to release all tensors from this GPU
     torch.cuda.empty_cache()
