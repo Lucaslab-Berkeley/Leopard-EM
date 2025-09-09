@@ -1,5 +1,7 @@
 """Distributed multi-node version of the core match_template implementation."""
 
+import threading
+from dataclasses import dataclass
 from typing import Optional
 
 import torch
@@ -8,143 +10,262 @@ import torch.distributed as dist
 from leopard_em.backend.core_match_template import (
     _core_match_template_single_gpu,
 )
-from leopard_em.backend.distributed import (
-    SharedWorkIndexQueue,
-)
 from leopard_em.backend.process_results import (
     aggregate_distributed_results,
     decode_global_search_index,
     scale_mip,
 )
 
-# Global queue variable for inter-node communication
-_global_queue: Optional[SharedWorkIndexQueue] = None
+_global_queue: "DistributedWorkIndexQueue | None" = None
+
+###########################################################
+### Wrapper functions for RPC calls to the main process ###
+###########################################################
 
 
-# Wrapper functions for the global queue for RPC calls
-def initialize_global_queue(
-    total_indices: int, batch_size: int, prefetch_size: int, num_processes: int
-) -> None:
-    """Initialize the global SharedWorkIndexQueue for distributed processing."""
+def _rpc_get_next_indices(process_id: int) -> Optional[tuple[int, int]]:
+    """RPC function to get the next set of indices to process."""
     global _global_queue
-    if _global_queue is not None:
-        raise RuntimeError("Global queue has already been initialized.")
-    _global_queue = SharedWorkIndexQueue(
-        total_indices=total_indices,
-        batch_size=batch_size,
-        prefetch_size=prefetch_size,
-        num_processes=num_processes,
-    )
-
-
-def remote_get_next_indices(
-    process_id: Optional[int] = None,
-) -> Optional[tuple[int, int]]:
-    """Remote function to get next indices from the queue."""
-    global _global_queue
-    if _global_queue is None:
-        raise RuntimeError("Queue not initialized on main process")
+    assert _global_queue is not None
     return _global_queue.get_next_indices(process_id)
 
 
-def remote_get_current_index() -> int:
-    """Remote function to get current index from the queue."""
+def _rpc_get_current_index() -> int:
+    """RPC function to get the current global index being processed."""
     global _global_queue
-    if _global_queue is None:
-        raise RuntimeError("Queue not initialized on main process")
+    assert _global_queue is not None
     return _global_queue.get_current_index()
 
 
-def remote_get_process_counts() -> list[int]:
-    """Remote function to get process counts from the queue."""
+def _rpc_get_process_counts() -> list[int]:
+    """RPC function to get the current process counts from the main process."""
     global _global_queue
-    if _global_queue is None:
-        raise RuntimeError("Queue not initialized on main process")
+    assert _global_queue is not None
     return _global_queue.get_process_counts()
 
 
-def remote_error_occurred() -> bool:
-    """Remote function to check if error occurred in the queue."""
+def _rpc_error_occurred() -> bool:
+    """RPC function to check if an error has occurred in any process."""
     global _global_queue
-    if _global_queue is None:
-        raise RuntimeError("Queue not initialized on main process")
+    assert _global_queue is not None
     return _global_queue.error_occurred()
 
 
-def remote_set_error_flag() -> None:
-    """Remote function to set error flag in the queue."""
+def _rpc_set_error_flag() -> None:
+    """RPC function to set the error flag to indicate an error has occurred."""
     global _global_queue
-    if _global_queue is None:
-        raise RuntimeError("Queue not initialized on main process")
+    assert _global_queue is not None
     _global_queue.set_error_flag()
 
 
 class DistributedWorkIndexQueue:
-    """RPC wrapper around SharedWorkIndexQueue for multi-node runs."""
+    """Distributed work manager for coordinating search indices across nodes.
 
-    main_name: str
+    This class assumes that RPC has already been initialized and the main process
+    (rank 0) is running on the node with name "worker0".
+
+    Parameters
+    ----------
+    total_indices: int
+        Total number of indices to process.
+    batch_size: int
+        Number of indices to process in a single batch.
+    num_processes: int
+        Total number of processes across all nodes.
+    prefetch_size: int
+        Multiplicative factor for batch_size to determine how many indices to
+        prefetch at once.
     rank: int
-    world_size: int
+        Global rank of this process.
+    is_main: bool
+        Whether this process is the main process (rank 0).
+    lock: threading.Lock
+        Lock for synchronizing access to shared state.
+    """
 
-    def __init__(self, main_name: str, rank: int, world_size: int):
-        self.main_name = main_name
+    next_index: int
+    process_counts: list[int]
+    error_flag: bool  # True = error occurred
+    num_processes: int
+    total_indices: int
+    batch_size: int
+    prefetch_size: int  # multiplicative factor for batch_size
+    lock: threading.Lock
+
+    rank: int
+    is_main: bool
+
+    def __init__(
+        self,
+        total_indices: int,
+        batch_size: int,
+        num_processes: int,
+        prefetch_size: int,
+        rank: int,
+    ):
+        self.next_index = 0
+        self.process_counts = [0] * num_processes
+        self.error_flag = False
+        self.num_processes = num_processes
+        self.total_indices = total_indices
+        self.batch_size = batch_size
+        self.prefetch_size = prefetch_size
+        self.lock: threading.Lock
+
+        # Specific to distributed version
         self.rank = rank
-        self.world_size = world_size
+        self.is_main = rank == 0
 
     def get_next_indices(self, process_id: int) -> Optional[tuple[int, int]]:
-        """Get the next set of indices to process returning None if all work is done."""
-        result = dist.rpc.rpc_sync(
-            to=self.main_name,
-            func=remote_get_next_indices,
-            args=(process_id,),
-        )
-        return result  # type: ignore[no-any-return]
+        """Get the next set of indices to process returning None if all work is done.
+
+        NOTE: This method ignores all incoming arguments and instead passes the process
+        rank to the main process through RPC.
+        """
+        if not self.is_main:
+            return dist.rpc.rpc_sync(
+                to="worker0",
+                func=_rpc_get_next_indices,
+                args=(self.rank,),
+            )
+
+        with self.lock:
+            process_id = self.rank  # For zeroth rank, use its own rank
+            start_idx = self.next_index
+            if start_idx >= self.total_indices:
+                return None
+
+            # Do not go past total_indices
+            end_idx = min(
+                start_idx + self.batch_size * self.prefetch_size, self.total_indices
+            )
+            self.next_index = end_idx
+
+            # Update the per-process counter
+            self.process_counts[process_id] += end_idx - start_idx
+
+            return (start_idx, end_idx)
 
     def get_current_index(self) -> int:
         """Get the current global index being processed."""
-        result = dist.rpc.rpc_sync(
-            to=self.main_name,
-            func=remote_get_current_index,
-            args=(),
-        )
-        return result  # type: ignore[no-any-return]
+        if not self.is_main:
+            return dist.rpc.rpc_sync(
+                to="worker0",
+                func=_rpc_get_current_index,
+                args=(),
+            )
+
+        with self.lock:
+            return self.next_index
 
     def get_process_counts(self) -> list[int]:
         """Get the current process counts from the main process."""
-        result = dist.rpc.rpc_sync(
-            to=self.main_name,
-            func=remote_get_process_counts,
-            args=(),
-        )
-        return result  # type: ignore[no-any-return]
+        if not self.is_main:
+            return dist.rpc.rpc_sync(
+                to="worker0",
+                func=_rpc_get_process_counts,
+                args=(),
+            )
+
+        with self.lock:
+            return self.process_counts.copy()
 
     def error_occurred(self) -> bool:
         """Check if an error has occurred in any process."""
-        return bool(
-            dist.rpc.rpc_sync(to=self.main_name, func=remote_error_occurred, args=())
-        )
+        if not self.is_main:
+            return dist.rpc.rpc_sync(
+                to="worker0",
+                func=_rpc_error_occurred,
+                args=(),
+            )
+
+        with self.lock:
+            return self.error_flag
 
     def set_error_flag(self) -> None:
         """Set the error flag to indicate an error has occurred."""
-        dist.rpc.rpc_sync(to=self.main_name, func=remote_set_error_flag, args=())
+        if not self.is_main:
+            dist.rpc.rpc_sync(
+                to="worker0",
+                func=_rpc_set_error_flag,
+                args=(),
+            )
+            return
+
+        with self.lock:
+            self.error_flag = True
+
+
+@dataclass
+class TensorShapeDataclass:
+    """Helper class for sending expected tensor shapes to distributed processes."""
+
+    image_dft_shape: tuple[int, int]  # (H, W // 2 + 1)
+    template_dft_shape: tuple[int, int, int]  # (l, h, w // 2 + 1)
+    ctf_filters_shape: tuple[int, int, int, int]  # (num_Cs, num_defocus, h, w // 2 + 1)
+    whitening_filter_template_shape: tuple[int, int]  # (h, w // 2 + 1)
+    euler_angles_shape: tuple[int, int]  # (num_orientations, 3)
+    defocus_values_shape: tuple[int]  # (num_defocus,)
+    pixel_values_shape: tuple[int]  # (num_Cs,)
 
 
 # pylint: disable=too-many-locals
 def core_match_template_distributed(
-    image_dft: torch.Tensor,
-    template_dft: torch.Tensor,  # already fftshifted
-    ctf_filters: torch.Tensor,
-    whitening_filter_template: torch.Tensor,
-    defocus_values: torch.Tensor,
-    pixel_values: torch.Tensor,
-    euler_angles: torch.Tensor,
-    device: torch.device | list[torch.device],
+    world_size: int,
+    rank: int,
+    local_rank: int,
+    device: torch.device,
     orientation_batch_size: int = 1,
     num_cuda_streams: int = 1,
+    **kwargs: dict,
 ) -> dict[str, torch.Tensor]:
     """Distributed multi-node core function for the match template program.
 
-    See `core_match_template` for parameter descriptions and return values.
+    Parameters
+    ----------
+    world_size : int
+        Total number of processes in the distributed job.
+    rank : int
+        Global rank of this process.
+    local_rank : int
+        Local rank of this process on the current node.
+    device : torch.device
+        The CUDA device to use for this process. This *must* be a single device.
+    orientation_batch_size : int, optional
+        Number of orientations to process in a single batch, by default 1.
+    num_cuda_streams : int, optional
+        Number of CUDA streams to use for overlapping data transfers and
+        computation, by default 1.
+    **kwargs : dict[str, torch.Tensor]
+        Additional keyword arguments passed to the single-GPU core function. For the
+        zeroth rank this should be a dictionary of Tensor objects with the following
+        fields (all other ranks can pass an empty dictionary):
+        - image_dft:
+            Real-fourier transform (RFFT) of the image with large image filters
+            already applied. Has shape (H, W // 2 + 1).
+        - template_dft:
+            Real-fourier transform (RFFT) of the template volume to take Fourier
+            slices from. Has shape (l, h, w // 2 + 1) with the last dimension being the
+            half-dimension for real-FFT transformation. NOTE: The original template
+            volume should be a cubic volume, i.e. h == w == l.
+        - ctf_filters:
+            Stack of CTF filters at different pixel size (Cs) and  defocus values to use
+            in the search. Has shape (num_Cs, num_defocus, h, w // 2 + 1) where num_Cs
+            are the number of pixel sizes searched over, and num_defocus are the number
+            of defocus values searched over.
+        - whitening_filter_template: Precomputed whitening filter for the template.
+            Whitening filter for the template volume. Has shape (h, w // 2 + 1).
+            Gets multiplied with the ctf filters to create a filter stack applied to
+            each orientation projection.
+        - euler_angles:
+            Euler angles (in 'ZYZ' convention & in units of degrees) to search over. Has
+            shape (num_orientations, 3).
+        - defocus_values: 1D tensor of defocus values to search.
+            What defoucs values correspond with the CTF filters, in units of Angstroms.
+            Has shape (num_defocus,).
+        - pixel_values: 1D tensor of pixel values to search.
+            What pixel size values correspond with the CTF filters, in units of
+            Angstroms. Has shape (num_Cs,).
     """
     ######################################################################
     ### Checks for proper distributed initialization and configuration ###
@@ -157,14 +278,79 @@ def core_match_template_distributed(
             "`dist.init_process_group` before calling this function."
         )
 
-    world_size = dist.get_world_size()
-    rank = dist.get_rank()
-
-    if world_size < 2:
+    if not isinstance(device, torch.device) or device.type != "cuda":
         raise ValueError(
-            "Distributed core_match_template_distributed called with world_size < 2. "
-            "Did you mean to call the non-distributed core_match_template function?"
+            "Distributed core_match_template_distributed must be called with a "
+            "single CUDA device across all processes."
+            f"Rank {rank} received device={device}."
         )
+
+    torch.cuda.set_device(device)
+
+    #############################################################
+    ### Logic for loading / broadcasting tensors to all ranks ###
+    #############################################################
+
+    # Rank zero has all the data. No other ranks "know" the size/shape of data, so
+    # first must extract the shapes before a tensor broadcast can occur.
+    broadcast_list: list[Optional[TensorShapeDataclass]] = [None]
+    if rank == 0:
+        try:
+            image_dft = kwargs["image_dft"].to(device)
+            template_dft = kwargs["template_dft"].to(device)
+            ctf_filters = kwargs["ctf_filters"].to(device)
+            whitening_filter_template = kwargs["whitening_filter_template"].to(device)
+            defocus_values = kwargs["defocus_values"].to(device)
+            pixel_values = kwargs["pixel_values"].to(device)
+            euler_angles = kwargs["euler_angles"].to(device)
+        except KeyError as e:
+            raise KeyError(
+                f"Rank 0 missing some tensors to call core_match_template_distributed; "
+                f"missing key: {e.args[0]}"
+            ) from e
+
+        # Create a dataclass with the expected tensor shapes
+        expected_shapes = TensorShapeDataclass(
+            image_dft_shape=tuple(image_dft.shape),
+            template_dft_shape=tuple(template_dft.shape),
+            ctf_filters_shape=tuple(ctf_filters.shape),
+            whitening_filter_template_shape=tuple(whitening_filter_template.shape),
+            euler_angles_shape=tuple(euler_angles.shape),
+            defocus_values_shape=tuple(defocus_values.shape),
+            pixel_values_shape=tuple(pixel_values.shape),
+        )
+
+        broadcast_list = [expected_shapes]
+        dist.broadcast_object_list(broadcast_list, src=0)
+
+    # For all other ranks, first receive the expected shapes
+    else:
+        dist.broadcast_object_list(broadcast_list, src=0)
+        assert broadcast_list[0] is not None
+        expected_shapes = broadcast_list[0]
+
+    # Now all processes have the initialized 'expected_shapes' variable. Create
+    # empty tensors of the correct shape on all non-zero ranks
+    if rank != 0:
+        # fmt: off
+        image_dft                   = torch.empty(expected_shapes.image_dft_shape,                  dtype=torch.complex64, device=device)  # noqa: E501
+        template_dft                = torch.empty(expected_shapes.template_dft_shape,               dtype=torch.complex64, device=device)  # noqa: E501
+        ctf_filters                 = torch.empty(expected_shapes.ctf_filters_shape,                dtype=torch.complex64, device=device)  # noqa: E501
+        whitening_filter_template   = torch.empty(expected_shapes.whitening_filter_template_shape,  dtype=torch.float32,   device=device)  # noqa: E501
+        euler_angles                = torch.empty(expected_shapes.euler_angles_shape,               dtype=torch.float32,   device=device)  # noqa: E501
+        defocus_values              = torch.empty(expected_shapes.defocus_values_shape,             dtype=torch.float32,   device=device)  # noqa: E501
+        pixel_values                = torch.empty(expected_shapes.pixel_values_shape,               dtype=torch.float32,   device=device)  # noqa: E501
+        # fmt: on
+
+    # Now broadcast all the tensors from rank 0 to all other ranks.
+    # Default is not to use async operations, so these are blocking calls.
+    dist.broadcast(image_dft, src=0)
+    dist.broadcast(template_dft, src=0)
+    dist.broadcast(ctf_filters, src=0)
+    dist.broadcast(whitening_filter_template, src=0)
+    dist.broadcast(euler_angles, src=0)
+    dist.broadcast(defocus_values, src=0)
+    dist.broadcast(pixel_values, src=0)
 
     ##############################################################
     ### Pre-multiply the whitening filter with the CTF filters ###
@@ -179,43 +365,43 @@ def core_match_template_distributed(
     ### RPC Setup for distributed index queue management ###
     ########################################################
 
-    # Each GPU has its own task associated with it, so split the list of devices
-    if isinstance(device, list):
-        device = device[rank % len(device)]
-
     dist.rpc.init_rpc(name=f"worker{rank}", rank=rank, world_size=world_size)
 
-    # Only initialize the global queue on the main process
-    if rank == 0:
-        initialize_global_queue(
-            total_indices=euler_angles.shape[0],
-            batch_size=orientation_batch_size,
-            prefetch_size=10,
-            num_processes=world_size,
-        )
-
     distributed_queue = DistributedWorkIndexQueue(
-        main_name="worker0", rank=rank, world_size=world_size
+        total_indices=euler_angles.shape[0],
+        batch_size=orientation_batch_size,
+        num_processes=world_size,
+        prefetch_size=10,
+        rank=rank,
+    )
+    if rank == 0:
+        global _global_queue
+        _global_queue = distributed_queue
+
+    # TODO: Progress bar monitoring (and possibly another thread in main process)
+    # for handling queue monitoring?
+
+    ###########################################################
+    ### Calling the single GPU core match template function ###
+    ###########################################################
+
+    (mip, best_global_index, correlation_sum, correlation_squared_sum) = (
+        _core_match_template_single_gpu(
+            rank=rank,
+            index_queue=distributed_queue,  # type: ignore
+            image_dft=image_dft,
+            template_dft=template_dft,
+            euler_angles=euler_angles,
+            projective_filters=projective_filters,
+            defocus_values=defocus_values,
+            pixel_values=pixel_values,
+            orientation_batch_size=orientation_batch_size,
+            num_cuda_streams=num_cuda_streams,
+            device=device,
+        )
     )
 
-    ##################################################
-    ### Arguments for the per-GPU worker processes ###
-    ##################################################
-
     dist.barrier()
-    single_gpu_kwargs = {
-        "rank": rank,
-        "index_queue": distributed_queue,
-        "image_dft": image_dft,
-        "template_dft": template_dft,
-        "euler_angles": euler_angles,
-        "projective_filters": projective_filters,
-        "defocus_values": defocus_values,
-        "pixel_values": pixel_values,
-        "orientation_batch_size": orientation_batch_size,
-        "num_cuda_streams": num_cuda_streams,
-        "device": device,
-    }
 
     # ###############################################
     # ### Progress tracking setup on main process ###
@@ -237,20 +423,12 @@ def core_match_template_distributed(
     # else:
     #     progress_callback = None
 
-    ##################################################################
-    ### Call the single-GPU function on each process independently ###
-    ##################################################################
-
-    (mip, best_global_index, correlation_sum, correlation_squared_sum) = (
-        _core_match_template_single_gpu(**single_gpu_kwargs)
-    )
-
-    dist.barrier()
-
     # Gather into a list of results on the main process
     # NOTE: This is assuming there is enough GPU memory on the zeroth rank to hold.
     # There are 4 tensors each ~64 MB per GPU (~256 MB total) so this is a fair
-    # assumption for most systems.
+    # assumption for most systems. Would need >= 64 GPUs to exceed 16 GB of memory.
+    # TODO: Wrap this reduction into multiple groups, one per node, to reduce memory
+    # pressure on the main process GPU
     # fmt: off
     # Pre-commit: ignore line-too-long (E501) for the following 10 lines.
     if rank == 0:

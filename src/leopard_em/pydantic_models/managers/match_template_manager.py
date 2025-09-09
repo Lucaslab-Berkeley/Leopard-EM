@@ -249,8 +249,11 @@ class MatchTemplateManager(BaseModel2DTM):
             do_valid_cropping=do_valid_cropping,
         )
 
-    def run_distributed_match_template(
+    def run_match_template_distributed(
         self,
+        world_size: int,
+        rank: int,
+        local_rank: int,
         orientation_batch_size: int = 16,
         do_result_export: bool = True,
         do_valid_cropping: bool = True,
@@ -259,6 +262,12 @@ class MatchTemplateManager(BaseModel2DTM):
 
         Parameters
         ----------
+        world_size : int
+            The total number of processes in the distributed job.
+        rank : int
+            The global rank of this process.
+        local_rank : int
+            The local rank of this process (used to assign GPU).
         orientation_batch_size : int
             The number of projections to process in a single batch. Default is 1.
         do_result_export : bool
@@ -278,18 +287,27 @@ class MatchTemplateManager(BaseModel2DTM):
         """
         if not torch.distributed.is_initialized():
             raise RuntimeError(
-                "Distributed process group has not been initialized. "
+                "Distributed process group has not been initialized! "
                 "Cannot run distributed match template."
             )
 
-        # NOTE: May be faster to pre-load files on rank 0 and broadcast to other ranks.
-        # But taking a simplistic approach for now and doing redundant computation.
-        core_kwargs = self.make_backend_core_function_kwargs()
+        device = torch.device(f"cuda:{local_rank}")
+
+        if rank == 0:
+            core_kwargs = self.make_backend_core_function_kwargs()
+        else:
+            core_kwargs = {}
+
+        _ = core_kwargs.pop("device", None)
 
         results = core_match_template_distributed(
+            world_size,
+            rank,
+            local_rank,
+            device,
+            orientation_batch_size,
+            self.computational_config.num_cpus,
             **core_kwargs,
-            orientation_batch_size=orientation_batch_size,
-            num_cuda_streams=self.computational_config.num_cpus,
         )
 
         # Only populate the results on the first rank
