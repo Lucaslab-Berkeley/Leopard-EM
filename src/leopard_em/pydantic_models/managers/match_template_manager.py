@@ -9,6 +9,9 @@ import torch
 from pydantic import ConfigDict, field_validator
 
 from leopard_em.backend.core_match_template import core_match_template
+from leopard_em.backend.core_match_template_distributed import (
+    core_match_template_distributed,
+)
 from leopard_em.pydantic_models.config import (
     ComputationalConfig,
     DefocusSearchConfig,
@@ -239,7 +242,72 @@ class MatchTemplateManager(BaseModel2DTM):
             num_cuda_streams=self.computational_config.num_cpus,
         )
 
-        # Place results into the `MatchTemplateResult` object and save it.
+        # Populate the MatchTemplateResult via a private helper
+        self._populate_match_template_result(
+            results,
+            do_result_export=do_result_export,
+            do_valid_cropping=do_valid_cropping,
+        )
+
+    def run_distributed_match_template(
+        self,
+        orientation_batch_size: int = 16,
+        do_result_export: bool = True,
+        do_valid_cropping: bool = True,
+    ) -> None:
+        """Runs the base match template in a distributed, multi-node environment.
+
+        Parameters
+        ----------
+        orientation_batch_size : int
+            The number of projections to process in a single batch. Default is 1.
+        do_result_export : bool
+            If True, call the `MatchTemplateResult.export_results` method to save the
+            results to disk directly after running the match template. Default is True.
+        do_valid_cropping : bool
+            If True, apply the valid cropping mode to the results. Default is True.
+
+        Raises
+        ------
+        RuntimeError
+            If the distributed process group has not been initialized.
+
+        Returns
+        -------
+        None
+        """
+        if not torch.distributed.is_initialized():
+            raise RuntimeError(
+                "Distributed process group has not been initialized. "
+                "Cannot run distributed match template."
+            )
+
+        # NOTE: May be faster to pre-load files on rank 0 and broadcast to other ranks.
+        # But taking a simplistic approach for now and doing redundant computation.
+        core_kwargs = self.make_backend_core_function_kwargs()
+
+        results = core_match_template_distributed(
+            **core_kwargs,
+            orientation_batch_size=orientation_batch_size,
+            num_cuda_streams=self.computational_config.num_cpus,
+        )
+
+        # Only populate the results on the first rank
+        if torch.distributed.get_rank() == 0:
+            self._populate_match_template_result(
+                results,
+                do_result_export=do_result_export,
+                do_valid_cropping=do_valid_cropping,
+            )
+
+    def _populate_match_template_result(
+        self,
+        results: dict[str, Any],
+        do_result_export: bool = True,
+        do_valid_cropping: bool = True,
+    ) -> None:
+        """Helper function to populate the MatchTemplateResult object post-core call."""
+        # Place results into the `MatchTemplateResult` object
         self.match_template_result.mip = results["mip"]
         self.match_template_result.scaled_mip = results["scaled_mip"]
 
@@ -261,6 +329,7 @@ class MatchTemplateManager(BaseModel2DTM):
             nx = self.template_volume.shape[-1]
             self.match_template_result.apply_valid_cropping((nx, nx))
 
+        # Export the results to disk, if requested
         if do_result_export:
             self.match_template_result.export_results()
 
