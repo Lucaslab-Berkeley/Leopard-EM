@@ -2,7 +2,7 @@
 
 import json
 import os
-from typing import Annotated, ClassVar, Optional
+from typing import Annotated, Any, ClassVar, Optional
 
 import torch
 import yaml  # type: ignore
@@ -44,13 +44,19 @@ class BaseModel2DTM(BaseModel):
     #####################################
 
     @classmethod
-    def from_json(cls, json_path: str | os.PathLike) -> "BaseModel2DTM":
+    def from_json(
+        cls, json_path: str | os.PathLike, *args: tuple[Any], **kwargs: dict[Any, Any]
+    ) -> "BaseModel2DTM":
         """Load a MatchTemplateManager from a serialized JSON file.
 
         Parameters
         ----------
         json_path : str | os.PathLike
             Path to the JSON file to load.
+        *args : tuple[Any]
+            Additional positional arguments to pass to the constructor.
+        **kwargs : dict[Any, Any]
+            Additional keyword arguments to pass to the constructor.
 
         Returns
         -------
@@ -60,16 +66,22 @@ class BaseModel2DTM(BaseModel):
         with open(json_path, encoding="utf-8") as f:
             data = json.load(f)
 
-        return cls(**data)
+        return cls(*args, **data, **kwargs)
 
     @classmethod
-    def from_yaml(cls, yaml_path: str | os.PathLike) -> "BaseModel2DTM":
+    def from_yaml(
+        cls, yaml_path: str | os.PathLike, *args: tuple[Any], **kwargs: dict[Any, Any]
+    ) -> "BaseModel2DTM":
         """Load a MatchTemplateManager from a serialized YAML file.
 
         Parameters
         ----------
         yaml_path : str | os.PathLike
             Path to the YAML file to load.
+        *args : tuple[Any]
+            Additional positional arguments to pass to the constructor.
+        **kwargs : dict[Any, Any]
+            Additional keyword arguments to pass to the constructor.
 
         Returns
         -------
@@ -79,7 +91,7 @@ class BaseModel2DTM(BaseModel):
         with open(yaml_path, encoding="utf-8") as f:
             data = yaml.safe_load(f)
 
-        return cls(**data)
+        return cls(*args, **data, **kwargs)
 
     ####################################
     ### Export/serialization methods ###

@@ -39,7 +39,7 @@ class SharedWorkIndexQueue:
     num_processes: int
     total_indices: int
     batch_size: int
-    prefetch_size: int
+    prefetch_size: int  # multiplicative factor for batch_size
     lock: mp.Lock
 
     def __init__(

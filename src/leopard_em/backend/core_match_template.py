@@ -176,8 +176,8 @@ def core_match_template(
         Gets multiplied with the ctf filters to create a filter stack applied to each
         orientation projection.
     euler_angles : torch.Tensor
-        Euler angles (in 'ZYZ' convention) to search over. Has shape
-        (num_orientations, 3).
+        Euler angles (in 'ZYZ' convention & in units of degrees) to search over. Has
+        shape (num_orientations, 3).
     defocus_values : torch.Tensor
         What defoucs values correspond with the CTF filters, in units of Angstroms. Has
         shape (num_defocus,).
@@ -303,7 +303,7 @@ def core_match_template(
         kwargs_per_device.append(kwargs)
 
     result_dict = run_multiprocess_jobs(
-        target=_core_match_template_single_gpu,
+        target=_core_match_template_multiprocess_wrapper,
         kwargs_list=kwargs_per_device,
         post_start_callback=progress_callback,
     )
@@ -524,7 +524,7 @@ def _core_match_template_single_gpu(
 
 
 def _core_match_template_multiprocess_wrapper(
-    result_dict: dict, *args: tuple[Any], **kwargs: dict[str, Any]
+    result_dict: dict, rank: int, **kwargs: dict[str, Any]
 ) -> None:
     """Wrapper around _core_match_template_single_gpu for use with multiprocessing.
 
@@ -534,9 +534,8 @@ def _core_match_template_multiprocess_wrapper(
 
     See the _core_match_template_single_gpu function for parameter descriptions.
     """
-    rank = kwargs["rank"]
     mip, best_global_index, correlation_sum, correlation_squared_sum = (
-        _core_match_template_single_gpu(**kwargs)  # type: ignore[arg-type]
+        _core_match_template_single_gpu(rank, **kwargs)  # type: ignore[arg-type]
     )
 
     # NOTE: Need to send all tensors back to the CPU as numpy arrays for the shared
