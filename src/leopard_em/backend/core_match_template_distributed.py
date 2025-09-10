@@ -1,8 +1,8 @@
 """Distributed multi-node version of the core match_template implementation."""
 
-import threading
-import time
+import os
 from dataclasses import dataclass
+from datetime import timedelta
 from typing import Optional
 
 import torch
@@ -17,254 +17,132 @@ from leopard_em.backend.process_results import (
     scale_mip,
 )
 
-COORDINATOR_LOOP_DWELL_TIME = 0.01  # seconds
+# Turn off gradient calculations by default
+torch.set_grad_enabled(False)
+
 
 ############################################################
 ### Coordinator class for shared async work across nodes ###
 ############################################################
+class DistributedTCPIndexQueue:
+    """Distributed work index queue backed by torch.distributed.TCPStore.
 
-
-class DistributedWorkIndexQueue:
-    """Distributed work manager using standard PyTorch send/recv primitives.
-
-    This implementation is slightly different that the 'SharedWorkIndexQueue' class
-    because:
-    1. It needs to work across multiple nodes, so cannot use shared memory
-    2. It needs to use torch.distributed primitives for communication
-    Nevertheless, the API is the same so that it can be used interchangeably within the
-    _core_match_template_single_gpu function.
-
-    Rather than "asking" the main coordinator process (rank 0) for work, the main
-    process "queues up" work for all other processes by creating a list of non-blocking
-    isend calls, one per process. Each process uses a single irecv call to get its next
-    batch of work.
-
-    Since we are using the NCCL backend, there is a CUDA Tensor object for storing the
-    new (start_idx, end_idx) pair or (-1, -1) if no more work is available. There is
-    also a CUDA tensor object for the error flag, which is set to 1 if any process
-    encounters an error.
+    Drop-in replacement for SharedWorkIndexQueue but for multi-node setups.
 
     Parameters
     ----------
-    total_indices: int
-        Total number of indices to process.
-    batch_size: int
-        Number of indices to process in a single batch.
-    num_processes: int
-        Total number of processes across all nodes.
-    prefetch_size: int
-        Multiplicative factor for batch_size to determine how many indices to prefetch.
-    rank: int
-        Global rank of this process.
-    is_main: bool
-        Whether this process is the main coordinator (rank 0).
-    device: torch.device
-        The CUDA device the coordinator is running on.
-    error_flag_tensor: torch.Tensor
-        Tensor to indicate if an error has occurred across any process. Exists on the
-        specified CUDA device.
-    start_end_idx_tensor: torch.Tensor
-        Tensor for sending/receiving (start_idx, end_idx) pairs. Exists on the specified
-        CUDA device.
-
-    lock: threading.Lock
-        Lock for synchronizing access to shared variables. Only initialized on the
-        main process.
-    coordinator_running: bool
-        Flag to control the coordinator thread loop. Only used on the main process.
-    coordinator_thread: Optional[threading.Thread]
-        Thread object for the coordinator loop. Only used on the main process.
-    process_counts: list[int]
-        List of counts of how many indices each process has completed. Only used on the
-        main process.
-    process_requests: list[torch.distributed.Work]
-        List of non-blocking isend requests for each process. Only used on the main
-        process.
-    process_next_tensors: list[torch.Tensor]
-        List of tensors for each process to receive their next (start_idx, end_idx)
-        pair. Only used on the main process.
+    store : dist.TCPStore
+        A torch.distributed.TCPStore object for managing shared state. Must be already
+        initialized and reachable by all processes.
+    total_indices : int
+        The total number of indices (work items) to be processed. Each index is
+        considered its own work item, and these items will generally batched together.
+    batch_size : int
+        The number of indices to be processed in each batch.
+    num_processes : int
+        The total number of processes grabbing work from this queue. Used as a way
+        to track how fast each process is grabbing work from the queue
+    prefetch_size : int
+        The number of indices to prefetch for processing. Is a multiplicitive factor
+        for batch_size. For example, if batch_size is 10 and prefetch_size is 3, then
+        up to 30 indices will be prefetched for processing.
+    counter_key : str
+        The key in the TCPStore for the shared next index counter.
+    error_key : str
+        The key in the TCPStore for the shared error flag.
+    process_counts_prefix : str
+        The prefix for keys in the TCPStore for the per-process claimed counts.
     """
 
-    # Common to all processes
+    store: dist.TCPStore
     total_indices: int
     batch_size: int
-    prefetch_size: int
     num_processes: int
-    rank: int
-    is_main: bool
-    device: torch.device
-    error_flag_tensor: torch.Tensor
-    start_end_idx_tensor: torch.Tensor
-
-    # Coordinated from the main process
-    next_index: int = 0
-    process_counts: list[int]
-    lock: Optional[threading.Lock] = None
-    coordinator_running: bool = True
-    coordinator_thread: Optional[threading.Thread] = None
-    process_requests: Optional[list[torch.distributed.Work]] = None
-    process_counts: Optional[list[int]] = None
+    prefetch_size: int
+    counter_key: str
+    error_key: str
+    process_counts_prefix: str
 
     def __init__(
         self,
+        store: dist.TCPStore,
+        rank: int,  # process rank, only used for store initialization
         total_indices: int,
         batch_size: int,
         num_processes: int,
-        prefetch_size: int,
-        rank: int,
-        device: torch.device,
+        prefetch_size: int = 10,
+        counter_key: str = "next_index",
+        error_key: str = "error_flag",
+        process_counts_prefix: str = "process_count_",
     ):
+        self.store = store
         self.total_indices = total_indices
         self.batch_size = batch_size
-        self.num_processes = num_processes
         self.prefetch_size = prefetch_size
-        self.rank = rank
-        self.is_main = rank == 0
-        self.device = device
+        self.num_processes = num_processes
 
-        self.error_flag_tensor = torch.zeros(1, dtype=torch.int32, device=device)
-        self.start_end_idx_tensor = torch.zeros(2, dtype=torch.int32, device=device)
+        self.counter_key = counter_key
+        self.error_key = error_key
+        self.process_counts_prefix = process_counts_prefix
 
-        if self.is_main:
-            self.lock = threading.Lock()
-            self.process_counts = [0] * num_processes
-            self.process_requests = [None] * num_processes
-            self.process_next_tensors = [
-                torch.zeros(2, dtype=torch.int32, device=device)
-                for _ in range(num_processes)
-            ]
+        # Initialize shared values only once (on rank 0)
+        # Other ranks must call with store already containing keys
+        if rank == 0:
+            if not store.compare_set(counter_key, "0", "0"):  # no-op set if unset
+                store.set(counter_key, "0")
+            if not store.compare_set(error_key, "0", "0"):
+                store.set(error_key, "0")
+            for pid in range(num_processes):
+                k = f"{process_counts_prefix}{pid}"
+                if not store.compare_set(k, "0", "0"):
+                    store.set(k, "0")
 
-            self.coordinator_thread = threading.Thread(target=self._coordinator_loop)
-            self.coordinator_thread.daemon = True
-            self.coordinator_thread.start()
-            self.coordinator_running = True
+    def get_next_indices(
+        self, process_id: Optional[int] = None
+    ) -> Optional[tuple[int, int]]:
+        """Atomically claim the next chunk of indices for a process."""
+        delta = self.batch_size * self.prefetch_size
 
-    def _next_indices(self, process_id: int) -> tuple[int, int] | None:
-        """Helper function for the main process to get the next indices."""
-        self.lock.acquire()
+        # fetch-and-add returns the *new* value after increment
+        new_val = self.store.add(self.counter_key, delta)
+        end_idx = int(new_val)
+        start_idx = end_idx - delta
 
-        start_idx = self.next_index
         if start_idx >= self.total_indices:
-            result = None
-
-        # Do not go past total_indices
-        end_idx = min(
-            start_idx + self.batch_size * self.prefetch_size, self.total_indices
-        )
-        self.next_index = end_idx
-
-        # Update the per-process counter
-        if process_id is not None:
-            self.process_counts[process_id] += end_idx - start_idx
-
-        result = (start_idx, end_idx)
-        self.lock.release()
-        return result
-
-    def _coordinator_loop(self) -> None:
-        """Main coordinator loop to run continuously sending work to processes."""
-        # Setup the initial indexes to send to each process
-        first_indices = [self._next_indices(pid) for pid in range(self.num_processes)]
-        first_indices = [(-1, -1) if idx is None else idx for idx in first_indices]
-        self.process_next_tensors = [
-            torch.tensor(idx, dtype=torch.int32, device=self.device)
-            for idx in first_indices
-        ]
-
-        # Send the initial indices to each process
-        for pid in range(self.num_processes):
-            self.process_requests[pid] = dist.isend(
-                tensor=self.process_next_tensors, dst=pid
-            )
-
-        # Main loop with tracking of work completion per process
-        process_is_done = [False] * self.num_processes
-        while self.coordinator_running:
-            for pid in range(self.num_processes):
-                if process_is_done[pid]:
-                    continue
-
-                # Only update if the previous send has completed
-                if self.process_requests[pid].is_completed():
-                    next_indices = self._next_indices(pid)
-                    if next_indices is None:
-                        next_indices = (-1, -1)
-                        process_is_done[pid] = True
-
-                    # Update the tensor and send the new indices
-                    self.process_next_tensors[pid][0] = next_indices[0]
-                    self.process_next_tensors[pid][1] = next_indices[1]
-                    self.process_requests[pid] = dist.isend(
-                        tensor=self.process_next_tensors[pid], dst=pid
-                    )
-
-            self.coordinator_running = not all(process_is_done)
-
-            # Sleep briefly to avoid busy-waiting
-            time.sleep(COORDINATOR_LOOP_DWELL_TIME)
-
-    def get_next_indices(self, process_id: int) -> Optional[tuple[int, int]]:
-        """Get the next set of indices to process returning None if all work is done.
-
-        Parameters
-        ----------
-        process_id: int
-            Process index to use for updating the 'process_counts' array.
-        """
-        assert (
-            self.rank == process_id
-        ), "Process ID must match the rank of this process."
-
-        # Check if an error has occurred
-        if self.error_flag_tensor.item() == 1:
             return None
 
-        # Receive the next (start_idx, end_idx) pair from the coordinator
-        work_res = dist.irecv(tensor=self.start_end_idx_tensor, src=0)
-        work_res.wait()  # Blocking wait since we need the data immediately
+        if end_idx > self.total_indices:
+            end_idx = self.total_indices
 
-        start_idx = self.start_end_idx_tensor[0].item()
-        end_idx = self.start_end_idx_tensor[1].item()
+        claimed = end_idx - start_idx
+        if process_id is not None and claimed > 0:
+            self.store.add(f"{self.process_counts_prefix}{process_id}", claimed)
 
-        if start_idx == -1 and end_idx == -1:
+        if claimed <= 0:
             return None
-
         return (start_idx, end_idx)
 
     def get_current_index(self) -> int:
-        """Get the current progress of the work queue (as an integer)."""
-        if self.is_main:
-            self.lock.acquire()
-            current_index = self.next_index
-            self.lock.release()
-            return current_index
-        else:
-            raise RuntimeError("get_current_index only callable on the main process.")
+        """Get the current progress of the queue."""
+        return int(self.store.get(self.counter_key).decode("utf-8"))
 
     def get_process_counts(self) -> list[int]:
-        """Get the current process counts (only on the main process)."""
-        if self.is_main:
-            self.lock.acquire()
-            self.process_counts = list(self.process_counts)
-            self.lock.release()
-            return self.process_counts
-        else:
-            raise RuntimeError("get_process_counts only callable on the main process.")
+        """Get per-process claimed counts."""
+        counts = []
+        for pid in range(self.num_processes):
+            v = int(
+                self.store.get(f"{self.process_counts_prefix}{pid}").decode("utf-8")
+            )
+            counts.append(v)
+        return counts
 
     def error_occurred(self) -> bool:
-        """Check if an error has occurred in any process."""
-        # TODO: Add reduction across all processes to check error flag
-        return self.error_flag_tensor.item() == 1
+        """Check if an error has occurred."""
+        return bool(self.store.get(self.error_key).decode("utf-8") == "1")
 
     def set_error_flag(self) -> None:
-        """Set the error flag to indicate an error has occurred."""
-        self.error_flag_tensor[0] = 1
-
-    def shutdown(self) -> None:
-        """Shutdown the coordinator thread (only on the main process)."""
-        if self.is_main:
-            self.coordinator_running = False
-            self.coordinator_thread.join(timeout=5.0)
+        """Set the error flag."""
+        self.store.set(self.error_key, "1")
 
 
 @dataclass
@@ -369,19 +247,34 @@ def core_match_template_distributed(
     # first must extract the shapes before a tensor broadcast can occur.
     broadcast_list: list[Optional[TensorShapeDataclass]] = [None]
     if rank == 0:
-        try:
-            image_dft = kwargs["image_dft"].to(device)
-            template_dft = kwargs["template_dft"].to(device)
-            ctf_filters = kwargs["ctf_filters"].to(device)
-            whitening_filter_template = kwargs["whitening_filter_template"].to(device)
-            defocus_values = kwargs["defocus_values"].to(device)
-            pixel_values = kwargs["pixel_values"].to(device)
-            euler_angles = kwargs["euler_angles"].to(device)
-        except KeyError as e:
-            raise KeyError(
-                f"Rank 0 missing some tensors to call core_match_template_distributed; "
-                f"missing key: {e.args[0]}"
-            ) from e
+        for k in [
+            "image_dft",
+            "template_dft",
+            "ctf_filters",
+            "whitening_filter_template",
+            "defocus_values",
+            "pixel_values",
+            "euler_angles",
+        ]:
+            if k not in kwargs:
+                f"Rank 0 missing tensor '{k}' to call core_match_template_distributed."
+
+        # Extracting and moving all tensors to the device (zero rank only)
+        assert isinstance(kwargs["image_dft"], torch.Tensor)
+        assert isinstance(kwargs["template_dft"], torch.Tensor)
+        assert isinstance(kwargs["ctf_filters"], torch.Tensor)
+        assert isinstance(kwargs["whitening_filter_template"], torch.Tensor)
+        assert isinstance(kwargs["defocus_values"], torch.Tensor)
+        assert isinstance(kwargs["pixel_values"], torch.Tensor)
+        assert isinstance(kwargs["euler_angles"], torch.Tensor)
+
+        image_dft = kwargs["image_dft"].to(device)
+        template_dft = kwargs["template_dft"].to(device)
+        ctf_filters = kwargs["ctf_filters"].to(device)
+        whitening_filter_template = kwargs["whitening_filter_template"].to(device)
+        defocus_values = kwargs["defocus_values"].to(device)
+        pixel_values = kwargs["pixel_values"].to(device)
+        euler_angles = kwargs["euler_angles"].to(device)
 
         # Create a dataclass with the expected tensor shapes
         expected_shapes = TensorShapeDataclass(
@@ -448,26 +341,6 @@ def core_match_template_distributed(
     dist.broadcast(defocus_values, src=0)
     dist.broadcast(pixel_values, src=0)
 
-    ### DEBUGGING: Print out rank and tensor min/max after broadcasting
-    print(f"Rank {rank} after broadcasting tensors:")
-    # print(f"  image_dft:                 {image_dft.min().item()} to {image_dft.max().item()}")  # noqa: E501
-    # print(f"  template_dft:              {template_dft.min().item()} to {template_dft.max().item()}")  # noqa: E501
-    print(
-        f"  ctf_filters:               {ctf_filters.min().item()} to {ctf_filters.max().item()}"  # noqa: E501
-    )
-    print(
-        f"  whitening_filter_template: {whitening_filter_template.min().item()} to {whitening_filter_template.max().item()}"  # noqa: E501
-    )
-    print(
-        f"  euler_angles:              {euler_angles.min().item()} to {euler_angles.max().item()}"  # noqa: E501
-    )
-    print(
-        f"  defocus_values:            {defocus_values.min().item()} to {defocus_values.max().item()}"  # noqa: E501
-    )
-    print(
-        f"  pixel_values:              {pixel_values.min().item()} to {pixel_values.max().item()}"  # noqa: E501
-    )
-
     ##############################################################
     ### Pre-multiply the whitening filter with the CTF filters ###
     ##############################################################
@@ -477,40 +350,36 @@ def core_match_template_distributed(
         euler_angles.shape[0] * defocus_values.shape[0] * pixel_values.shape[0]
     )
 
-    # ########################################################
-    # ### RPC Setup for distributed index queue management ###
-    # ########################################################
-
-    # print(f"Rank {rank} initializing RPC with name 'worker{rank}'.")
-
-    # dist.rpc.init_rpc(name=f"worker{rank}", rank=rank, world_size=world_size)
-
-    # print(f"Rank {rank} finished initializing RPC.")
-
-    # distributed_queue = DistributedWorkIndexQueue(
-    #     total_indices=euler_angles.shape[0],
-    #     batch_size=orientation_batch_size,
-    #     num_processes=world_size,
-    #     prefetch_size=10,
-    #     rank=rank,
-    # )
-    # if rank == 0:
-    #     global _global_queue
-    #     _global_queue = distributed_queue
-
-    # # TODO: Progress bar monitoring (and possibly another thread in main process)
-    # # for handling queue monitoring?
-
+    ########################################################
+    ### TCP Setup for distributed index queue management ###
+    ########################################################
     ### DEBUGGING: Print that the distributed queue is being created
     print(f"Rank {rank} creating distributed work index queue.")
 
-    distributed_queue = DistributedWorkIndexQueue(
+    tcp_host_name = os.environ.get("MASTER_ADDR", None)
+    tcp_host_port = os.environ.get("MASTER_PORT", None)
+
+    assert tcp_host_name is not None, "MASTER_ADDR environment variable not set"
+    assert tcp_host_port is not None, "MASTER_PORT environment variable not set"
+
+    tcp_host_name = int(tcp_host_name)  # type: ignore[assignment]
+    tcp_host_port = int(tcp_host_port)  # type: ignore[assignment]
+
+    tcp_store = dist.TCPStore(
+        host_name=tcp_host_name,
+        port=tcp_host_port,
+        world_size=world_size,
+        is_master=(rank == 0),
+        timeout=timedelta(seconds=30),  # reduce from default 300 seconds
+    )
+
+    distributed_queue = DistributedTCPIndexQueue(
+        store=tcp_store,
+        rank=rank,
         total_indices=euler_angles.shape[0],
         batch_size=orientation_batch_size,
         num_processes=world_size,
-        prefetch_size=10,
-        rank=rank,
-        device=device,
+        prefetch_size=25,
     )
 
     print(f"Rank {rank} finished creating distributed work index queue.")
@@ -540,26 +409,6 @@ def core_match_template_distributed(
     dist.barrier()
     print(f"Rank {rank} after barrier, before gathering results.")
 
-    # ###############################################
-    # ### Progress tracking setup on main process ###
-    # ###############################################
-
-    # if rank == 0:
-    #     global _global_queue
-    #     global_pbar, device_pbars = setup_progress_tracking(
-    #         index_queue=_global_queue,
-    #         unit_scale=defocus_values.shape[0] * pixel_values.shape[0],
-    #         num_devices=len(device) * world_size,
-    #     )
-    #     progress_callback = partial(
-    #         monitor_match_template_progress,
-    #         queue=_global_queue,
-    #         pbar=global_pbar,
-    #         device_pbars=device_pbars,
-    #     )
-    # else:
-    #     progress_callback = None
-
     # Gather into a list of results on the main process
     # NOTE: This is assuming there is enough GPU memory on the zeroth rank to hold.
     # There are 4 tensors each ~64 MB per GPU (~256 MB total) so this is a fair
@@ -567,7 +416,6 @@ def core_match_template_distributed(
     # TODO: Wrap this reduction into multiple groups, one per node, to reduce memory
     # pressure on the main process GPU
     # fmt: off
-    # Pre-commit: ignore line-too-long (E501) for the following 10 lines.
     if rank == 0:
         gather_mip                     = [torch.zeros_like(mip) for _ in range(world_size)]  # noqa: E501
         gather_best_global_index       = [torch.zeros_like(best_global_index) for _ in range(world_size)]  # noqa: E501
@@ -598,9 +446,6 @@ def core_match_template_distributed(
         dst=0,
     )
     dist.barrier()
-
-    # Shutdown the RPC framework
-    dist.rpc.shutdown()
 
     ##################################################
     ### Final aggregation step on the main process ###
