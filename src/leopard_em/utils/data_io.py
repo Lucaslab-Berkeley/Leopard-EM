@@ -37,9 +37,13 @@ def read_mrc_to_tensor(mrc_path: str | os.PathLike | Path) -> torch.Tensor:
     Returns
     -------
     torch.Tensor
-        The MRC data as a tensor, copied.
+        The MRC data as a tensor, copied and converted to float32 if needed.
     """
-    return torch.tensor(read_mrc_to_numpy(mrc_path))
+    tensor = torch.tensor(read_mrc_to_numpy(mrc_path))
+    # Convert float16 to float32 for FFT compatibility
+    if tensor.dtype == torch.float16:
+        tensor = tensor.to(torch.float32)
+    return tensor
 
 
 def write_mrc_from_numpy(
@@ -105,7 +109,7 @@ def load_mrc_image(file_path: str | os.PathLike | Path) -> torch.Tensor:
     Returns
     -------
     torch.Tensor
-        The MRC image as a tensor.
+        The MRC image as a tensor, converted to float32 for FFT compatibility.
 
     Raises
     ------
@@ -133,7 +137,7 @@ def load_mrc_volume(file_path: str | os.PathLike | Path) -> torch.Tensor:
     Returns
     -------
     torch.Tensor
-        The MRC volume as a tensor.
+        The MRC volume as a tensor, converted to float32 for FFT compatibility.
 
     Raises
     ------
@@ -188,5 +192,9 @@ def load_template_tensor(
         template = torch.from_numpy(template_volume)
     else:
         template = template_volume
+
+    # Convert float16 to float32 for FFT compatibility
+    if template.dtype == torch.float16:
+        template = template.to(torch.float32)
 
     return template
