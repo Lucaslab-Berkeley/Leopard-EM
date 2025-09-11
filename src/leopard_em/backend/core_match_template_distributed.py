@@ -1,6 +1,8 @@
 """Distributed multi-node version of the core match_template implementation."""
 
 import os
+import random
+import socket
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import Optional
@@ -17,8 +19,32 @@ from leopard_em.backend.process_results import (
     scale_mip,
 )
 
-# Turn off gradient calculations by default
+# Turn off gradient calculations
 torch.set_grad_enabled(False)
+
+
+def _check_port_free(port: int) -> bool:
+    """Check if a TCP port is free to use."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        try:
+            s.bind(("", port))
+            return True
+        except OSError:
+            return False
+
+
+def _find_free_port(
+    start_port: int = 20000, end_port: int = 65000, tries: int = 64
+) -> int:
+    """Find a free TCP port to use for TCPStore."""
+    for i in range(tries):
+        p = random.randint(start_port, end_port)
+        print(f"Retry {i} / {tries}: Trying port {p} for TCPStore")
+        if _check_port_free(p):
+            return p
+        else:
+            continue
+    raise RuntimeError("Unable to find free port for TCPStore")
 
 
 ############################################################
@@ -85,17 +111,27 @@ class DistributedTCPIndexQueue:
         self.error_key = error_key
         self.process_counts_prefix = process_counts_prefix
 
-        # Initialize shared values only once (on rank 0)
-        # Other ranks must call with store already containing keys
+    @staticmethod
+    def initialize_store(
+        store: dist.TCPStore,
+        rank: int,
+        num_processes: int,
+        counter_key: str = "next_index",
+        error_key: str = "error_flag",
+        process_counts_prefix: str = "process_count_",
+    ) -> None:
+        """Have rank 0 initialize the shared keys in the store.
+
+        NOTE: Includes a synchronization barrier so MUST be called by all processes.
+        """
         if rank == 0:
-            if not store.compare_set(counter_key, "0", "0"):  # no-op set if unset
-                store.set(counter_key, "0")
-            if not store.compare_set(error_key, "0", "0"):
-                store.set(error_key, "0")
+            # set keys unconditionally on the server to avoid compare_set races
+            store.set(counter_key, "0")
+            store.set(error_key, "0")
             for pid in range(num_processes):
-                k = f"{process_counts_prefix}{pid}"
-                if not store.compare_set(k, "0", "0"):
-                    store.set(k, "0")
+                store.set(f"{process_counts_prefix}{pid}", "0")
+        # synchronize so other ranks can safely call store.get()/add()
+        dist.barrier()
 
     def get_next_indices(
         self, process_id: Optional[int] = None
@@ -236,16 +272,6 @@ def core_match_template_distributed(
 
     torch.cuda.set_device(device)
 
-    ### DEBUGGING: Print that this step has been reached
-    print(f"Rank {rank} / {world_size} running on device {device} checks passed.")
-
-    #############################################################
-    ### Logic for loading / broadcasting tensors to all ranks ###
-    #############################################################
-
-    # Rank zero has all the data. No other ranks "know" the size/shape of data, so
-    # first must extract the shapes before a tensor broadcast can occur.
-    broadcast_list: list[Optional[TensorShapeDataclass]] = [None]
     if rank == 0:
         for k in [
             "image_dft",
@@ -257,25 +283,32 @@ def core_match_template_distributed(
             "euler_angles",
         ]:
             if k not in kwargs:
-                f"Rank 0 missing tensor '{k}' to call core_match_template_distributed."
+                raise ValueError(
+                    f"Rank 0 missing tensor '{k}' to call."
+                    "core_match_template_distributed."
+                )
+            if not isinstance(kwargs[k], torch.Tensor):
+                raise ValueError(
+                    f"Rank 0 received non-tensor '{k}' argument to "
+                    "core_match_template_distributed."
+                )
 
-        # Extracting and moving all tensors to the device (zero rank only)
-        assert isinstance(kwargs["image_dft"], torch.Tensor)
-        assert isinstance(kwargs["template_dft"], torch.Tensor)
-        assert isinstance(kwargs["ctf_filters"], torch.Tensor)
-        assert isinstance(kwargs["whitening_filter_template"], torch.Tensor)
-        assert isinstance(kwargs["defocus_values"], torch.Tensor)
-        assert isinstance(kwargs["pixel_values"], torch.Tensor)
-        assert isinstance(kwargs["euler_angles"], torch.Tensor)
+        whitening_filter_template = kwargs["whitening_filter_template"].to(device)  # type: ignore[attr-defined]
+        defocus_values = kwargs["defocus_values"].to(device)  # type: ignore[attr-defined]
+        template_dft = kwargs["template_dft"].to(device)  # type: ignore[attr-defined]
+        pixel_values = kwargs["pixel_values"].to(device)  # type: ignore[attr-defined]
+        euler_angles = kwargs["euler_angles"].to(device)  # type: ignore[attr-defined]
+        ctf_filters = kwargs["ctf_filters"].to(device)  # type: ignore[attr-defined]
+        image_dft = kwargs["image_dft"].to(device)  # type: ignore[attr-defined]
 
-        image_dft = kwargs["image_dft"].to(device)
-        template_dft = kwargs["template_dft"].to(device)
-        ctf_filters = kwargs["ctf_filters"].to(device)
-        whitening_filter_template = kwargs["whitening_filter_template"].to(device)
-        defocus_values = kwargs["defocus_values"].to(device)
-        pixel_values = kwargs["pixel_values"].to(device)
-        euler_angles = kwargs["euler_angles"].to(device)
+    #############################################################
+    ### Logic for loading / broadcasting tensors to all ranks ###
+    #############################################################
 
+    # Rank zero has all the data. No other ranks "know" the size/shape of data, so
+    # first must extract the shapes before a tensor broadcast can occur.
+    broadcast_list: list[Optional[TensorShapeDataclass]] = [None]
+    if rank == 0:
         # Create a dataclass with the expected tensor shapes
         expected_shapes = TensorShapeDataclass(
             image_dft_shape=tuple(image_dft.shape),
@@ -287,26 +320,14 @@ def core_match_template_distributed(
             pixel_values_shape=tuple(pixel_values.shape),
         )
 
-        ### DEBUGGING: Print out the expected shapes
-        print(f"Rank {rank} before broadcasting shaped: {expected_shapes}")
-
         broadcast_list = [expected_shapes]
         dist.broadcast_object_list(broadcast_list, src=0)
 
-        ### DEBUGGING
-        print(f"Rank {rank} finished broadcasting shapes.")
-
     # For all other ranks, first receive the expected shapes
     else:
-        ### DEBUGGING
-        print(f"non-main rank {rank} before broadcasting shapes.")
-
         dist.broadcast_object_list(broadcast_list, src=0)
         assert broadcast_list[0] is not None
         expected_shapes = broadcast_list[0]
-
-        ### DEBUGGING: Print out the expected shapes
-        print(f"Rank {rank} after broadcasting shapes: {expected_shapes}")
 
     # Now all processes have the initialized 'expected_shapes' variable. Create
     # empty tensors of the correct shape on all non-zero ranks
@@ -320,16 +341,6 @@ def core_match_template_distributed(
         defocus_values              = torch.empty(expected_shapes.defocus_values_shape,             dtype=torch.float32,   device=device)  # noqa: E501
         pixel_values                = torch.empty(expected_shapes.pixel_values_shape,               dtype=torch.float32,   device=device)  # noqa: E501
         # fmt: on
-
-    ### DEBUGGING: Print out rank and all tensor shapes before broadcasting
-    print(f"Rank {rank} before broadcasting tensors:")
-    print(f"  image_dft:                 {tuple(image_dft.shape)}")
-    print(f"  template_dft:              {tuple(template_dft.shape)}")
-    print(f"  ctf_filters:               {tuple(ctf_filters.shape)}")
-    print(f"  whitening_filter_template: {tuple(whitening_filter_template.shape)}")
-    print(f"  euler_angles:              {tuple(euler_angles.shape)}")
-    print(f"  defocus_values:            {tuple(defocus_values.shape)}")
-    print(f"  pixel_values:              {tuple(pixel_values.shape)}")
 
     # Now broadcast all the tensors from rank 0 to all other ranks.
     # Default is not to use async operations, so these are blocking calls.
@@ -353,8 +364,12 @@ def core_match_template_distributed(
     ########################################################
     ### TCP Setup for distributed index queue management ###
     ########################################################
-    ### DEBUGGING: Print that the distributed queue is being created
-    print(f"Rank {rank} creating distributed work index queue.")
+
+    # NOTE: This following code was giving me trouble without setting
+    # TORCHELASTIC_USE_AGENT_STORE=0 to avoid using the torchelastic default store from
+    # interfering with the TCPStore initialization. Unsure the underlying mechanism
+    # of causing the synchronization hanging -- Matthew Giammar
+    os.environ.setdefault("TORCHELASTIC_USE_AGENT_STORE", "0")
 
     tcp_host_name = os.environ.get("MASTER_ADDR", None)
     tcp_host_port = os.environ.get("MASTER_PORT", None)
@@ -362,15 +377,38 @@ def core_match_template_distributed(
     assert tcp_host_name is not None, "MASTER_ADDR environment variable not set"
     assert tcp_host_port is not None, "MASTER_PORT environment variable not set"
 
-    tcp_host_name = int(tcp_host_name)  # type: ignore[assignment]
-    tcp_host_port = int(tcp_host_port)  # type: ignore[assignment]
+    tcp_host_port = int(tcp_host_port) + 1  # type: ignore[assignment]
+
+    # Only on rank 0 check if port is free. If not, find a free port.
+    if rank == 0:
+        if not _check_port_free(tcp_host_port):  # type: ignore[arg-type]
+            tcp_host_port = _find_free_port()  # type: ignore[assignment]
+
+    # Regardless of free or not, need to do a broadcast to synchronize all ranks
+    port_list = [tcp_host_port]
+    dist.broadcast_object_list(port_list, src=0)
+    tcp_host_port = int(port_list[0])  # type: ignore[assignment]
+
+    # Barrier for broadcast to complete
+    dist.barrier()
 
     tcp_store = dist.TCPStore(
         host_name=tcp_host_name,
         port=tcp_host_port,
         world_size=world_size,
         is_master=(rank == 0),
-        timeout=timedelta(seconds=30),  # reduce from default 300 seconds
+        timeout=timedelta(seconds=30),  # reduce down from default of 5 minutes
+        wait_for_workers=False,
+    )
+
+    # Ensure rank 0 initializes the shared keys on the store and synchronize.
+    DistributedTCPIndexQueue.initialize_store(
+        store=tcp_store,
+        rank=rank,
+        num_processes=world_size,
+        counter_key="next_index",
+        error_key="error_flag",
+        process_counts_prefix="process_count_",
     )
 
     distributed_queue = DistributedTCPIndexQueue(
@@ -379,17 +417,14 @@ def core_match_template_distributed(
         total_indices=euler_angles.shape[0],
         batch_size=orientation_batch_size,
         num_processes=world_size,
-        prefetch_size=25,
+        prefetch_size=10,  # NOTE: May need to adjust this up when many nodes
     )
-
-    print(f"Rank {rank} finished creating distributed work index queue.")
 
     ###########################################################
     ### Calling the single GPU core match template function ###
     ###########################################################
 
     dist.barrier()
-    print(f"Rank {rank} after barrier, before calling single GPU core.")
     (mip, best_global_index, correlation_sum, correlation_squared_sum) = (
         _core_match_template_single_gpu(
             rank=rank,
@@ -405,21 +440,19 @@ def core_match_template_distributed(
             device=device,
         )
     )
-    print(f"Rank {rank} after calling single GPU core.")
     dist.barrier()
-    print(f"Rank {rank} after barrier, before gathering results.")
 
     # Gather into a list of results on the main process
     # NOTE: This is assuming there is enough GPU memory on the zeroth rank to hold.
     # There are 4 tensors each ~64 MB per GPU (~256 MB total) so this is a fair
     # assumption for most systems. Would need >= 64 GPUs to exceed 16 GB of memory.
-    # TODO: Wrap this reduction into multiple groups, one per node, to reduce memory
-    # pressure on the main process GPU
+    # TODO: Wrap this reduction into multiple groups, e.g. one per node, to reduce
+    # memory pressure on the main process GPU
     # fmt: off
     if rank == 0:
-        gather_mip                     = [torch.zeros_like(mip) for _ in range(world_size)]  # noqa: E501
-        gather_best_global_index       = [torch.zeros_like(best_global_index) for _ in range(world_size)]  # noqa: E501
-        gather_correlation_sum         = [torch.zeros_like(correlation_sum) for _ in range(world_size)]  # noqa: E501
+        gather_mip                     = [torch.zeros_like(mip) for                     _ in range(world_size)]  # noqa: E501
+        gather_best_global_index       = [torch.zeros_like(best_global_index) for       _ in range(world_size)]  # noqa: E501
+        gather_correlation_sum         = [torch.zeros_like(correlation_sum) for         _ in range(world_size)]  # noqa: E501
         gather_correlation_squared_sum = [torch.zeros_like(correlation_squared_sum) for _ in range(world_size)]  # noqa: E501
     else:
         gather_mip                     = None
@@ -481,6 +514,17 @@ def core_match_template_distributed(
     correlation_sum = aggregated_results["correlation_sum"]
     correlation_squared_sum = aggregated_results["correlation_squared_sum"]
 
+    # Ensuring all tensors are now on the CPU device:
+    # fmt: off
+    mip                     = mip.cpu()
+    best_global_index       = best_global_index.cpu()
+    correlation_sum         = correlation_sum.cpu()
+    correlation_squared_sum = correlation_squared_sum.cpu()
+    pixel_values            = pixel_values.cpu()
+    defocus_values          = defocus_values.cpu()
+    euler_angles            = euler_angles.cpu()
+    # fmt: on
+
     # Map from global search index to the best defocus & angles
     best_phi, best_theta, best_psi, best_defocus = decode_global_search_index(
         best_global_index, pixel_values, defocus_values, euler_angles
@@ -496,14 +540,14 @@ def core_match_template_distributed(
     )
 
     return {
-        "mip": mip,
-        "scaled_mip": mip_scaled,
-        "best_phi": best_phi,
-        "best_theta": best_theta,
-        "best_psi": best_psi,
-        "best_defocus": best_defocus,
-        "correlation_mean": correlation_mean,
-        "correlation_variance": correlation_variance,
+        "mip": mip.cpu(),
+        "scaled_mip": mip_scaled.cpu(),
+        "best_phi": best_phi.cpu(),
+        "best_theta": best_theta.cpu(),
+        "best_psi": best_psi.cpu(),
+        "best_defocus": best_defocus.cpu(),
+        "correlation_mean": correlation_mean.cpu(),
+        "correlation_variance": correlation_variance.cpu(),
         "total_projections": total_projections,
         "total_orientations": euler_angles.shape[0],
         "total_defocus": defocus_values.shape[0],
