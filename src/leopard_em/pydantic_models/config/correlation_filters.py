@@ -89,7 +89,7 @@ class WhiteningFilterConfig(BaseModel2DTM):
 
         # Handle case where whitening filter is disabled
         if not self.enabled:
-            return torch.ones(output_shape, dtype=ref_img_rfft.dtype)
+            return torch.ones(output_shape, dtype=torch.float32)
 
         # Convert to real-space shape for function call
         output_shape = output_shape[:-1] + (2 * (output_shape[-1] - 1),)
@@ -140,15 +140,15 @@ class PhaseRandomizationFilterConfig(BaseModel2DTM):
         Parameters
         ----------
         ref_img_rfft : torch.Tensor
-            The reference image to use as a template for phase randomization. This
-            should be RFFT'd and unshifted (zero-frequency component at the top-left
-            corner).
+            The image to phase randomization.
+            This should be RFFT'd and unshifted
+            (zero-frequency component at the top-left corner).
         """
         output_shape = ref_img_rfft.shape
 
         # Handle case where phase randomization filter is disabled
         if not self.enabled:
-            return torch.ones(output_shape, dtype=ref_img_rfft.dtype)
+            return torch.ones(output_shape, dtype=torch.float32)
 
         # Fix for underlying shape bug in torch_fourier_filter
         output_shape = output_shape[:-1] + (2 * (output_shape[-1] - 1),)
@@ -389,9 +389,6 @@ class PreprocessingFilters(BaseModel2DTM):
         ac_config = self.arbitrary_curve_filter
 
         # Calculate each of the filters in turn
-        # phase_randomization_filter = pr_config.calculate_phase_randomization_filter(
-        #     ref_img_rfft=ref_img_rfft
-        # )
         whitening_filter_tensor = wf_config.calculate_whitening_filter(
             ref_img_rfft=ref_img_rfft, output_shape=output_shape
         )
