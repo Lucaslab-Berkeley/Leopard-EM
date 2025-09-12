@@ -90,8 +90,8 @@ The script is intended to be run as `python --config FILE --output FILE --batch_
 
     import os
     import time
-    import click
 
+    import click
     import torch.distributed as dist
 
     from leopard_em.pydantic_models.managers import MatchTemplateManager
@@ -150,7 +150,7 @@ The script is intended to be run as `python --config FILE --output FILE --batch_
         default=ORIENTATION_BATCH_SIZE,
         help="Number of orientations to process in a single batch.",
     )
-    def main() -> None:
+    def main(config: str, output: str, batch_size: int) -> None:
         """Main function for the distributed match_template program.
 
         Each process is associated with a single GPU, and we front-load the distributed
@@ -158,19 +158,33 @@ The script is intended to be run as `python --config FILE --output FILE --batch_
         object and the backend match_template code to remain relatively simple.
         """
         world_size, rank, local_rank = initialize_distributed()
-        print(f"RANK={rank}: Initialized {world_size} processes (local_rank={local_rank}).")
+        time_str = time.strftime("%Y%m%d_%H%M%S", time.localtime())
+        print(
+            f"{time_str} RANK={rank}: Initialized {world_size} processes "
+            f"(local_rank={local_rank})."
+        )
 
         # Do not pre-load mrc files, unless zeroth rank. Data will be broadcast later.
         mt_manager = MatchTemplateManager.from_yaml(
-            YAML_CONFIG_PATH, preload_mrc_files=bool(rank == 0)
+            config, preload_mrc_files=bool(rank == 0)
         )
         mt_manager.run_match_template_distributed(
             world_size=world_size,
             rank=rank,
             local_rank=local_rank,
-            orientation_batch_size=ORIENTATION_BATCH_SIZE,
+            orientation_batch_size=batch_size,
             do_result_export=(rank == 0),  # Only save results from rank 0
         )
+
+        # Only do the df export on rank 0
+        if rank == 0:
+            df = mt_manager.results_to_dataframe()
+            df.to_csv(output, index=True)
+
+        # Close the distributed process group
+        dist.destroy_process_group()
+
+        print("Done!")
 
 
     if __name__ == "__main__":
@@ -191,7 +205,7 @@ It does the following
 3. Defines the program to run (distributed match template python script), and
 4. Wraps this into a `surn` / `torchrun` launch which actually runs the program across all the nodes.
 
-There are a portions of the script which need adapted to your specific computing environment.
+**There are a portions of the script which need adapted to your specific computing environment.**
 
 ### SLURM header
 
@@ -226,7 +240,7 @@ SETUP="ml anaconda3 && \
 GPUS_PER_NODE=8
 
 # EDIT: Define your program an its argument
-PROGRAM="/global/home/users/matthewgiammar/Leopard-EM/programs/match_template/run_distributed_match_template.py"
+PROGRAM="programs/match_template/run_distributed_match_template.py"
 # OR if CLI arguments are required:
 # PROGRAM="programs/match_template/run_distributed_match_template.py --arg1 val1 --arg2 val2"
 ```
@@ -279,7 +293,7 @@ If you're getting errors on the launch, check with your SysAdmin.
     GPUS_PER_NODE=8
 
     # EDIT: Define your program an its argument
-    PROGRAM="/global/home/users/matthewgiammar/Leopard-EM/programs/match_template/run_distributed_match_template.py"
+    PROGRAM="programs/match_template/run_distributed_match_template.py"
     # OR if CLI arguments are required:
     # PROGRAM="programs/match_template/run_distributed_match_template.py --arg1 val1 --arg2 val2"
 
@@ -318,3 +332,7 @@ If you're getting errors on the launch, check with your SysAdmin.
 
     echo "END TIME: $(date)"
     ```
+
+## Queuing the distributed match template job
+
+Placing the job into the queue is as easy as running `sbatch distributed_match_template.slurm` or whatever name(s) you may have assigned to the scripts.
