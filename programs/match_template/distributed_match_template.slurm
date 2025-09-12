@@ -35,7 +35,7 @@ SETUP="ml anaconda3 && \
 "
 
 # EDIT: How many GPUs per node (should match what was requested in --gres)
-GPUS_PER_NODE=4
+GPUS_PER_NODE=8
 
 # EDIT: Define your program an its argument
 PROGRAM="/global/home/users/matthewgiammar/Leopard-EM/programs/match_template/run_distributed_match_template.py"
