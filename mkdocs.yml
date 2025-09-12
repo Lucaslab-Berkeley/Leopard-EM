@@ -29,8 +29,9 @@ extra_javascript:
 nav:
   - Home: index.md
   - Tutorials:
-    - 2DTM Introduction: tutorials/match_template_intro.md
-    - Batch Processing: tutorials/batch_processing.md
+    - 2DTM Introduction:      tutorials/match_template_intro.md
+    - Batch Processing:       tutorials/batch_processing.md
+    - Distributed Computing:  tutorials/distributed_match_template.md
   - Examples:
     - Match Template Config:            examples/01_basic_configuration.ipynb
     - Peaks to DataFrame:               examples/02_extract_peak_info.ipynb
