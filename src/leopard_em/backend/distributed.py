@@ -163,7 +163,7 @@ class MultiprocessWorkIndexQueue(WorkIndexQueue):
 class DistributedTCPIndexQueue(WorkIndexQueue):
     """Distributed work index queue backed by torch.distributed.TCPStore.
 
-    Drop-in replacement for SharedWorkIndexQueue but for multi-node setups.
+    Drop-in replacement for MultiprocessWorkIndexQueue but for multi-node setups.
 
     Parameters
     ----------
