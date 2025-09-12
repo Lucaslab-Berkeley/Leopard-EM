@@ -45,12 +45,12 @@ def _find_free_port(
         print(f"Retry {i} / {tries}: Trying port {p} for TCPStore")
         if _check_port_free(p):
             return p
-        else:
-            continue
     raise RuntimeError("Unable to find free port for TCPStore")
 
 
 # pylint: disable=too-many-locals
+# pylint: disable=too-many-branches
+# pylint: disable=too-many-statements
 def core_match_template_distributed(
     world_size: int,
     rank: int,
@@ -126,6 +126,7 @@ def core_match_template_distributed(
             f"Rank {rank} received device={device}."
         )
 
+    _ = local_rank
     torch.cuda.set_device(device)
 
     if rank == 0:
@@ -148,8 +149,9 @@ def core_match_template_distributed(
                     f"Rank 0 received non-tensor '{k}' argument to "
                     "core_match_template_distributed."
                 )
-
+        # pylint: disable=line-too-long
         whitening_filter_template = kwargs["whitening_filter_template"].to(device)  # type: ignore[attr-defined]
+        # pylint: enable=line-too-long
         defocus_values = kwargs["defocus_values"].to(device)  # type: ignore[attr-defined]
         template_dft = kwargs["template_dft"].to(device)  # type: ignore[attr-defined]
         pixel_values = kwargs["pixel_values"].to(device)  # type: ignore[attr-defined]
@@ -189,6 +191,7 @@ def core_match_template_distributed(
     # empty tensors of the correct shape on all non-zero ranks
     if rank != 0:
         # fmt: off
+        # pylint: disable=line-too-long
         image_dft                   = torch.empty(expected_shapes.image_dft_shape,                  dtype=torch.complex64, device=device)  # noqa: E501
         template_dft                = torch.empty(expected_shapes.template_dft_shape,               dtype=torch.complex64, device=device)  # noqa: E501
         ctf_filters                 = torch.empty(expected_shapes.ctf_filters_shape,                dtype=torch.float32,   device=device)  # noqa: E501
@@ -196,6 +199,7 @@ def core_match_template_distributed(
         euler_angles                = torch.empty(expected_shapes.euler_angles_shape,               dtype=torch.float32,   device=device)  # noqa: E501
         defocus_values              = torch.empty(expected_shapes.defocus_values_shape,             dtype=torch.float32,   device=device)  # noqa: E501
         pixel_values                = torch.empty(expected_shapes.pixel_values_shape,               dtype=torch.float32,   device=device)  # noqa: E501
+        # pylint: enable=line-too-long
         # fmt: on
 
     # Now broadcast all the tensors from rank 0 to all other ranks.
@@ -269,7 +273,6 @@ def core_match_template_distributed(
 
     distributed_queue = DistributedTCPIndexQueue(
         store=tcp_store,
-        rank=rank,
         total_indices=euler_angles.shape[0],
         batch_size=orientation_batch_size,
         num_processes=world_size,
@@ -302,9 +305,10 @@ def core_match_template_distributed(
     # NOTE: This is assuming there is enough GPU memory on the zeroth rank to hold.
     # There are 4 tensors each ~64 MB per GPU (~256 MB total) so this is a fair
     # assumption for most systems. Would need >= 64 GPUs to exceed 16 GB of memory.
-    # TODO: Wrap this reduction into multiple groups, e.g. one per node, to reduce
+    # Can wrap this reduction into multiple groups, e.g. one per node, to reduce
     # memory pressure on the main process GPU
     # fmt: off
+    # pylint: disable=line-too-long
     if rank == 0:
         gather_mip                     = [torch.zeros_like(mip) for                     _ in range(world_size)]  # noqa: E501
         gather_best_global_index       = [torch.zeros_like(best_global_index) for       _ in range(world_size)]  # noqa: E501
@@ -315,6 +319,7 @@ def core_match_template_distributed(
         gather_best_global_index       = None
         gather_correlation_sum         = None
         gather_correlation_squared_sum = None
+    # pylint: enable=line-too-long
     # fmt: on
 
     dist.barrier()
@@ -382,6 +387,7 @@ def core_match_template_distributed(
     # fmt: on
 
     # Map from global search index to the best defocus & angles
+    # pylint: disable=duplicate-code
     best_phi, best_theta, best_psi, best_defocus = decode_global_search_index(
         best_global_index, pixel_values, defocus_values, euler_angles
     )

@@ -56,27 +56,27 @@ class WorkIndexQueue(ABC):
         Optional[tuple[int, int]]
             Tuple of (start_idx, end_idx) or None if no work remains.
         """
-        pass
+        raise NotImplementedError
 
     @abstractmethod
     def get_current_index(self) -> int:
         """Get the current progress of the work queue."""
-        pass
+        raise NotImplementedError
 
     @abstractmethod
     def get_process_counts(self) -> list[int]:
         """Get per-process work counts."""
-        pass
+        raise NotImplementedError
 
     @abstractmethod
     def error_occurred(self) -> bool:
         """Check if an error has occurred in any process."""
-        pass
+        raise NotImplementedError
 
     @abstractmethod
     def set_error_flag(self) -> None:
         """Set the error flag to indicate an error has occurred."""
-        pass
+        raise NotImplementedError
 
 
 # pylint: disable=too-many-instance-attributes
@@ -202,7 +202,6 @@ class DistributedTCPIndexQueue(WorkIndexQueue):
     def __init__(
         self,
         store: dist.TCPStore,
-        rank: int,  # process rank, only used for store initialization
         total_indices: int,
         batch_size: int,
         num_processes: int,
@@ -211,12 +210,9 @@ class DistributedTCPIndexQueue(WorkIndexQueue):
         error_key: str = "error_flag",
         process_counts_prefix: str = "process_count_",
     ):
-        self.store = store
-        self.total_indices = total_indices
-        self.batch_size = batch_size
-        self.prefetch_size = prefetch_size
-        self.num_processes = num_processes
+        super().__init__(total_indices, batch_size, num_processes, prefetch_size)
 
+        self.store = store
         self.counter_key = counter_key
         self.error_key = error_key
         self.process_counts_prefix = process_counts_prefix
@@ -257,8 +253,7 @@ class DistributedTCPIndexQueue(WorkIndexQueue):
         if start_idx >= self.total_indices:
             return None
 
-        if end_idx > self.total_indices:
-            end_idx = self.total_indices
+        end_idx = min(end_idx, self.total_indices)
 
         claimed = end_idx - start_idx
         if process_id is not None and claimed > 0:
