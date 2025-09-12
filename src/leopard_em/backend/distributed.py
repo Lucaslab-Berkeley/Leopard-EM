@@ -1,46 +1,32 @@
 """Utilities related to distributed computing for the backend functions."""
 
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from multiprocessing import Manager, Process
 from typing import Any, Callable, Optional
 
+import torch.distributed as dist
 import torch.multiprocessing as mp
 
 
-# pylint: disable=too-many-instance-attributes
-class SharedWorkIndexQueue:
-    """Simple queue class for managing a shared index counter tracking work.
+class WorkIndexQueue(ABC):
+    """Abstract base class for index queues that manage distributed work allocation.
+
+    This class defines the common interface for both single-node multiprocessing
+    and multi-node distributed computing scenarios.
 
     Parameters
     ----------
-    next_index : mp.Value
-        A shared integer value representing the next index to be processed.
-    process_counts : mp.Array
-        Shared counter array tracking how many pieces of work each individual process
-        has grabbed.
-    num_processes : int
-        The total number of processes grabbing work from this queue. Used as a way
-        to track how fast each process is grabbing work from the queue
     total_indices : int
-        The total number of indices (work items) to be processed. Each index is
-        considered its own work item, and these items will generally batched together.
+        The total number of indices (work items) to be processed.
     batch_size : int
         The number of indices to be processed in each batch.
+    num_processes : int
+        The total number of processes grabbing work from this queue.
     prefetch_size : int
-        The number of indices to prefetch for processing. Is a multiplicitive factor
-        for batch_size. For example, if batch_size is 10 and prefetch_size is 3, then
-        up to 30 indices will be prefetched for processing.
-    lock : mp.Lock
-        A multiprocessing lock to ensure thread-safe access to the shared index.
+        The number of indices to prefetch for processing (multiplicative factor
+        for batch_size).
     """
-
-    next_index: mp.Value
-    process_counts: mp.Array
-    error_flag: mp.Value
-    num_processes: int
-    total_indices: int
-    batch_size: int
-    prefetch_size: int  # multiplicative factor for batch_size
-    lock: mp.Lock
 
     def __init__(
         self,
@@ -49,13 +35,80 @@ class SharedWorkIndexQueue:
         num_processes: int,
         prefetch_size: int = 10,
     ):
+        self.total_indices = total_indices
+        self.batch_size = batch_size
+        self.num_processes = num_processes
+        self.prefetch_size = prefetch_size
+
+    @abstractmethod
+    def get_next_indices(
+        self, process_id: Optional[int] = None
+    ) -> Optional[tuple[int, int]]:
+        """Get the next set of indices to process, returning None if all work is done.
+
+        Parameters
+        ----------
+        process_id : Optional[int]
+            Optional process index for updating per-process counters.
+
+        Returns
+        -------
+        Optional[tuple[int, int]]
+            Tuple of (start_idx, end_idx) or None if no work remains.
+        """
+        pass
+
+    @abstractmethod
+    def get_current_index(self) -> int:
+        """Get the current progress of the work queue."""
+        pass
+
+    @abstractmethod
+    def get_process_counts(self) -> list[int]:
+        """Get per-process work counts."""
+        pass
+
+    @abstractmethod
+    def error_occurred(self) -> bool:
+        """Check if an error has occurred in any process."""
+        pass
+
+    @abstractmethod
+    def set_error_flag(self) -> None:
+        """Set the error flag to indicate an error has occurred."""
+        pass
+
+
+# pylint: disable=too-many-instance-attributes
+class MultiprocessWorkIndexQueue(WorkIndexQueue):
+    """Single-node (distributed memory) multiprocessing work index queue.
+
+    Uses multiprocessing primitives for shared state management within a single machine
+    by using shared memory.
+
+    Parameters
+    ----------
+    total_indices : int
+        The total number of indices (work items) to be processed.
+    batch_size : int
+        The number of indices to be processed in each batch.
+    num_processes : int
+        The total number of processes grabbing work from this queue.
+    prefetch_size : int, optional
+        The number of indices to prefetch for processing, by default 10.
+    """
+
+    def __init__(
+        self,
+        total_indices: int,
+        batch_size: int,
+        num_processes: int,
+        prefetch_size: int = 10,
+    ):
+        super().__init__(total_indices, batch_size, num_processes, prefetch_size)
         self.next_index = mp.Value("i", 0)  # Shared counter
         self.process_counts = mp.Array("i", [0] * num_processes)
         self.error_flag = mp.Value("i", 0)  # 0 = no error, 1 = error occurred
-        self.num_processes = num_processes
-        self.total_indices = total_indices
-        self.batch_size = batch_size
-        self.prefetch_size = prefetch_size
         self.lock = mp.Lock()
 
     def get_next_indices(
@@ -105,6 +158,150 @@ class SharedWorkIndexQueue:
         """Set the error flag to indicate an error has occurred."""
         with self.lock:
             self.error_flag.value = 1
+
+
+class DistributedTCPIndexQueue(WorkIndexQueue):
+    """Distributed work index queue backed by torch.distributed.TCPStore.
+
+    Drop-in replacement for SharedWorkIndexQueue but for multi-node setups.
+
+    Parameters
+    ----------
+    store : dist.TCPStore
+        A torch.distributed.TCPStore object for managing shared state. Must be already
+        initialized and reachable by all processes.
+    total_indices : int
+        The total number of indices (work items) to be processed. Each index is
+        considered its own work item, and these items will generally batched together.
+    batch_size : int
+        The number of indices to be processed in each batch.
+    num_processes : int
+        The total number of processes grabbing work from this queue. Used as a way
+        to track how fast each process is grabbing work from the queue
+    prefetch_size : int
+        The number of indices to prefetch for processing. Is a multiplicitive factor
+        for batch_size. For example, if batch_size is 10 and prefetch_size is 3, then
+        up to 30 indices will be prefetched for processing.
+    counter_key : str
+        The key in the TCPStore for the shared next index counter.
+    error_key : str
+        The key in the TCPStore for the shared error flag.
+    process_counts_prefix : str
+        The prefix for keys in the TCPStore for the per-process claimed counts.
+    """
+
+    store: dist.TCPStore
+    total_indices: int
+    batch_size: int
+    num_processes: int
+    prefetch_size: int
+    counter_key: str
+    error_key: str
+    process_counts_prefix: str
+
+    def __init__(
+        self,
+        store: dist.TCPStore,
+        rank: int,  # process rank, only used for store initialization
+        total_indices: int,
+        batch_size: int,
+        num_processes: int,
+        prefetch_size: int = 10,
+        counter_key: str = "next_index",
+        error_key: str = "error_flag",
+        process_counts_prefix: str = "process_count_",
+    ):
+        self.store = store
+        self.total_indices = total_indices
+        self.batch_size = batch_size
+        self.prefetch_size = prefetch_size
+        self.num_processes = num_processes
+
+        self.counter_key = counter_key
+        self.error_key = error_key
+        self.process_counts_prefix = process_counts_prefix
+
+    @staticmethod
+    def initialize_store(
+        store: dist.TCPStore,
+        rank: int,
+        num_processes: int,
+        counter_key: str = "next_index",
+        error_key: str = "error_flag",
+        process_counts_prefix: str = "process_count_",
+    ) -> None:
+        """Have rank 0 initialize the shared keys in the store.
+
+        NOTE: Includes a synchronization barrier so MUST be called by all processes.
+        """
+        if rank == 0:
+            # set keys unconditionally on the server to avoid compare_set races
+            store.set(counter_key, "0")
+            store.set(error_key, "0")
+            for pid in range(num_processes):
+                store.set(f"{process_counts_prefix}{pid}", "0")
+        # synchronize so other ranks can safely call store.get()/add()
+        dist.barrier()
+
+    def get_next_indices(
+        self, process_id: Optional[int] = None
+    ) -> Optional[tuple[int, int]]:
+        """Atomically claim the next chunk of indices for a process."""
+        delta = self.batch_size * self.prefetch_size
+
+        # fetch-and-add returns the *new* value after increment
+        new_val = self.store.add(self.counter_key, delta)
+        end_idx = int(new_val)
+        start_idx = end_idx - delta
+
+        if start_idx >= self.total_indices:
+            return None
+
+        if end_idx > self.total_indices:
+            end_idx = self.total_indices
+
+        claimed = end_idx - start_idx
+        if process_id is not None and claimed > 0:
+            self.store.add(f"{self.process_counts_prefix}{process_id}", claimed)
+
+        if claimed <= 0:
+            return None
+        return (start_idx, end_idx)
+
+    def get_current_index(self) -> int:
+        """Get the current progress of the queue."""
+        return int(self.store.get(self.counter_key).decode("utf-8"))
+
+    def get_process_counts(self) -> list[int]:
+        """Get per-process claimed counts."""
+        counts = []
+        for pid in range(self.num_processes):
+            v = int(
+                self.store.get(f"{self.process_counts_prefix}{pid}").decode("utf-8")
+            )
+            counts.append(v)
+        return counts
+
+    def error_occurred(self) -> bool:
+        """Check if an error has occurred."""
+        return bool(self.store.get(self.error_key).decode("utf-8") == "1")
+
+    def set_error_flag(self) -> None:
+        """Set the error flag."""
+        self.store.set(self.error_key, "1")
+
+
+@dataclass
+class TensorShapeDataclass:
+    """Helper class for sending expected tensor shapes to distributed processes."""
+
+    image_dft_shape: tuple[int, int]  # (H, W // 2 + 1)
+    template_dft_shape: tuple[int, int, int]  # (l, h, w // 2 + 1)
+    ctf_filters_shape: tuple[int, int, int, int]  # (num_Cs, num_defocus, h, w // 2 + 1)
+    whitening_filter_template_shape: tuple[int, int]  # (h, w // 2 + 1)
+    euler_angles_shape: tuple[int, int]  # (num_orientations, 3)
+    defocus_values_shape: tuple[int]  # (num_defocus,)
+    pixel_values_shape: tuple[int]  # (num_Cs,)
 
 
 def run_multiprocess_jobs(
