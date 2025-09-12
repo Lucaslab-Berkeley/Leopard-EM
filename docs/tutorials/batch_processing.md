@@ -431,10 +431,22 @@ if [ -z "$CONFIG_FILE" ]; then
 fi
 
 # Run the match_template script with the selected config file
+# NOTE: You may need to wrap the `python run_match_template.py $CONFIG_FILE`
+#       call within an `srun` command depending on your cluster configuration
+#       to properly expose the GPU devices to the process.
 echo "Running match_template with config file: $CONFIG_FILE"
 python run_match_template.py $CONFIG_FILE
 
 ```
+
+??? Caution "Making GPU devices discoverable within SLURM via srun"
+
+    Depending on your cluster configuration, you may need to wrap the `python run_match_template.py $CONFIG_FILE` command within an srun command to properly expose the GPU devices to the command.
+    For example, this might look like:
+
+    ```bash
+    srun --nodes=1 --ntasks=1 --cpus-per-task=8 --gres=gpu:L40:1 python run_match_template.py $CONFIG_FILE
+    ```
 
 ## Conclusion
 

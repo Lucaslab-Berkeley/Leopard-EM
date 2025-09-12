@@ -12,6 +12,7 @@ mode. Each process is assigned to a single GPU based on its local rank.
 import os
 import time
 
+import click
 import torch.distributed as dist
 
 from leopard_em.pydantic_models.managers import MatchTemplateManager
@@ -21,7 +22,7 @@ from leopard_em.pydantic_models.managers import MatchTemplateManager
 #######################################
 
 # NOTE: You can also use `click` to pass argument to this script from command line
-YAML_CONFIG_PATH = "/global/home/users/matthewgiammar/Leopard-EM/benchmark/tmp/test_match_template_xenon_216_000_0.0_DWS_config.yaml"
+YAML_CONFIG_PATH = "/path/to/config.yaml"
 DATAFRAME_OUTPUT_PATH = "out.csv"
 ORIENTATION_BATCH_SIZE = 20
 
@@ -48,6 +49,28 @@ def initialize_distributed() -> tuple[int, int, int]:
     return world_size, rank, local_rank
 
 
+@click.command()
+@click.option(
+    "--config",
+    "-c",
+    type=click.Path(exists=True, dir_okay=False, path_type=str),
+    default=YAML_CONFIG_PATH,
+    help="Path to the YAML configuration file.",
+)
+@click.option(
+    "--output",
+    "-o",
+    type=click.Path(dir_okay=False, path_type=str),
+    default=DATAFRAME_OUTPUT_PATH,
+    help="Path to save the output dataframe CSV.",
+)
+@click.option(
+    "--batch_size",
+    "-b",
+    type=int,
+    default=ORIENTATION_BATCH_SIZE,
+    help="Number of orientations to process in a single batch.",
+)
 def main() -> None:
     """Main function for the distributed match_template program.
 
