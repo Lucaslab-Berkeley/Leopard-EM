@@ -17,7 +17,7 @@ from leopard_em.backend.cross_correlation import (
     do_streamed_orientation_cross_correlate,
 )
 from leopard_em.backend.distributed import (
-    SharedWorkIndexQueue,
+    MultiprocessWorkIndexQueue,
     run_multiprocess_jobs,
 )
 from leopard_em.backend.process_results import (
@@ -37,7 +37,7 @@ set_start_method("spawn", force=True)
 
 
 def monitor_match_template_progress(
-    queue: "SharedWorkIndexQueue",
+    queue: "MultiprocessWorkIndexQueue",
     pbar: tqdm.tqdm,
     device_pbars: dict[int, tqdm.tqdm],
     poll_interval: float = 1.0,  # in seconds
@@ -86,13 +86,15 @@ def monitor_match_template_progress(
 
 
 def setup_progress_tracking(
-    index_queue: "SharedWorkIndexQueue", unit_scale: Union[float, int], num_devices: int
+    index_queue: "MultiprocessWorkIndexQueue",
+    unit_scale: Union[float, int],
+    num_devices: int,
 ) -> tuple[tqdm.tqdm, dict[int, tqdm.tqdm]]:
     """Setup global and per-device tqdm progress bars for template matching.
 
     Parameters
     ----------
-    index_queue : SharedWorkIndexQueue
+    index_queue : MultiprocessWorkIndexQueue
         The shared work queue tracking global indices.
     unit_scale : Union[float, int]
         Scaling factor to apply to units
@@ -267,7 +269,7 @@ def core_match_template(
     if isinstance(device, torch.device):
         device = [device]
 
-    index_queue = SharedWorkIndexQueue(
+    index_queue = MultiprocessWorkIndexQueue(
         total_indices=euler_angles.shape[0],
         batch_size=orientation_batch_size,
         prefetch_size=10,
@@ -350,7 +352,7 @@ def core_match_template(
 # pylint: disable=too-many-positional-arguments
 def _core_match_template_single_gpu(
     rank: int,
-    index_queue: SharedWorkIndexQueue,
+    index_queue: MultiprocessWorkIndexQueue,
     image_dft: torch.Tensor,
     template_dft: torch.Tensor,
     euler_angles: torch.Tensor,
@@ -368,7 +370,7 @@ def _core_match_template_single_gpu(
     rank : int
         Rank of the device which computation is running on. Results will be stored
         in the dictionary with this key.
-    index_queue : SharedWorkIndexQueue
+    index_queue : MultiprocessWorkIndexQueue
         Torch multiprocessing object for retrieving the next batch of orientations to
         process during the 2DTM search.
     image_dft : torch.Tensor

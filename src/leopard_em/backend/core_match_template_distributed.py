@@ -3,7 +3,6 @@
 import os
 import random
 import socket
-from dataclasses import dataclass
 from datetime import timedelta
 from typing import Optional
 
@@ -12,6 +11,10 @@ import torch.distributed as dist
 
 from leopard_em.backend.core_match_template import (
     _core_match_template_single_gpu,
+)
+from leopard_em.backend.distributed import (
+    DistributedTCPIndexQueue,
+    TensorShapeDataclass,
 )
 from leopard_em.backend.process_results import (
     aggregate_distributed_results,
@@ -45,153 +48,6 @@ def _find_free_port(
         else:
             continue
     raise RuntimeError("Unable to find free port for TCPStore")
-
-
-############################################################
-### Coordinator class for shared async work across nodes ###
-############################################################
-class DistributedTCPIndexQueue:
-    """Distributed work index queue backed by torch.distributed.TCPStore.
-
-    Drop-in replacement for SharedWorkIndexQueue but for multi-node setups.
-
-    Parameters
-    ----------
-    store : dist.TCPStore
-        A torch.distributed.TCPStore object for managing shared state. Must be already
-        initialized and reachable by all processes.
-    total_indices : int
-        The total number of indices (work items) to be processed. Each index is
-        considered its own work item, and these items will generally batched together.
-    batch_size : int
-        The number of indices to be processed in each batch.
-    num_processes : int
-        The total number of processes grabbing work from this queue. Used as a way
-        to track how fast each process is grabbing work from the queue
-    prefetch_size : int
-        The number of indices to prefetch for processing. Is a multiplicitive factor
-        for batch_size. For example, if batch_size is 10 and prefetch_size is 3, then
-        up to 30 indices will be prefetched for processing.
-    counter_key : str
-        The key in the TCPStore for the shared next index counter.
-    error_key : str
-        The key in the TCPStore for the shared error flag.
-    process_counts_prefix : str
-        The prefix for keys in the TCPStore for the per-process claimed counts.
-    """
-
-    store: dist.TCPStore
-    total_indices: int
-    batch_size: int
-    num_processes: int
-    prefetch_size: int
-    counter_key: str
-    error_key: str
-    process_counts_prefix: str
-
-    def __init__(
-        self,
-        store: dist.TCPStore,
-        rank: int,  # process rank, only used for store initialization
-        total_indices: int,
-        batch_size: int,
-        num_processes: int,
-        prefetch_size: int = 10,
-        counter_key: str = "next_index",
-        error_key: str = "error_flag",
-        process_counts_prefix: str = "process_count_",
-    ):
-        self.store = store
-        self.total_indices = total_indices
-        self.batch_size = batch_size
-        self.prefetch_size = prefetch_size
-        self.num_processes = num_processes
-
-        self.counter_key = counter_key
-        self.error_key = error_key
-        self.process_counts_prefix = process_counts_prefix
-
-    @staticmethod
-    def initialize_store(
-        store: dist.TCPStore,
-        rank: int,
-        num_processes: int,
-        counter_key: str = "next_index",
-        error_key: str = "error_flag",
-        process_counts_prefix: str = "process_count_",
-    ) -> None:
-        """Have rank 0 initialize the shared keys in the store.
-
-        NOTE: Includes a synchronization barrier so MUST be called by all processes.
-        """
-        if rank == 0:
-            # set keys unconditionally on the server to avoid compare_set races
-            store.set(counter_key, "0")
-            store.set(error_key, "0")
-            for pid in range(num_processes):
-                store.set(f"{process_counts_prefix}{pid}", "0")
-        # synchronize so other ranks can safely call store.get()/add()
-        dist.barrier()
-
-    def get_next_indices(
-        self, process_id: Optional[int] = None
-    ) -> Optional[tuple[int, int]]:
-        """Atomically claim the next chunk of indices for a process."""
-        delta = self.batch_size * self.prefetch_size
-
-        # fetch-and-add returns the *new* value after increment
-        new_val = self.store.add(self.counter_key, delta)
-        end_idx = int(new_val)
-        start_idx = end_idx - delta
-
-        if start_idx >= self.total_indices:
-            return None
-
-        if end_idx > self.total_indices:
-            end_idx = self.total_indices
-
-        claimed = end_idx - start_idx
-        if process_id is not None and claimed > 0:
-            self.store.add(f"{self.process_counts_prefix}{process_id}", claimed)
-
-        if claimed <= 0:
-            return None
-        return (start_idx, end_idx)
-
-    def get_current_index(self) -> int:
-        """Get the current progress of the queue."""
-        return int(self.store.get(self.counter_key).decode("utf-8"))
-
-    def get_process_counts(self) -> list[int]:
-        """Get per-process claimed counts."""
-        counts = []
-        for pid in range(self.num_processes):
-            v = int(
-                self.store.get(f"{self.process_counts_prefix}{pid}").decode("utf-8")
-            )
-            counts.append(v)
-        return counts
-
-    def error_occurred(self) -> bool:
-        """Check if an error has occurred."""
-        return bool(self.store.get(self.error_key).decode("utf-8") == "1")
-
-    def set_error_flag(self) -> None:
-        """Set the error flag."""
-        self.store.set(self.error_key, "1")
-
-
-@dataclass
-class TensorShapeDataclass:
-    """Helper class for sending expected tensor shapes to distributed processes."""
-
-    image_dft_shape: tuple[int, int]  # (H, W // 2 + 1)
-    template_dft_shape: tuple[int, int, int]  # (l, h, w // 2 + 1)
-    ctf_filters_shape: tuple[int, int, int, int]  # (num_Cs, num_defocus, h, w // 2 + 1)
-    whitening_filter_template_shape: tuple[int, int]  # (h, w // 2 + 1)
-    euler_angles_shape: tuple[int, int]  # (num_orientations, 3)
-    defocus_values_shape: tuple[int]  # (num_defocus,)
-    pixel_values_shape: tuple[int]  # (num_Cs,)
 
 
 # pylint: disable=too-many-locals
