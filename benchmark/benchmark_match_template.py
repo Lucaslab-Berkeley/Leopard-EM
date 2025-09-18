@@ -12,8 +12,7 @@ import json
 import subprocess
 import time
 from pathlib import Path
-from pprint import pprint
-from typing import Any, dict
+from typing import Any
 
 import click
 import numpy as np
@@ -34,6 +33,16 @@ def download_comparison_data() -> None:
     subprocess.run(
         ["zenodo_get", f"--output-dir={DOWNLOAD_DIR}", ZENODO_URL], check=True
     )
+
+    # Change the paths pointing to the tests/tmp directory to benchmark/tmp directory
+    # in the downloaded YAML file
+    with open(YAML_PATH) as f:
+        yaml_text = f.read()
+
+    yaml_text = yaml_text.replace("tests/tmp", "benchmark/tmp")
+
+    with open(YAML_PATH, "w") as f:
+        f.write(yaml_text)
 
 
 def setup_match_template_manager() -> MatchTemplateManager:
@@ -78,7 +87,9 @@ def benchmark_match_template_single_run(
     ##################################################
     # This is using the timing model where the time -- T -- to compute N
     # cross-correlations is dependent on some device rate -- r -- and a constant setup
-    # cost in terms of time (this is what we measure):
+    # cost in terms of time. This setup time (or core-deadtime) is part of distributing
+    # data to each device, compiling helper functions, and other overhead. What we can
+    # measure is the total time:
     #
     # T_N = N/r + k
     #
@@ -229,7 +240,7 @@ def main(orientation_batch_size: int, num_runs: int, output_file: str):
     print(f"  Output file: {output_file}")
 
     result = run_benchmark(orientation_batch_size, num_runs)
-    pprint(result)
+    # pprint(result)
     save_benchmark_results(result, output_file)
 
 
