@@ -16,6 +16,7 @@ def do_streamed_orientation_cross_correlate(
     rotation_matrices: torch.Tensor,
     projective_filters: torch.Tensor,
     streams: list[torch.cuda.Stream],
+    apply_normalization: bool = True,
 ) -> torch.Tensor:
     """Calculates a grid of 2D cross-correlations over multiple CUDA streams.
 
@@ -46,6 +47,8 @@ def do_streamed_orientation_cross_correlate(
     streams : list[torch.cuda.Stream]
         List of CUDA streams to use for parallel computation. Each stream will
         handle a separate cross-correlation.
+    apply_normalization : bool, optional
+        Whether to apply normalization to the template projections, by default True
 
     Returns
     -------
@@ -102,11 +105,13 @@ def do_streamed_orientation_cross_correlate(
                     fourier_slice_filtered = fourier_slice * projective_filters[k, j]
                     projection = torch.fft.irfft2(fourier_slice_filtered)
                     projection = torch.fft.ifftshift(projection, dim=(-2, -1))
-                    projection = normalize_template_projection_compiled(
-                        projection,
-                        projection_shape_real,
-                        image_shape_real,
-                    )
+
+                    if apply_normalization:
+                        projection = normalize_template_projection_compiled(
+                            projection,
+                            projection_shape_real,
+                            image_shape_real,
+                        )
 
                     # Padded forward Fourier transform for cross-correlation
                     projection_dft = torch.fft.rfft2(projection, s=image_shape_real)
@@ -139,6 +144,7 @@ def do_batched_orientation_cross_correlate(
     template_dft: torch.Tensor,
     rotation_matrices: torch.Tensor,
     projective_filters: torch.Tensor,
+    apply_normalization: bool = True,
 ) -> torch.Tensor:
     """Batched projection and cross-correlation with fixed (batched) filters.
 
@@ -165,6 +171,8 @@ def do_batched_orientation_cross_correlate(
     projective_filters : torch.Tensor
         Multiplied 'ctf_filters' with 'whitening_filter_template'. Has shape
         (num_Cs, num_defocus, h, w // 2 + 1). Is RFFT and not fftshifted.
+    apply_normalization : bool, optional
+        Whether to apply normalization to the template projections, by default True
 
     Returns
     -------
@@ -207,11 +215,13 @@ def do_batched_orientation_cross_correlate(
     # Inverse Fourier transform into real space and normalize
     projections = torch.fft.irfftn(fourier_slice, dim=(-2, -1))
     projections = torch.fft.ifftshift(projections, dim=(-2, -1))
-    projections = normalize_template_projection_compiled(
-        projections,
-        projection_shape_real,
-        image_shape_real,
-    )
+
+    if apply_normalization:
+        projections = normalize_template_projection_compiled(
+            projections,
+            projection_shape_real,
+            image_shape_real,
+        )
 
     for j in range(num_defocus):
         for k in range(num_Cs):
@@ -235,6 +245,7 @@ def do_batched_orientation_cross_correlate_cpu(
     template_dft: torch.Tensor,
     rotation_matrices: torch.Tensor,
     projective_filters: torch.Tensor,
+    apply_normalization: bool = True,
 ) -> torch.Tensor:
     """Same as `do_streamed_orientation_cross_correlate` but on the CPU.
 
@@ -258,6 +269,8 @@ def do_batched_orientation_cross_correlate_cpu(
     projective_filters : torch.Tensor
         Multiplied 'ctf_filters' with 'whitening_filter_template'. Has shape
         (defocus_batch, h, w // 2 + 1). Is RFFT and not fftshifted.
+    apply_normalization : bool, optional
+        Whether to apply normalization to the template projections, by default True
 
     Returns
     -------
@@ -284,11 +297,13 @@ def do_batched_orientation_cross_correlate_cpu(
     # Inverse Fourier transform into real space and normalize
     projections = torch.fft.irfftn(fourier_slice, dim=(-2, -1))
     projections = torch.fft.ifftshift(projections, dim=(-2, -1))
-    projections = normalize_template_projection(
-        projections,
-        projection_shape_real,
-        image_shape_real,
-    )
+
+    if apply_normalization:
+        projections = normalize_template_projection(
+            projections,
+            projection_shape_real,
+            image_shape_real,
+        )
 
     # Padded forward Fourier transform for cross-correlation
     projections_dft = torch.fft.rfftn(projections, dim=(-2, -1), s=image_shape_real)

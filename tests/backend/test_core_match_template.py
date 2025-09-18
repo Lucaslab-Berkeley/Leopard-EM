@@ -121,10 +121,11 @@ def test_core_match_template():
     mip = mrcfile.read("tests/tmp/test_match_template_xenon_216_000_0_output_mip.mrc")
 
     # Check 1: Fewer than 0.2% pixels
-    assert len(diff_defocus[0]) < mip.size, ">0.2 pct defocus values differ"
-    assert len(diff_phi[0]) < mip.size, ">0.2 pct phi values differ"
-    assert len(diff_theta[0]) < mip.size, ">0.2 pct theta values differ"
-    assert len(diff_psi[0]) < mip.size, ">0.2 pct psi values differ"
+    FRAC_DIFF = 0.002
+    assert len(diff_defocus[0]) < mip.size * FRAC_DIFF, ">0.2 pct defocus values differ"
+    assert len(diff_phi[0]) < mip.size * FRAC_DIFF, ">0.2 pct phi values differ"
+    assert len(diff_theta[0]) < mip.size * FRAC_DIFF, ">0.2 pct theta values differ"
+    assert len(diff_psi[0]) < mip.size * FRAC_DIFF, ">0.2 pct psi values differ"
 
     # Check 2: Overlap at least 50%
     defocus_set = set(zip(diff_defocus[0], diff_defocus[1]))
@@ -132,21 +133,25 @@ def test_core_match_template():
     theta_set = set(zip(diff_theta[0], diff_theta[1]))
     psi_set = set(zip(diff_psi[0], diff_psi[1]))
 
-    assert len(defocus_set.intersection(phi_set)) / len(defocus_set)
-    assert len(defocus_set.intersection(theta_set)) / len(defocus_set)
-    assert len(defocus_set.intersection(psi_set)) / len(defocus_set)
+    if len(defocus_set) > 0:
+        assert len(defocus_set.intersection(phi_set)) / len(defocus_set)
+        assert len(defocus_set.intersection(theta_set)) / len(defocus_set)
+        assert len(defocus_set.intersection(psi_set)) / len(defocus_set)
 
-    assert len(phi_set.intersection(defocus_set)) / len(phi_set)
-    assert len(phi_set.intersection(theta_set)) / len(phi_set)
-    assert len(phi_set.intersection(psi_set)) / len(phi_set)
+    if len(phi_set) > 0:
+        assert len(phi_set.intersection(defocus_set)) / len(phi_set)
+        assert len(phi_set.intersection(theta_set)) / len(phi_set)
+        assert len(phi_set.intersection(psi_set)) / len(phi_set)
 
-    assert len(theta_set.intersection(defocus_set)) / len(theta_set)
-    assert len(theta_set.intersection(phi_set)) / len(theta_set)
-    assert len(theta_set.intersection(psi_set)) / len(theta_set)
+    if len(theta_set) > 0:
+        assert len(theta_set.intersection(defocus_set)) / len(theta_set)
+        assert len(theta_set.intersection(phi_set)) / len(theta_set)
+        assert len(theta_set.intersection(psi_set)) / len(theta_set)
 
-    assert len(psi_set.intersection(defocus_set)) / len(psi_set)
-    assert len(psi_set.intersection(phi_set)) / len(psi_set)
-    assert len(psi_set.intersection(theta_set)) / len(psi_set)
+    if len(psi_set) > 0:
+        assert len(psi_set.intersection(defocus_set)) / len(psi_set)
+        assert len(psi_set.intersection(phi_set)) / len(psi_set)
+        assert len(psi_set.intersection(theta_set)) / len(psi_set)
 
 
 if __name__ == "__main__":
