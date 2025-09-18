@@ -7,7 +7,7 @@ import time
 import warnings
 from functools import partial
 from multiprocessing import set_start_method
-from typing import Union
+from typing import Any, Union
 
 import roma
 import torch
@@ -16,7 +16,10 @@ import tqdm
 from leopard_em.backend.cross_correlation import (
     do_streamed_orientation_cross_correlate,
 )
-from leopard_em.backend.distributed import SharedWorkIndexQueue, run_multiprocess_jobs
+from leopard_em.backend.distributed import (
+    MultiprocessWorkIndexQueue,
+    run_multiprocess_jobs,
+)
 from leopard_em.backend.process_results import (
     aggregate_distributed_results,
     decode_global_search_index,
@@ -34,7 +37,7 @@ set_start_method("spawn", force=True)
 
 
 def monitor_match_template_progress(
-    queue: "SharedWorkIndexQueue",
+    queue: "MultiprocessWorkIndexQueue",
     pbar: tqdm.tqdm,
     device_pbars: dict[int, tqdm.tqdm],
     poll_interval: float = 1.0,  # in seconds
@@ -83,13 +86,15 @@ def monitor_match_template_progress(
 
 
 def setup_progress_tracking(
-    index_queue: "SharedWorkIndexQueue", unit_scale: Union[float, int], num_devices: int
+    index_queue: "MultiprocessWorkIndexQueue",
+    unit_scale: Union[float, int],
+    num_devices: int,
 ) -> tuple[tqdm.tqdm, dict[int, tqdm.tqdm]]:
     """Setup global and per-device tqdm progress bars for template matching.
 
     Parameters
     ----------
-    index_queue : SharedWorkIndexQueue
+    index_queue : MultiprocessWorkIndexQueue
         The shared work queue tracking global indices.
     unit_scale : Union[float, int]
         Scaling factor to apply to units
@@ -173,8 +178,8 @@ def core_match_template(
         Gets multiplied with the ctf filters to create a filter stack applied to each
         orientation projection.
     euler_angles : torch.Tensor
-        Euler angles (in 'ZYZ' convention) to search over. Has shape
-        (num_orientations, 3).
+        Euler angles (in 'ZYZ' convention & in units of degrees) to search over. Has
+        shape (num_orientations, 3).
     defocus_values : torch.Tensor
         What defoucs values correspond with the CTF filters, in units of Angstroms. Has
         shape (num_defocus,).
@@ -264,14 +269,12 @@ def core_match_template(
     if isinstance(device, torch.device):
         device = [device]
 
-    index_queue = SharedWorkIndexQueue(
+    index_queue = MultiprocessWorkIndexQueue(
         total_indices=euler_angles.shape[0],
         batch_size=orientation_batch_size,
         prefetch_size=10,
         num_processes=len(device),
     )
-
-    # Progress tracking for global search and correlations per-device
     global_pbar, device_pbars = setup_progress_tracking(
         index_queue=index_queue,
         unit_scale=defocus_values.shape[0] * pixel_values.shape[0],
@@ -302,7 +305,7 @@ def core_match_template(
         kwargs_per_device.append(kwargs)
 
     result_dict = run_multiprocess_jobs(
-        target=_core_match_template_single_gpu,
+        target=_core_match_template_multiprocess_wrapper,
         kwargs_list=kwargs_per_device,
         post_start_callback=progress_callback,
     )
@@ -348,9 +351,8 @@ def core_match_template(
 # pylint: disable=too-many-arguments
 # pylint: disable=too-many-positional-arguments
 def _core_match_template_single_gpu(
-    result_dict: dict,
-    device_id: int,
-    index_queue: SharedWorkIndexQueue,
+    rank: int,
+    index_queue: MultiprocessWorkIndexQueue,
     image_dft: torch.Tensor,
     template_dft: torch.Tensor,
     euler_angles: torch.Tensor,
@@ -360,20 +362,15 @@ def _core_match_template_single_gpu(
     orientation_batch_size: int,
     num_cuda_streams: int,
     device: torch.device,
-) -> None:
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """Single-GPU call for template matching.
-
-    NOTE: The result_dict is a shared dictionary between processes and updated in-place
-    with this processes's results under the 'device_id' key.
 
     Parameters
     ----------
-    result_dict : dict
-        Dictionary to store the results in.
-    device_id : int
-        ID of the device which computation is running on. Results will be stored
+    rank : int
+        Rank of the device which computation is running on. Results will be stored
         in the dictionary with this key.
-    index_queue : SharedWorkIndexQueue
+    index_queue : MultiprocessWorkIndexQueue
         Torch multiprocessing object for retrieving the next batch of orientations to
         process during the 2DTM search.
     image_dft : torch.Tensor
@@ -404,7 +401,14 @@ def _core_match_template_single_gpu(
 
     Returns
     -------
-    None
+    tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]
+        Tuple containing the following tensors:
+            - mip: Maximum intensity projection of the cross-correlation values across
+              orientation and defocus search space.
+            - best_global_index: Global index of the best match for each pixel.
+            - correlation_sum: Sum of cross-correlation values for each pixel.
+            - correlation_squared_sum: Sum of squared cross-correlation values for
+              each pixel.
     """
     image_shape_real = (image_dft.shape[0], image_dft.shape[1] * 2 - 2)  # adj. for RFFT
 
@@ -419,8 +423,6 @@ def _core_match_template_single_gpu(
     template_dft = template_dft.to(device)
     euler_angles = euler_angles.to(device)
     projective_filters = projective_filters.to(device)
-    # defocus_values = defocus_values.to(device)
-    # pixel_values = pixel_values.to(device)
 
     num_orientations = euler_angles.shape[0]
     num_defocus = defocus_values.shape[0]
@@ -465,7 +467,7 @@ def _core_match_template_single_gpu(
             raise RuntimeError("Exiting due to error in another process.")
 
         try:
-            indices = index_queue.get_next_indices(process_id=device_id)
+            indices = index_queue.get_next_indices(process_id=rank)
             if indices is None:
                 break
 
@@ -511,7 +513,7 @@ def _core_match_template_single_gpu(
                 )
         except Exception as e:
             index_queue.set_error_flag()
-            print(f"Error occurred in process {device_id}: {e}")
+            print(f"Error occurred in process {rank}: {e}")
             raise e
 
     # Synchronization barrier post-computation
@@ -519,6 +521,24 @@ def _core_match_template_single_gpu(
         stream.synchronize()
 
     torch.cuda.synchronize(device)
+
+    return mip, best_global_index, correlation_sum, correlation_squared_sum
+
+
+def _core_match_template_multiprocess_wrapper(
+    result_dict: dict, rank: int, **kwargs: dict[str, Any]
+) -> None:
+    """Wrapper around _core_match_template_single_gpu for use with multiprocessing.
+
+    This function places results into a shared dictionary for retrieval by the main
+    core_match_template function. These results are stored under the 'rank' key, and
+    they need to exist on the CPU as numpy arrays for the shared dictionary.
+
+    See the _core_match_template_single_gpu function for parameter descriptions.
+    """
+    mip, best_global_index, correlation_sum, correlation_squared_sum = (
+        _core_match_template_single_gpu(rank, **kwargs)  # type: ignore[arg-type]
+    )
 
     # NOTE: Need to send all tensors back to the CPU as numpy arrays for the shared
     # process dictionary. This is a workaround for now
@@ -531,7 +551,7 @@ def _core_match_template_single_gpu(
 
     # Place the results in the shared multi-process manager dictionary so accessible
     # by the main process.
-    result_dict[device_id] = result
+    result_dict[rank] = result
 
     # Final cleanup to release all tensors from this GPU
     torch.cuda.empty_cache()
