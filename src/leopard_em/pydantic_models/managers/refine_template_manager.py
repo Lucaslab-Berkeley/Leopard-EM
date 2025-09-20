@@ -165,7 +165,10 @@ class RefineTemplateManager(BaseModel2DTM):
         return result
 
     def refine_result_to_dataframe(
-        self, output_dataframe_path: str, result: dict[str, np.ndarray]
+        self,
+        output_dataframe_path: str,
+        result: dict[str, np.ndarray],
+        prefer_refined_angles: bool = True,
     ) -> None:
         """Convert refine template result to dataframe.
 
@@ -175,6 +178,8 @@ class RefineTemplateManager(BaseModel2DTM):
             Path to save the refined particle data.
         result : dict[str, np.ndarray]
             The result of the refine template program.
+        prefer_refined_angles : bool
+            Whether to use the refined angles or not. Defaults to True.
         """
         # pylint: disable=duplicate-code
         df_refined = self.particle_stack._df.copy()  # pylint: disable=protected-access
@@ -185,15 +190,34 @@ class RefineTemplateManager(BaseModel2DTM):
         pos_offset_y_ang = pos_offset_y * df_refined["pixel_size"]
         pos_offset_x_ang = pos_offset_x * df_refined["pixel_size"]
 
-        df_refined["refined_pos_y"] = pos_offset_y + df_refined["pos_y"]
-        df_refined["refined_pos_x"] = pos_offset_x + df_refined["pos_x"]
-        df_refined["refined_pos_y_img"] = pos_offset_y + df_refined["pos_y_img"]
-        df_refined["refined_pos_x_img"] = pos_offset_x + df_refined["pos_x_img"]
+        if (
+            prefer_refined_angles
+            and self.particle_stack._get_position_reference_columns()
+            == ("refined_pos_y", "refined_pos_x")
+        ):
+            pos_y_col = "refined_pos_y"
+            pos_x_col = "refined_pos_x"
+            pos_y_col_img = "refined_pos_y_img"
+            pos_x_col_img = "refined_pos_x_img"
+            pos_y_col_img_angstrom = "refined_pos_y_img_angstrom"
+            pos_x_col_img_angstrom = "refined_pos_x_img_angstrom"
+        else:
+            pos_y_col = "pos_y"
+            pos_x_col = "pos_x"
+            pos_y_col_img = "pos_y_img"
+            pos_x_col_img = "pos_x_img"
+            pos_y_col_img_angstrom = "pos_y_img_angstrom"
+            pos_x_col_img_angstrom = "pos_x_img_angstrom"
+
+        df_refined["refined_pos_y"] = pos_offset_y + df_refined[pos_y_col]
+        df_refined["refined_pos_x"] = pos_offset_x + df_refined[pos_x_col]
+        df_refined["refined_pos_y_img"] = pos_offset_y + df_refined[pos_y_col_img]
+        df_refined["refined_pos_x_img"] = pos_offset_x + df_refined[pos_x_col_img]
         df_refined["refined_pos_y_img_angstrom"] = (
-            pos_offset_y_ang + df_refined["pos_y_img_angstrom"]
+            pos_offset_y_ang + df_refined[pos_y_col_img_angstrom]
         )
         df_refined["refined_pos_x_img_angstrom"] = (
-            pos_offset_x_ang + df_refined["pos_x_img_angstrom"]
+            pos_offset_x_ang + df_refined[pos_x_col_img_angstrom]
         )
 
         # Euler angles
