@@ -49,7 +49,7 @@ def theta_phi_offsets_to_rotmats(
 
 
 def inspect_correlation_peaks(
-    image_stack_dft: torch.Tensor,  # (N, H, W // 2 + 1)
+    particle_stack_dft: torch.Tensor,  # (N, H, W // 2 + 1)
     template_dft: torch.Tensor,  # (d, h, w // 2 + 1)
     projective_filters: torch.Tensor,  # (N, h, w // 2 + 1)
     pixel_size: torch.Tensor,  # (N,)
@@ -77,7 +77,7 @@ def inspect_correlation_peaks(
 
     Parameters
     ----------
-    image_stack_dft : torch.Tensor
+    particle_stack_dft : torch.Tensor
         A stack of particle images in DFT (real-FFT) format with shape
         (N, H, W // 2 + 1), where N is the number of particles, H is the height, and W
         is the width of the images. These images can have pre-filtering applied
@@ -154,34 +154,36 @@ def inspect_correlation_peaks(
         device = torch.device(device)
 
     # Send all tensors to the specified device
-    image_stack_dft = image_stack_dft.to(device)
+    particle_stack_dft = particle_stack_dft.to(device)
     template_dft = template_dft.to(device)
     projective_filters = projective_filters.to(device)
+    rotation_matrices = rotation_matrices.to(device)
+    rotation_matrices_offset = rotation_matrices_offset.to(device)
 
     # Allocate empty output tensor on device
-    num_particles = image_stack_dft.shape[0]
+    num_particles = particle_stack_dft.shape[0]
     num_Cs = pixel_size_offsets.shape[0]
     num_defocus = defocus_offsets.shape[0]
     num_rotations = rotation_matrices_offset.shape[0]
     last_dim_y = (
-        image_stack_dft.shape[-2] - template_dft.shape[-2] + 1
+        particle_stack_dft.shape[-2] - template_dft.shape[-2] + 1
         if return_valid_region
-        else image_stack_dft.shape[-2]
+        else particle_stack_dft.shape[-2]
     )
     last_dim_x = (
-        (image_stack_dft.shape[-1] * 2) - (template_dft.shape[-1] * 2) + 1
+        (particle_stack_dft.shape[-1] * 2) - (template_dft.shape[-1] * 2) + 1
         if return_valid_region
-        else image_stack_dft.shape[-1] * 2 - 2
+        else particle_stack_dft.shape[-1] * 2 - 2
     )
     output = torch.empty(
         (num_particles, num_Cs, num_defocus, num_rotations, last_dim_y, last_dim_x),
-        dtype=image_stack_dft.real.dtype,
+        dtype=particle_stack_dft.real.dtype,
         device=device,
     )
 
-    for i in range(0, image_stack_dft.shape[0]):
+    for i in range(0, particle_stack_dft.shape[0]):
         output[i] = cross_correlate_single_particle(
-            image_dft=image_stack_dft[i],
+            image_dft=particle_stack_dft[i],
             template_dft=template_dft,
             projective_filter=projective_filters[i],
             pixel_size=pixel_size[i],
