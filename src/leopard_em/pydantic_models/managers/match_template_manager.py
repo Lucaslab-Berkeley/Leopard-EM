@@ -217,7 +217,7 @@ class MatchTemplateManager(BaseModel2DTM):
         self,
         orientation_batch_size: int = 16,
         do_result_export: bool = True,
-        do_valid_cropping: bool = True,
+        do_valid_cropping: bool = False,
     ) -> None:
         """Runs the base match template in pytorch.
 
@@ -229,7 +229,10 @@ class MatchTemplateManager(BaseModel2DTM):
             If True, call the `MatchTemplateResult.export_results` method to save the
             results to disk directly after running the match template. Default is True.
         do_valid_cropping : bool
-            If True, apply the valid cropping mode to the results. Default is True.
+            If True, then apply valid cropping to the result maps based on the relative
+            size of the image and template (N-n+1 along each axis). The backend of
+            Leopard-EM will automatically do this, so generally set this to False. The
+            default is False.
 
         Returns
         -------
@@ -256,7 +259,7 @@ class MatchTemplateManager(BaseModel2DTM):
         local_rank: int,
         orientation_batch_size: int = 16,
         do_result_export: bool = True,
-        do_valid_cropping: bool = True,
+        do_valid_cropping: bool = False,
     ) -> None:
         """Runs the base match template in a distributed, multi-node environment.
 
@@ -274,7 +277,10 @@ class MatchTemplateManager(BaseModel2DTM):
             If True, call the `MatchTemplateResult.export_results` method to save the
             results to disk directly after running the match template. Default is True.
         do_valid_cropping : bool
-            If True, apply the valid cropping mode to the results. Default is True.
+            If True, then apply valid cropping to the result maps based on the relative
+            size of the image and template (N-n+1 along each axis). The backend of
+            Leopard-EM will automatically do this, so generally set this to False. The
+            default is False.
 
         Raises
         ------
@@ -322,7 +328,7 @@ class MatchTemplateManager(BaseModel2DTM):
         self,
         results: dict[str, Any],
         do_result_export: bool = True,
-        do_valid_cropping: bool = True,
+        do_valid_cropping: bool = False,
     ) -> None:
         """Helper function to populate the MatchTemplateResult object post-core call."""
         # Place results into the `MatchTemplateResult` object

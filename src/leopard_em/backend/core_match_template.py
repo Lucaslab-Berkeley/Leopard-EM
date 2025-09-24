@@ -411,6 +411,14 @@ def _core_match_template_single_gpu(
               each pixel.
     """
     image_shape_real = (image_dft.shape[0], image_dft.shape[1] * 2 - 2)  # adj. for RFFT
+    projection_shape_real = (
+        template_dft.shape[1],
+        template_dft.shape[2] * 2 - 2,  # adj. for RFFT
+    )
+    valid_correlation_shape = (
+        image_shape_real[0] - projection_shape_real[0] + 1,
+        image_shape_real[1] - projection_shape_real[1] + 1,
+    )
 
     # Create CUDA streams for parallel computation
     streams = [torch.cuda.Stream(device=device) for _ in range(num_cuda_streams)]
@@ -443,19 +451,19 @@ def _core_match_template_single_gpu(
     ################################################
 
     mip = torch.full(
-        size=image_shape_real,
+        size=valid_correlation_shape,
         fill_value=-float("inf"),
         dtype=DEFAULT_STATISTIC_DTYPE,
         device=device,
     )
     best_global_index = torch.full(
-        image_shape_real, fill_value=-1, dtype=torch.int32, device=device
+        valid_correlation_shape, fill_value=-1, dtype=torch.int32, device=device
     )
     correlation_sum = torch.zeros(
-        size=image_shape_real, dtype=DEFAULT_STATISTIC_DTYPE, device=device
+        size=valid_correlation_shape, dtype=DEFAULT_STATISTIC_DTYPE, device=device
     )
     correlation_squared_sum = torch.zeros(
-        size=image_shape_real, dtype=DEFAULT_STATISTIC_DTYPE, device=device
+        size=valid_correlation_shape, dtype=DEFAULT_STATISTIC_DTYPE, device=device
     )
 
     ##################################
@@ -510,6 +518,8 @@ def _core_match_template_single_gpu(
                     correlation_squared_sum=correlation_squared_sum,
                     img_h=image_shape_real[0],
                     img_w=image_shape_real[1],
+                    valid_shape_h=valid_correlation_shape[0],
+                    valid_shape_w=valid_correlation_shape[1],
                 )
         except Exception as e:
             index_queue.set_error_flag()

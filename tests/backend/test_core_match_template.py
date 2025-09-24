@@ -63,6 +63,7 @@ def test_core_match_template():
     mt_manager.run_match_template(
         orientation_batch_size=ORIENTATION_BATCH_SIZE,
         do_result_export=True,  # Saves the statistics immediately upon completion
+        do_valid_cropping=False,  # testing backend doing valid cropping in-place
     )
 
     # Ensure the MIPs are the same, if they are not then there's an issue...
