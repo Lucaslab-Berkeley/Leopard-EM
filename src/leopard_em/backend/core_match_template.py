@@ -14,6 +14,7 @@ import torch
 import tqdm
 
 from leopard_em.backend.cross_correlation import (
+    do_batched_orientation_cross_correlate,
     do_streamed_orientation_cross_correlate,
 )
 from leopard_em.backend.distributed import (
@@ -140,6 +141,8 @@ def setup_progress_tracking(
 
 
 # pylint: disable=too-many-locals
+# pylint: disable=too-many-arguments
+# pylint: disable=too-many-positional-arguments
 def core_match_template(
     image_dft: torch.Tensor,
     template_dft: torch.Tensor,  # already fftshifted
@@ -151,6 +154,7 @@ def core_match_template(
     device: torch.device | list[torch.device],
     orientation_batch_size: int = 1,
     num_cuda_streams: int = 1,
+    backend: str | None = None,
 ) -> dict[str, torch.Tensor]:
     """Core function for performing the whole-orientation search.
 
@@ -202,6 +206,9 @@ def core_match_template(
         number of cross-correlations to compute per batch, then the number of streams
         will be reduced to the number of cross-correlations per batch. This is done to
         avoid unnecessary overhead and performance degradation.
+    backend : str, optional
+        The backend to use for computation. Defaults to None. Must be 'streamed' or
+        'batched'. If None, the default backend will be chosen.
 
     Returns
     -------
@@ -299,6 +306,7 @@ def core_match_template(
             "pixel_values": pixel_values,
             "orientation_batch_size": orientation_batch_size,
             "num_cuda_streams": num_cuda_streams,
+            "backend": backend,
             "device": d,
         }
 
@@ -361,6 +369,7 @@ def _core_match_template_single_gpu(
     pixel_values: torch.Tensor,
     orientation_batch_size: int,
     num_cuda_streams: int,
+    backend: str | None,
     device: torch.device,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """Single-GPU call for template matching.
@@ -396,6 +405,9 @@ def _core_match_template_single_gpu(
         The number of projections to calculate the correlation for at once.
     num_cuda_streams : int
         Number of CUDA streams to use for parallelizing cross-correlation computation.
+    backend : str, optional
+        The backend to use for computation. Defaults to None. Must be 'streamed' or
+        'batched'. If None, the default backend will be chosen.
     device : torch.device
         Device to run the computation on. All tensors must be allocated on this device.
 
@@ -492,13 +504,21 @@ def _core_match_template_single_gpu(
                 batch_search_indices = indices + local_to_global_idx_increment[:, None]
                 batch_search_indices = batch_search_indices.flatten()
 
-                cross_correlation = do_streamed_orientation_cross_correlate(
-                    image_dft=image_dft,
-                    template_dft=template_dft,
-                    rotation_matrices=rot_matrix,
-                    projective_filters=projective_filters,
-                    streams=streams,
-                )
+                if backend == "batched":
+                    cross_correlation = do_batched_orientation_cross_correlate(
+                        image_dft=image_dft,
+                        template_dft=template_dft,
+                        rotation_matrices=rot_matrix,
+                        projective_filters=projective_filters,
+                    )
+                else:
+                    cross_correlation = do_streamed_orientation_cross_correlate(
+                        image_dft=image_dft,
+                        template_dft=template_dft,
+                        rotation_matrices=rot_matrix,
+                        projective_filters=projective_filters,
+                        streams=streams,
+                    )
 
                 # Update the tracked statistics
                 do_iteration_statistics_updates_compiled(
