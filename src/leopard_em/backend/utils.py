@@ -5,6 +5,7 @@ import re
 import warnings
 from typing import Any, Callable, TypeVar
 
+import tensordict
 import torch
 
 # Suppress the specific deprecation warnings from PyTorch internals
@@ -231,6 +232,117 @@ def do_iteration_statistics_updates(
 
     correlation_sum += cc_reshaped.sum(dim=0)
     correlation_squared_sum += (cc_reshaped**2).sum(dim=0)
+
+
+@torch.compile
+def _correlation_table_updates_core(
+    cross_correlation: torch.Tensor,
+    current_indexes: torch.Tensor,
+    threshold: float,
+    img_h: int,
+    img_w: int,
+    valid_shape_h: int,
+    valid_shape_w: int,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Core function which gets compiled for correlation table updates."""
+    # NOTE: Using the as_strided view to exclude the "invalid" right and bottom edges
+    # of the cross-correlation image.
+    cc_reshaped = cross_correlation.view(-1, img_h, img_w)
+    cc_reshaped = cc_reshaped.as_strided(
+        size=(cc_reshaped.shape[0], valid_shape_h, valid_shape_w),
+        stride=(cc_reshaped.stride(0), cc_reshaped.stride(1), cc_reshaped.stride(2)),
+    )
+
+    # Find where correlation surpasses threshold
+    batch_idxs, y_idxs, x_idxs = torch.where(cc_reshaped > threshold)
+    values = cc_reshaped[batch_idxs, y_idxs, x_idxs]
+    global_idxs = current_indexes[batch_idxs]
+
+    return global_idxs, y_idxs, x_idxs, values
+
+
+def do_correlation_table_updates(
+    cross_correlation: torch.Tensor,
+    current_indexes: torch.Tensor,
+    correlation_table: tensordict.TensorDict,
+    threshold: float,
+    img_h: int,
+    img_w: int,
+    valid_shape_h: int,
+    valid_shape_w: int,
+) -> None:
+    """Updates the correlation table with all (x, y) pos which surpass the threshold.
+
+    Parameters
+    ----------
+    cross_correlation : torch.Tensor
+        Cross-correlation values for the current iteration. Has shape
+        (num_cs, num_defocus, num_orientations, H, W) where 'num_cs' are the number of
+        different pixel sizes (controlled by spherical aberration Cs) in the
+        cross-correlation batch, 'num_defocus' are the number of different defocus
+        values in the cross-correlation batch, and 'num_orientations' are the number of
+        different orientations in the cross-correlation batch.
+    current_indexes : torch.Tensor
+        The global search indexes for the *current* batch of pixel sizes, defocus
+        values, and orientations. Has shape `num_cs * num_defocus * num_orientations`
+        to uniquely identify the set of pixel sizes, defocus values, and orientations
+        associated with the batch from the global search space.
+    correlation_table : tensordict.TensorDict
+        The correlation table to update. Keys in table are str(global_index) and
+        values are each (n, 3) float32 tensor with (x, y, correlation_value) where n
+        is the number of values which surpassed the threshold for that global_index.
+    threshold : float
+        The threshold value for adding entries to the correlation table.
+    img_h : int
+        Height of the cross-correlation values.
+    img_w : int
+        Width of the cross-correlation values.
+    valid_shape_h : int
+        Height of the valid region of the cross-correlation values.
+    valid_shape_w : int
+        Width of the valid region of the cross-correlation values.
+    """
+    threshold = correlation_table.get("threshold")
+
+    # Short circuit if no entries in the cross-correlation map surpass the threshold
+    if torch.max(cross_correlation) < threshold:
+        return
+
+    global_idxs, y_idxs, x_idxs, values = _correlation_table_updates_core(
+        cross_correlation,
+        current_indexes,
+        threshold,
+        img_h,
+        img_w,
+        valid_shape_h,
+        valid_shape_w,
+    )
+
+    # # NOTE: Using the as_strided view to exclude the "invalid" right and bottom edges
+    # # of the cross-correlation image.
+    # cc_reshaped = cross_correlation.view(-1, img_h, img_w)
+    # cc_reshaped = cc_reshaped.as_strided(
+    #     size=(cc_reshaped.shape[0], valid_shape_h, valid_shape_w),
+    #     stride=(cc_reshaped.stride(0), cc_reshaped.stride(1), cc_reshaped.stride(2)),
+    # )
+
+    # # Find where correlation surpasses threshold
+    # batch_idxs, y_idxs, x_idxs = torch.where(cc_reshaped > threshold)
+    # values = cc_reshaped[batch_idxs, y_idxs, x_idxs]
+    # global_idxs = current_indexes[batch_idxs]
+
+    # Iterate over unique global indexes and update the correlation table
+    for global_idx in torch.unique(global_idxs):
+        mask = global_idxs == global_idx
+
+        # What to place into the table
+        table_values = torch.stack(
+            [x_idxs[mask].float(), y_idxs[mask].float(), values[mask]], dim=1
+        )
+
+        # Key for the table. NOTE: there should never be a collision
+        key = str(int(global_idx.item()))
+        correlation_table[key] = table_values
 
 
 # These are compiled normalization and stat update functions

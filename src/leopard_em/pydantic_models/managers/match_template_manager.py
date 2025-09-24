@@ -348,7 +348,10 @@ class MatchTemplateManager(BaseModel2DTM):
         self.match_template_result.total_orientations = results["total_orientations"]
         self.match_template_result.total_defocus = results["total_defocus"]
 
-        # Apply the valid cropping mode to the results
+        # Store the correlation table for later analysis
+        self.match_template_result.correlation_table = results["correlation_table"]
+
+        # Apply the valid cropping mode to the results, if requested
         if do_valid_cropping:
             nx = self.template_volume.shape[-1]
             self.match_template_result.apply_valid_cropping((nx, nx))

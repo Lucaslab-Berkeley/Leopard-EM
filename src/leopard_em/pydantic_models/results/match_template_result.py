@@ -145,6 +145,8 @@ class MatchTemplateResult(BaseModel2DTM):
     orientation_phi_path: str
     relative_defocus_path: str
 
+    correlation_table: dict[str, list[int | float]] = Field(default=None, exclude=True)
+
     # Scalar (non-tensor) attributes
     total_projections: int = 0
     total_orientations: int = 0
