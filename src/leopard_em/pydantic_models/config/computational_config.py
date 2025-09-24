@@ -3,7 +3,7 @@
 from typing import Annotated, Optional, Union
 
 import torch
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 # Type alias for non-negative integer
 NonNegativeInt = Annotated[int, Field(ge=0)]
@@ -34,6 +34,10 @@ class ComputationalConfig(BaseModel):
         - The specific string "cpu" which means to use CPU.
     num_cpus : int
         Total number of CPUs to use, defaults to 1.
+    backend : Optional[str]
+        The backend to use for match template.
+        Must be None (choose default for each program),
+        'streamed', or 'batched'. Defaults to None.
     """
 
     # Type-hinting here is ensuring non-negative integers, and list of at least one
@@ -46,6 +50,35 @@ class ComputationalConfig(BaseModel):
         ]
     ] = [0]
     num_cpus: Annotated[int, Field(ge=1)] = 1
+    backend: Optional[str] = None
+
+    @field_validator("backend")  # type: ignore
+    @classmethod
+    def validate_backend(cls, v: Optional[str]) -> Optional[str]:
+        """Validate that backend is None, 'streamed', or 'batched'.
+
+        Parameters
+        ----------
+        v : Optional[str]
+            The backend value to validate
+
+        Returns
+        -------
+        Optional[str]
+            The validated backend value
+
+        Raises
+        ------
+        ValueError
+            If backend is not None, 'streamed', or 'batched'
+        """
+        if v is not None and v not in ["streamed", "batched"]:
+            raise ValueError(
+                f"backend must be None (choose default for each program), "
+                f"'streamed', or 'batched'. "
+                f"Got: {v}"
+            )
+        return v
 
     @property
     def gpu_devices(self) -> list[torch.device]:

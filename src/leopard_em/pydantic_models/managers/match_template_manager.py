@@ -240,6 +240,7 @@ class MatchTemplateManager(BaseModel2DTM):
             **core_kwargs,
             orientation_batch_size=orientation_batch_size,
             num_cuda_streams=self.computational_config.num_cpus,
+            backend=self.computational_config.backend,
         )
 
         # Populate the MatchTemplateResult via a private helper
@@ -307,6 +308,7 @@ class MatchTemplateManager(BaseModel2DTM):
             device,
             orientation_batch_size,
             self.computational_config.num_cpus,
+            self.computational_config.backend,
             **core_kwargs,
         )
 
