@@ -154,7 +154,7 @@ def core_match_template(
     device: torch.device | list[torch.device],
     orientation_batch_size: int = 1,
     num_cuda_streams: int = 1,
-    backend: str | None = None,
+    backend: str = "streamed",
 ) -> dict[str, torch.Tensor]:
     """Core function for performing the whole-orientation search.
 
@@ -207,8 +207,8 @@ def core_match_template(
         will be reduced to the number of cross-correlations per batch. This is done to
         avoid unnecessary overhead and performance degradation.
     backend : str, optional
-        The backend to use for computation. Defaults to None. Must be 'streamed' or
-        'batched'. If None, the default backend will be chosen.
+        The backend to use for computation. Defaults to 'streamed'.
+        Must be 'streamed' or 'batched'.
 
     Returns
     -------
@@ -369,7 +369,7 @@ def _core_match_template_single_gpu(
     pixel_values: torch.Tensor,
     orientation_batch_size: int,
     num_cuda_streams: int,
-    backend: str | None,
+    backend: str,
     device: torch.device,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """Single-GPU call for template matching.
@@ -406,8 +406,8 @@ def _core_match_template_single_gpu(
     num_cuda_streams : int
         Number of CUDA streams to use for parallelizing cross-correlation computation.
     backend : str, optional
-        The backend to use for computation. Defaults to None. Must be 'streamed' or
-        'batched'. If None, the default backend will be chosen.
+        The backend to use for computation.
+        Defaults to 'streamed'. Must be 'streamed' or 'batched'.
     device : torch.device
         Device to run the computation on. All tensors must be allocated on this device.
 
