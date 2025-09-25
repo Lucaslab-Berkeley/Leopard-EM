@@ -22,7 +22,8 @@ def test_config_imports():
         from leopard_em.pydantic_models.config import (
             ArbitraryCurveFilterConfig,
             BandpassFilterConfig,
-            ComputationalConfig,
+            ComputationalConfigMatch,
+            ComputationalConfigRefine,
             DefocusSearchConfig,
             OrientationSearchConfig,
             PhaseRandomizationFilterConfig,
