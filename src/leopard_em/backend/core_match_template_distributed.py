@@ -358,6 +358,7 @@ def core_match_template_distributed(
     device: torch.device,
     orientation_batch_size: int = 1,
     num_cuda_streams: int = 1,
+    backend: str = "streamed",
     **kwargs: dict,
 ) -> dict[str, torch.Tensor]:
     """Distributed multi-node core function for the match template program.
@@ -377,6 +378,9 @@ def core_match_template_distributed(
     num_cuda_streams : int, optional
         Number of CUDA streams to use for overlapping data transfers and
         computation, by default 1.
+    backend : str, optional
+        The backend to use for computation. Defaults to 'streamed'.
+        Must be 'streamed' or 'batched'.
     **kwargs : dict[str, torch.Tensor]
         Additional keyword arguments passed to the single-GPU core function. For the
         zeroth rank this should be a dictionary of Tensor objects with the following
@@ -462,6 +466,7 @@ def core_match_template_distributed(
             pixel_values=pixel_values,
             orientation_batch_size=orientation_batch_size,
             num_cuda_streams=num_cuda_streams,
+            backend=backend,
             device=device,
         )
     )
