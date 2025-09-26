@@ -119,6 +119,10 @@ ENV/
 # Temporary files
 *.tmp
 
+# Log files
+*.log
+*.out
+
 
 small_image_test_data/
 medium_image_test_data/

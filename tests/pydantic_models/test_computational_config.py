@@ -3,7 +3,7 @@
 import pytest
 from pydantic import ValidationError
 
-from leopard_em.pydantic_models.config import ComputationalConfig
+from leopard_em.pydantic_models.config import ComputationalConfigMatch
 
 
 def test_default_values():
@@ -12,7 +12,7 @@ def test_default_values():
 
     Verifies that the default values for gpu_ids and num_cpus are set correctly.
     """
-    config = ComputationalConfig()
+    config = ComputationalConfigMatch()
     assert config.gpu_ids == [0]
     assert config.num_cpus == 1
 
@@ -24,7 +24,7 @@ def test_invalid_gpu_ids():
     Verifies that a ValidationError is raised when invalid gpu_ids are provided.
     """
     with pytest.raises(ValidationError):
-        ComputationalConfig(gpu_ids=[-1])  # Negative GPU ID is invalid
+        ComputationalConfigMatch(gpu_ids=[-1])  # Negative GPU ID is invalid
 
     with pytest.raises(ValidationError):
-        ComputationalConfig(gpu_ids=[])  # Empty list
+        ComputationalConfigMatch(gpu_ids=[])  # Empty list
