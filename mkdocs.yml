@@ -1,6 +1,8 @@
 site_name: "Leopard-EM: Two-Dimensional Template Matching in Python"
 theme:
   name: material
+  features:
+    - content.code.copy
 plugins:
   - search
   - autorefs
@@ -16,9 +18,6 @@ plugins:
             - src
           options:
             docstring_style: numpy
-  # - gallery:
-  #     examples_dirs: docs/examples
-  #     gallery_dirs: docs/generated/gallery
 markdown_extensions:
   - admonition
   - pymdownx.details
@@ -29,12 +28,14 @@ extra_javascript:
   - https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.4/MathJax.js?config=TeX-AMS-MML_HTMLorMML
 nav:
   - Home: index.md
-  # - generated/gallery
+  - Tutorials:
+    - 2DTM Introduction: tutorials/match_template_intro.md
+    - Batch Processing: tutorials/batch_processing.md
   - Examples:
     - Match Template Config:            examples/01_basic_configuration.ipynb
     - Peaks to DataFrame:               examples/02_extract_peak_info.ipynb
     - Comparing Scoring Metrics:        examples/03_compare_scoring_metrics.ipynb
-    - Plotting match template results:  examples/04_plotting_2dtm_results
+    - Plotting match template results:  examples/04_plotting_2dtm_results.ipynb
     - Structure re-projection plot:     examples/05_structure_reprojection.ipynb 
     # - Constrained Search: examples/constrained_search_example.yaml
   - Programs:
@@ -44,6 +45,7 @@ nav:
     - Optimize Template details:  programs/optimize_template.md
     - Constrained Search details: programs/constrained_search.md
   - Program Output Formats: data_formats.md
+  - Common Issues: common_issues.md
   #   - Analyzing Match Template Results: examples/analyzing_results.md
   # - Pydantic Model API: api/pydantic_models.md
   # - Backend API: api/backend.md
