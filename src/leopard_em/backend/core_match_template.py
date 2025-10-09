@@ -89,7 +89,7 @@ def monitor_match_template_progress(
 def setup_progress_tracking(
     index_queue: "MultiprocessWorkIndexQueue",
     unit_scale: Union[float, int],
-    num_devices: int,
+    devices: list[torch.device],
 ) -> tuple[tqdm.tqdm, dict[int, tqdm.tqdm]]:
     """Setup global and per-device tqdm progress bars for template matching.
 
@@ -99,8 +99,8 @@ def setup_progress_tracking(
         The shared work queue tracking global indices.
     unit_scale : Union[float, int]
         Scaling factor to apply to units
-    num_devices : int
-        Number of GPU devices being used.
+    devices : list[torch.device]
+        List of devices to create per-device progress bars for.
 
     Returns
     -------
@@ -120,7 +120,7 @@ def setup_progress_tracking(
     # Per-device progress bars
     device_pbars = {
         i: tqdm.tqdm(
-            desc=f"GPU {i}",
+            desc=f"device - {d.type} {d.index}",
             dynamic_ncols=True,
             smoothing=0.02,
             unit="corr",
@@ -128,7 +128,7 @@ def setup_progress_tracking(
             position=i + 1,  # place below the global bar
             leave=True,
         )
-        for i in range(num_devices)
+        for i, d in enumerate(devices)
     }
 
     return global_pbar, device_pbars
@@ -285,7 +285,7 @@ def core_match_template(
     global_pbar, device_pbars = setup_progress_tracking(
         index_queue=index_queue,
         unit_scale=defocus_values.shape[0] * pixel_values.shape[0],
-        num_devices=len(device),
+        devices=device,
     )
     progress_callback = partial(
         monitor_match_template_progress,
