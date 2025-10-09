@@ -164,6 +164,7 @@ class RefineTemplateManager(BaseModel2DTM):
 
         return result
 
+    # pylint: disable=too-many-locals
     def refine_result_to_dataframe(
         self,
         output_dataframe_path: str,
@@ -190,6 +191,7 @@ class RefineTemplateManager(BaseModel2DTM):
         pos_offset_y_ang = pos_offset_y * df_refined["pixel_size"]
         pos_offset_x_ang = pos_offset_x * df_refined["pixel_size"]
 
+        # pylint: disable=protected-access
         if (
             prefer_refined_angles
             and self.particle_stack._get_position_reference_columns()

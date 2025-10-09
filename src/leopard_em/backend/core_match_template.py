@@ -377,8 +377,8 @@ def _core_match_template_single_gpu(
     Parameters
     ----------
     rank : int
-        Rank of the device which computation is running on. Results will be stored
-        in the dictionary with this key.
+        Rank of the device which computation is running on. Used for tracking grabbed
+        work from the shared queue.
     index_queue : MultiprocessWorkIndexQueue
         Torch multiprocessing object for retrieving the next batch of orientations to
         process during the 2DTM search.
