@@ -39,6 +39,10 @@ class RefineTemplateManager(BaseModel2DTM):
         Filters to apply to the particle images.
     computational_config : ComputationalConfigRefine
         What computational resources to allocate for the program.
+    apply_global_filtering : bool
+        If True, apply filtering to the full micrograph before particle extraction.
+        If False, filter are calculated and applied to the cropped particle images.
+        Default is True.
     template_volume : ExcludedTensor
         The template volume tensor (excluded from serialization).
 
@@ -62,6 +66,8 @@ class RefineTemplateManager(BaseModel2DTM):
     orientation_refinement_config: RefineOrientationConfig
     preprocessing_filters: PreprocessingFilters
     computational_config: ComputationalConfigRefine
+
+    apply_global_filtering: bool = True
 
     # Excluded tensors
     template_volume: ExcludedTensor
@@ -113,6 +119,7 @@ class RefineTemplateManager(BaseModel2DTM):
             euler_angle_offsets=euler_angle_offsets,
             defocus_offsets=defocus_offsets,
             pixel_size_offsets=pixel_size_offsets,
+            apply_global_filtering=self.apply_global_filtering,
             device_list=self.computational_config.gpu_devices,
         )
 

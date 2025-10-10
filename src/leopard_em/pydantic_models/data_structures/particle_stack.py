@@ -11,6 +11,7 @@ from pydantic import ConfigDict
 from leopard_em.pydantic_models.config import PreprocessingFilters
 from leopard_em.pydantic_models.custom_types import BaseModel2DTM, ExcludedTensor
 from leopard_em.pydantic_models.formats import MATCH_TEMPLATE_DF_COLUMN_ORDER
+from leopard_em.pydantic_models.utils import preprocess_image
 from leopard_em.utils.data_io import load_mrc_image
 
 TORCH_TO_NUMPY_PADDING_MODE = {
@@ -372,6 +373,8 @@ class ParticleStack(BaseModel2DTM):
 
     def construct_image_stack(
         self,
+        preprocessing_filters: PreprocessingFilters | None = None,
+        apply_global_filtering: bool = True,
         pos_reference: Literal["center", "top-left"] = "top-left",
         handle_bounds: Literal["pad", "error"] = "pad",
         padding_mode: Literal["constant", "reflect", "replicate"] = "constant",
@@ -422,6 +425,14 @@ class ParticleStack(BaseModel2DTM):
 
         Parameters
         ----------
+        preprocessing_filters : PreprocessingFilters | None, optional
+            The preprocessing filters to apply. If None, no filtering is applied. By
+            default None.
+        apply_global_filtering : bool, optional
+            Whether to apply filtering to full micrograph before extraction or to the
+            cropped images after extraction, by default True (apply filtering to full
+            image). If False, filtering will be applied to the cropped images after
+            extraction.
         pos_reference : Literal["center", "top-left"], optional
             The reference point for the positions, by default "top-left". If "center",
             the boxes extracted will be
@@ -454,6 +465,9 @@ class ParticleStack(BaseModel2DTM):
         # Determine which position columns to use (refined if available)
         y_col, x_col = self._get_position_reference_columns()
 
+        if preprocessing_filters is not None:
+            bp_cfg = preprocessing_filters.bandpass_filter
+
         # Create an empty tensor to store the image stack
         h, w = self.original_template_size
         box_h, box_w = self.extracted_box_size
@@ -464,6 +478,23 @@ class ParticleStack(BaseModel2DTM):
         for img_path, indexes in image_index_groups.items():
             img = load_mrc_image(img_path)
 
+            # If global filtering, process the image before extraction
+            if apply_global_filtering and preprocessing_filters is not None:
+                image_dft = torch.fft.rfftn(img)  # pylint: disable=not-callable
+                image_dft[0, 0] = 0 + 0j
+                bandpass_filter = bp_cfg.calculate_bandpass_filter(image_dft.shape)
+                cumulative_filter = preprocessing_filters.get_combined_filter(
+                    ref_img_rfft=image_dft,
+                    output_shape=image_dft.shape[-2:],
+                )
+                image_dft = preprocess_image(
+                    image_rfft=image_dft,
+                    cumulative_fourier_filters=cumulative_filter,
+                    bandpass_filter=bandpass_filter,
+                )
+                img = torch.fft.irfftn(image_dft)  # pylint: disable=not-callable
+
+            # Get the positions as numpy arrays for indexing
             pos_y = self._df.loc[indexes, y_col].to_numpy()
             pos_x = self._df.loc[indexes, x_col].to_numpy()
 
@@ -498,6 +529,24 @@ class ParticleStack(BaseModel2DTM):
                 padding_value=padding_value,
             )
             image_stack[indexes] = cropped_images
+
+        # If not global filtering, apply filtering to the cropped images
+        if not apply_global_filtering and preprocessing_filters is not None:
+            output_shape = (box_h, box_w // 2 + 1)
+            bandpass_filter = bp_cfg.calculate_bandpass_filter(output_shape)
+            cumulative_filter = self.construct_filter_stack(
+                preprocess_filters=preprocessing_filters,
+                output_shape=output_shape,
+            )
+
+            image_stack_dft = torch.fft.rfftn(image_stack, dim=(-2, -1))  # pylint: disable=not-callable
+            image_stack_dft[..., 0, 0] = 0 + 0j  # Zero out DC component
+            image_stack_dft = preprocess_image(
+                image_rfft=image_stack_dft,
+                cumulative_fourier_filters=cumulative_filter,
+                bandpass_filter=bandpass_filter,
+            )
+            image_stack = torch.fft.irfftn(image_stack_dft, dim=(-2, -1))  # pylint: disable=not-callable
 
         self.image_stack = image_stack
 
