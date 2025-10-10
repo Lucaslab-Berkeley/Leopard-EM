@@ -234,7 +234,7 @@ def do_iteration_statistics_updates(
     correlation_squared_sum += (cc_reshaped**2).sum(dim=0)
 
 
-@torch.compile
+@torch.compile  # type: ignore[misc]
 def _correlation_table_updates_core(
     cross_correlation: torch.Tensor,
     current_indexes: torch.Tensor,
@@ -288,9 +288,8 @@ def do_correlation_table_updates(
         to uniquely identify the set of pixel sizes, defocus values, and orientations
         associated with the batch from the global search space.
     correlation_table : tensordict.TensorDict
-        The correlation table to update. Keys in table are str(global_index) and
-        values are each (n, 3) float32 tensor with (x, y, correlation_value) where n
-        is the number of values which surpassed the threshold for that global_index.
+        The correlation table to update. Has keys
+        ["threshold", "pos_x", "pos_y", "corr_value"] each of which are tensors.
     threshold : float
         The threshold value for adding entries to the correlation table.
     img_h : int
@@ -331,18 +330,28 @@ def do_correlation_table_updates(
     # values = cc_reshaped[batch_idxs, y_idxs, x_idxs]
     # global_idxs = current_indexes[batch_idxs]
 
-    # Iterate over unique global indexes and update the correlation table
-    for global_idx in torch.unique(global_idxs):
-        mask = global_idxs == global_idx
+    # Get temporary tensors to extend the correlation table
+    correlation_table["global_idx"] = torch.cat(
+        [correlation_table["global_idx"], global_idxs]
+    )
+    correlation_table["pos_x"] = torch.cat([correlation_table["pos_x"], x_idxs])
+    correlation_table["pos_y"] = torch.cat([correlation_table["pos_y"], y_idxs])
+    correlation_table["corr_value"] = torch.cat(
+        [correlation_table["corr_value"], values]
+    )
 
-        # What to place into the table
-        table_values = torch.stack(
-            [x_idxs[mask].float(), y_idxs[mask].float(), values[mask]], dim=1
-        )
+    # # Iterate over unique global indexes and update the correlation table
+    # for global_idx in torch.unique(global_idxs):
+    #     mask = global_idxs == global_idx
 
-        # Key for the table. NOTE: there should never be a collision
-        key = str(int(global_idx.item()))
-        correlation_table[key] = table_values
+    #     # What to place into the table
+    #     table_values = torch.stack(
+    #         [x_idxs[mask].float(), y_idxs[mask].float(), values[mask]], dim=1
+    #     )
+
+    #     # Key for the table. NOTE: there should never be a collision
+    #     key = str(int(global_idx.item()))
+    #     correlation_table[key] = table_values
 
 
 # These are compiled normalization and stat update functions

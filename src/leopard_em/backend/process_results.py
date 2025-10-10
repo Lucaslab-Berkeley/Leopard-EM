@@ -146,50 +146,62 @@ def process_correlation_table(
     """
     threshold = correlation_table.pop("threshold")
     threshold = threshold.item() if isinstance(threshold, torch.Tensor) else threshold
-    processed_table = {
-        "threshold": threshold,
-        "pixel_size": [],
-        "defocus": [],
-        "phi": [],
-        "theta": [],
-        "psi": [],
-        "x": [],
-        "y": [],
-        "correlation": [],
-    }
+    # processed_table = {
+    #     "threshold": threshold,
+    #     "pixel_size": [],
+    #     "defocus": [],
+    #     "phi": [],
+    #     "theta": [],
+    #     "psi": [],
+    #     "x": [],
+    #     "y": [],
+    #     "correlation": [],
+    # }
 
     # Convert string keys to integer tensor for decoding
-    global_indices = torch.tensor([int(key) for key in correlation_table.keys()])
+    global_indices = correlation_table["global_idx"]
     phi, theta, psi, defocus, pixel_values = decode_global_search_index(
         global_indices, pixel_values, defocus_values, euler_angles
     )
 
-    # Process each global index
-    for i, value in enumerate(correlation_table.values()):
-        # Get parameters for this index
-        this_pixel_size = pixel_values[i].item()
-        this_defocus = defocus[i].item()
-        this_phi = phi[i].item()
-        this_theta = theta[i].item()  # No tuple, just the value
-        this_psi = psi[i].item()  # No tuple, just the value
+    processed_table = {
+        "threshold": threshold,
+        "pixel_size": pixel_values.numpy().tolist(),
+        "defocus": defocus.numpy().tolist(),
+        "phi": phi.numpy().tolist(),
+        "theta": theta.numpy().tolist(),
+        "psi": psi.numpy().tolist(),
+        "x": correlation_table["pos_x"].numpy().tolist(),
+        "y": correlation_table["pos_y"].numpy().tolist(),
+        "correlation": correlation_table["corr_value"].numpy().tolist(),
+    }
 
-        # Count points in this value
-        num_points = value.shape[0]
+    # # Process each global index
+    # for i, value in enumerate(correlation_table.values()):
+    #     # Get parameters for this index
+    #     this_pixel_size = pixel_values[i].item()
+    #     this_defocus = defocus[i].item()
+    #     this_phi = phi[i].item()
+    #     this_theta = theta[i].item()  # No tuple, just the value
+    #     this_psi = psi[i].item()  # No tuple, just the value
 
-        # Extract coordinates and correlation values
-        xs = value[:, 0].tolist()
-        ys = value[:, 1].tolist()
-        ccs = value[:, 2].tolist()
+    #     # Count points in this value
+    #     num_points = value.shape[0]
 
-        # Append all values at once
-        processed_table["pixel_size"].extend([this_pixel_size] * num_points)
-        processed_table["defocus"].extend([this_defocus] * num_points)
-        processed_table["phi"].extend([this_phi] * num_points)
-        processed_table["theta"].extend([this_theta] * num_points)
-        processed_table["psi"].extend([this_psi] * num_points)
-        processed_table["x"].extend([int(x) for x in xs])
-        processed_table["y"].extend([int(y) for y in ys])
-        processed_table["correlation"].extend(ccs)
+    #     # Extract coordinates and correlation values
+    #     xs = value[:, 0].tolist()
+    #     ys = value[:, 1].tolist()
+    #     ccs = value[:, 2].tolist()
+
+    #     # Append all values at once
+    #     processed_table["pixel_size"].extend([this_pixel_size] * num_points)
+    #     processed_table["defocus"].extend([this_defocus] * num_points)
+    #     processed_table["phi"].extend([this_phi] * num_points)
+    #     processed_table["theta"].extend([this_theta] * num_points)
+    #     processed_table["psi"].extend([this_psi] * num_points)
+    #     processed_table["x"].extend([int(x) for x in xs])
+    #     processed_table["y"].extend([int(y) for y in ys])
+    #     processed_table["correlation"].extend(ccs)
 
     return processed_table
 

@@ -34,13 +34,14 @@ from leopard_em.backend.utils import (
 )
 
 DEFAULT_STATISTIC_DTYPE = torch.float32
-CORRELATION_TABLE_THRESHOLD = 6.5
+CORRELATION_TABLE_THRESHOLD = 5.5
 
 # Turn off gradient calculations by default
 torch.set_grad_enabled(False)
 
 # Set multiprocessing start method to spawn
 set_start_method("spawn", force=True)
+torch.multiprocessing.set_sharing_strategy("file_system")
 
 
 def monitor_match_template_progress(
@@ -491,10 +492,22 @@ def _core_match_template_single_gpu(
 
     # Correlation table built from 'tensordict' library where any (x, y) positions
     # in correlation map which surpass the threshold will be added to the table.
-    # Keys in table are str(global_index) and values are *currently* a size (n, 3)
-    # tensor with each entry (float(x), float(y), correlation_value) as float32.
+    # Keys in table are:
+    #   - "threshold": float threshold value used for the table.
+    #   - "global_idx": int32 global search index.
+    #   - "pos_x": int32 x position in image where corr value surpassed threshold.
+    #   - "pos_y": int32 y position in image where corr value surpassed threshold.
+    #   - "corr_value": float32 correlation value at (pos_x, pos_y) for the given
+    #                   global index.
     correlation_table = tensordict.TensorDict(
-        {"threshold": CORRELATION_TABLE_THRESHOLD}, device=device
+        {
+            "threshold": CORRELATION_TABLE_THRESHOLD,
+            "global_idx": torch.tensor([], dtype=torch.int32, device=device),
+            "pos_x": torch.tensor([], dtype=torch.int32, device=device),
+            "pos_y": torch.tensor([], dtype=torch.int32, device=device),
+            "corr_value": torch.tensor([], dtype=torch.float32, device=device),
+        },
+        device=device,
     )
 
     ##################################
