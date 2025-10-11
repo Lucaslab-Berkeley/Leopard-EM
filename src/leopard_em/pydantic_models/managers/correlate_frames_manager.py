@@ -140,6 +140,8 @@ class CorrelateFramesManager(BaseModel2DTM):
         num_frames = len(movie_mrc)
         refined_mips = np.zeros((num_particles, num_frames))
         z_scores = np.zeros((num_particles, num_frames))
+        pos_x = np.zeros((num_particles, num_frames))
+        pos_y = np.zeros((num_particles, num_frames))
 
         normalization_factor = setup_image_normalization_factor(
             particle_stack=self.particle_stack,
@@ -147,7 +149,7 @@ class CorrelateFramesManager(BaseModel2DTM):
             mrc_image=sum_mrc,
         )
 
-        return movie_mrc, normalization_factor, refined_mips, z_scores
+        return movie_mrc, normalization_factor, refined_mips, z_scores, pos_x, pos_y
 
     def _simulate_template_for_frame(
         self, frame_idx: int, num_frames: int
@@ -224,7 +226,9 @@ class CorrelateFramesManager(BaseModel2DTM):
         }
 
     def _process_all_results(
-        self, refined_mips: np.ndarray, z_scores: np.ndarray, output_dataframe_path: str
+        self, refined_mips: np.ndarray, z_scores: np.ndarray,
+        pos_x: np.ndarray, pos_y: np.ndarray,
+        output_dataframe_path: str
     ) -> None:
         """Process and save all results from all frames.
 
@@ -234,6 +238,10 @@ class CorrelateFramesManager(BaseModel2DTM):
             Array containing refined MIPs for all frames
         z_scores : np.ndarray
             Array containing z-scores for all frames
+        pos_x : np.ndarray
+            Array containing x positions for all frames
+        pos_y : np.ndarray
+            Array containing y positions for all frames
         output_dataframe_path : str
             Path to save the output dataframes
         """
@@ -251,11 +259,25 @@ class CorrelateFramesManager(BaseModel2DTM):
                 "aligned_frames_path": self.aligned_frames_path,
             }
         )
-
+        frames_df_pos_x = pd.DataFrame(
+            {
+                "particle_index": df_refined["particle_index"],
+                "aligned_frames_path": self.aligned_frames_path,
+            }
+        )
+        frames_df_pos_y = pd.DataFrame(
+            {
+                "particle_index": df_refined["particle_index"],
+                "aligned_frames_path": self.aligned_frames_path,
+            }
+        )
         # Add each frame's MIP and z-score as a column
         for i in range(refined_mips.shape[1]):
             frames_df_mip[f"frame_{i}_mip"] = refined_mips[:, i]
             frames_df_zscore[f"frame_{i}_zscore"] = z_scores[:, i]
+            frames_df_pos_x[f"frame_{i}_pos_x"] = pos_x[:, i]
+            frames_df_pos_y[f"frame_{i}_pos_y"] = pos_y[:, i]
+
 
         # Get base path without extension
         base_path = os.path.splitext(output_dataframe_path)[0]
@@ -263,7 +285,8 @@ class CorrelateFramesManager(BaseModel2DTM):
         # Save frames dataframes
         frames_df_mip.to_csv(f"{base_path}_frames_mip.csv", index=False)
         frames_df_zscore.to_csv(f"{base_path}_frames_zscore.csv", index=False)
-
+        frames_df_pos_x.to_csv(f"{base_path}_frames_pos_x.csv", index=False)
+        frames_df_pos_y.to_csv(f"{base_path}_frames_pos_y.csv", index=False)
         # Sum results to standard dataframe
         sum_refined_mip = np.sum(refined_mips, axis=1)
         sum_z_score = np.sum(z_scores, axis=1)
@@ -275,7 +298,9 @@ class CorrelateFramesManager(BaseModel2DTM):
         df_refined.to_csv(output_dataframe_path, index=False)
 
     def run_correlate_frames(
-        self, output_dataframe_path: str, orientation_batch_size: int = 64
+        self, output_dataframe_path: str, 
+        orientation_batch_size: int = 64,
+        sim_each_frame: bool = False,
     ) -> None:
         """Run the correlate frames program.
 
@@ -285,7 +310,8 @@ class CorrelateFramesManager(BaseModel2DTM):
             Path to save the output dataframes
         orientation_batch_size : int
             Number of orientations to process at once. Defaults to 64.
-
+        sim_each_frame : bool
+            Whether to simulate the template for each frame. Defaults to False.
         Returns
         -------
         None
@@ -294,12 +320,16 @@ class CorrelateFramesManager(BaseModel2DTM):
         frame_independent_kwargs = self._setup_frame_independent_kwargs()
 
         # 2) Load movie and setup arrays
-        movie_mrc, normalization_factor, refined_mips, z_scores = self._load_and_setup()
+        movie_mrc, normalization_factor, refined_mips, z_scores, pos_x, pos_y = self._load_and_setup()
 
+
+        if not sim_each_frame:
+            template = self.simulator.run(device=self.computational_config.gpu_ids)
         # Process each frame
         for i, frame in enumerate(movie_mrc):
             # Simulate template for this frame
-            template = self._simulate_template_for_frame(i, len(movie_mrc))
+            if sim_each_frame:
+                template = self._simulate_template_for_frame(i, len(movie_mrc))
 
             # Setup frame-specific kwargs
             frame_kwargs = self._setup_frame_kwargs(
@@ -315,9 +345,11 @@ class CorrelateFramesManager(BaseModel2DTM):
             # Store results directly
             refined_mips[:, i] = result["refined_cross_correlation"]
             z_scores[:, i] = result["refined_z_score"]
+            pos_x[:, i] = result["refined_pos_x"]
+            pos_y[:, i] = result["refined_pos_y"]
 
         # Process and save all results
-        self._process_all_results(refined_mips, z_scores, output_dataframe_path)
+        self._process_all_results(refined_mips, z_scores, pos_x, pos_y, output_dataframe_path)
 
     def get_refine_result(
         self, backend_kwargs: dict, orientation_batch_size: int = 64

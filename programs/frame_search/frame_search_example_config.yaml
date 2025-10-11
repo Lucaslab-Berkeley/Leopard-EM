@@ -4,6 +4,7 @@
 # An example YAML configuration to modify.
 # Call `CorrelateFramesManager.from_yaml(path)` to load this configuration.
 aligned_frames_path: "path/to/aligned_frames.mrc"
+sum_mrc_path: "xenon_131_aligned_sum.mrc"
 particle_stack:
   df_path: results/results_match_template_crop.csv  # Needs to be readable by pandas
   extracted_box_size: [520, 520]
