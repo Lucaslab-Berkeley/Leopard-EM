@@ -18,15 +18,10 @@ def aggregate_distributed_results(
         List of dictionaries containing the results from each device. Each dictionary
         contains the following keys:
             - "mip": Maximum intensity projection of the cross-correlation values.
-            - "best_phi": Best phi angle for each pixel.
-            - "best_theta": Best theta angle for each pixel.
-            - "best_psi": Best psi angle for each pixel.
-            - "best_defocus": Best defocus value for each pixel.
-            - "best_pixel_size": Best pixel size value for each pixel.
+            - "best_global_index": Best global search index
             - "correlation_sum": Sum of cross-correlation values for each pixel.
             - "correlation_squared_sum": Sum of squared cross-correlation values for
               each pixel.
-            - "total_projections": Total number of projections calculated.
     """
     # Ensure all the tensors are passed back to CPU as numpy arrays
     # Not sure why cannot sync across devices, but this is a workaround
@@ -38,29 +33,15 @@ def aggregate_distributed_results(
         for result in results
     ]
 
-    # Find which device had the highest MIP for each pixel and index stats accordingly.
-    # Results after 'take_along_axis' have extra dimension at idx 0.
+    # Stack results from all devices into a single array. Dim 0 is device index
     mips = np.stack([result["mip"] for result in results], axis=0)
-    best_phi = np.stack([result["best_phi"] for result in results], axis=0)
-    best_theta = np.stack([result["best_theta"] for result in results], axis=0)
-    best_psi = np.stack([result["best_psi"] for result in results], axis=0)
-    best_defocus = np.stack([result["best_defocus"] for result in results], axis=0)
-    best_pixel_size = np.stack(
-        [result["best_pixel_size"] for result in results], axis=0
-    )
+    best_index = np.stack([result["best_global_index"] for result in results], axis=0)
+
+    # Find the maximum MIP across all devices, then decode the best index
     mip_max = mips.max(axis=0)
     mip_argmax = mips.argmax(axis=0)
+    best_index = np.take_along_axis(best_index, mip_argmax[None, ...], axis=0)[0]
 
-    best_phi = np.take_along_axis(best_phi, mip_argmax[None, ...], axis=0)
-    best_theta = np.take_along_axis(best_theta, mip_argmax[None, ...], axis=0)
-    best_psi = np.take_along_axis(best_psi, mip_argmax[None, ...], axis=0)
-    best_defocus = np.take_along_axis(best_defocus, mip_argmax[None, ...], axis=0)
-    best_pixel_size = np.take_along_axis(best_pixel_size, mip_argmax[None, ...], axis=0)
-    best_phi = best_phi[0]
-    best_theta = best_theta[0]
-    best_psi = best_psi[0]
-    best_defocus = best_defocus[0]
-    best_pixel_size = best_pixel_size[0]
     # Sum the sums and squared sums of the cross-correlation values
     correlation_sum = np.stack(
         [result["correlation_sum"] for result in results], axis=0
@@ -69,31 +50,49 @@ def aggregate_distributed_results(
         [result["correlation_squared_sum"] for result in results], axis=0
     ).sum(axis=0)
 
-    # NOTE: Currently only tracking total number of projections for statistics,
-    # but could be future case where number of projections calculated on each
-    # device is necessary for some statistical computation.
-    total_projections = sum(result["total_projections"] for result in results)
-
     # Cast back to torch tensors on the CPU
     mip_max = torch.from_numpy(mip_max)
-    best_phi = torch.from_numpy(best_phi)
-    best_theta = torch.from_numpy(best_theta)
-    best_psi = torch.from_numpy(best_psi)
-    best_defocus = torch.from_numpy(best_defocus)
-    best_pixel_size = torch.from_numpy(best_pixel_size)
+    best_index = torch.from_numpy(best_index)
     correlation_sum = torch.from_numpy(correlation_sum)
     correlation_squared_sum = torch.from_numpy(correlation_squared_sum)
 
     return {
         "mip": mip_max,
-        "best_phi": best_phi,
-        "best_theta": best_theta,
-        "best_psi": best_psi,
-        "best_defocus": best_defocus,
+        "best_global_index": best_index,
         "correlation_sum": correlation_sum,
         "correlation_squared_sum": correlation_squared_sum,
-        "total_projections": total_projections,
     }
+
+
+def decode_global_search_index(
+    global_indices: torch.Tensor,  # integer tensor
+    pixel_values: torch.Tensor,  # (num_cs,)
+    defocus_values: torch.Tensor,  # (num_defocus,)
+    euler_angles: torch.Tensor,  # (num_orientations, 3)
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Decode flattened global indices back into (cs, defocus, orientation)."""
+    _ = pixel_values  # Unused, but possible to add in future
+
+    # num_cs = pixel_values.shape[0]
+    num_defocus = defocus_values.shape[0]
+    num_orientations = euler_angles.shape[0]
+
+    stride_cs = num_defocus * num_orientations
+    stride_defocus = num_orientations
+
+    # Calculate the indexes for each "best" array
+    # pixel_idx = global_indices // stride_cs
+    rem = global_indices % stride_cs
+    defocus_idx = rem // stride_defocus
+    orientations_idx = rem % stride_defocus
+
+    phi = euler_angles[orientations_idx, 0]
+    theta = euler_angles[orientations_idx, 1]
+    psi = euler_angles[orientations_idx, 2]
+    defocus = defocus_values[defocus_idx]
+    # pixels = pixel_values[pixel_idx]
+
+    return phi, theta, psi, defocus
 
 
 def correlation_sum_and_squared_sum_to_mean_and_variance(

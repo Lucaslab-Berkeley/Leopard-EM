@@ -44,8 +44,8 @@ preprocessing_filters:
   bandpass_filter:
     enabled: false
     falloff: null
-    high_freq_cutoff: null  # Both high/low in terms of Nyquist frequency
-    low_freq_cutoff: null   # e.g. low-pass to 3 Å @ 1.06 Å/px would be 0.353
+    high_freq_cutoff: null  # Both in terms of Nyquist frequency (e.g. low-pass to 3 Å @ 1.06 Å/px would be high_freq_cutoff=0.353)
+    low_freq_cutoff: null
 computational_config:
   gpu_ids:
   - 0

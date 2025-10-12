@@ -10,7 +10,7 @@ from ttsim3d.models import Simulator
 
 from leopard_em.backend.core_refine_template import core_refine_template
 from leopard_em.pydantic_models.config import (
-    ComputationalConfig,
+    ComputationalConfigRefine,
     PixelSizeSearchConfig,
     PreprocessingFilters,
 )
@@ -33,7 +33,7 @@ class OptimizeTemplateManager(BaseModel2DTM):
         Configuration for pixel size fine search.
     preprocessing_filters : PreprocessingFilters
         Filters to apply to the particle images.
-    computational_config : ComputationalConfig
+    computational_config : ComputationalConfigRefine
         What computational resources to allocate for the program.
     simulator : Simulator
         The simulator object.
@@ -55,7 +55,7 @@ class OptimizeTemplateManager(BaseModel2DTM):
     pixel_size_coarse_search: PixelSizeSearchConfig
     pixel_size_fine_search: PixelSizeSearchConfig
     preprocessing_filters: PreprocessingFilters
-    computational_config: ComputationalConfig
+    computational_config: ComputationalConfigRefine
     simulator: Simulator
 
     # Excluded tensors
