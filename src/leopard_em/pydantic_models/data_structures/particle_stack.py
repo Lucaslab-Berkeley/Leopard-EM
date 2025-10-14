@@ -482,6 +482,7 @@ class ParticleStack(BaseModel2DTM):
             if apply_global_filtering and preprocessing_filters is not None:
                 image_dft = torch.fft.rfftn(img)  # pylint: disable=not-callable
                 image_dft[0, 0] = 0 + 0j
+                # pylint: disable=possibly-used-before-assignment
                 bandpass_filter = bp_cfg.calculate_bandpass_filter(image_dft.shape)
                 cumulative_filter = preprocessing_filters.get_combined_filter(
                     ref_img_rfft=image_dft,
@@ -492,7 +493,13 @@ class ParticleStack(BaseModel2DTM):
                     cumulative_fourier_filters=cumulative_filter,
                     bandpass_filter=bandpass_filter,
                 )
+
+                # NOTE: Above function call normalizes the image w.r.t. a full image
+                # cross correlation. We are now doing cropped image cross-correlation,
+                # so scale the normalization by the relative box area to the full image.
                 img = torch.fft.irfftn(image_dft)  # pylint: disable=not-callable
+                img_h, img_w = img.shape[-2:]
+                img *= ((img_h * img_w) / ((box_h + 1) * (box_w + 1))) ** 0.5
 
             # Get the positions as numpy arrays for indexing
             pos_y = self._df.loc[indexes, y_col].to_numpy()
