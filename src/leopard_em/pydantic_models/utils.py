@@ -366,7 +366,7 @@ def setup_images_filters_particle_stack(
         The 3D template volume.
     apply_global_filtering : bool, optional
         If True, apply filtering to the full micrograph before particle extraction.
-        If False, filter are calculated and applied to the cropped particle images.
+        If False, filters are calculated and applied to the cropped particle images.
         Default is True.
 
     Returns
@@ -442,7 +442,7 @@ def setup_particle_backend_kwargs(
         The relative pixel size values to search over.
     apply_global_filtering : bool
         If True, apply filtering to the full micrograph before particle extraction.
-        If False, filter are calculated and applied to the cropped particle images.
+        If False, filters are calculated and applied to the cropped particle images.
     device_list : list
         List of computational devices to use.
 
