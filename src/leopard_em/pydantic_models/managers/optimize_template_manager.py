@@ -105,7 +105,7 @@ class OptimizeTemplateManager(BaseModel2DTM):
         output_text_path: str,
         write_individual_csv: bool = False,
         min_snr: float | None = None,
-        best_n: int = 6,
+        best_n: int | None = None,
     ) -> None:
         """Run the refine template program and saves the resultant DataFrame to csv.
 
@@ -120,9 +120,11 @@ class OptimizeTemplateManager(BaseModel2DTM):
             Minimum SNR threshold to filter particles.
             If provided, all particles with SNR above this threshold are used.
             Defaults to None.
-        best_n : int
-            Number of best particles to use for SNR calculation. Defaults to 6.
-            If both min_snr and best_n are provided, best_n used and a warning issued.
+        best_n : int | None
+            Number of best particles to use for SNR calculation. Defaults to None.
+            If both min_snr and best_n are provided, applies both filters: first min_snr
+            threshold, then limits to best_n particles.
+            If neither is provided, uses min_snr=8 as default.
         """
         if self.pixel_size_coarse_search.enabled:
             # Create a file for logging all iterations
@@ -149,7 +151,7 @@ class OptimizeTemplateManager(BaseModel2DTM):
         output_text_path: str | None = None,
         write_individual_csv: bool = False,
         min_snr: float | None = None,
-        best_n: int = 6,
+        best_n: int | None = None,
     ) -> float:
         """Optimize the pixel size of the template volume.
 
@@ -165,8 +167,8 @@ class OptimizeTemplateManager(BaseModel2DTM):
             Defaults to False.
         min_snr : float | None
             Minimum SNR threshold to filter particles. Defaults to None.
-        best_n : int
-            Number of best particles to use for SNR calculation. Defaults to 6.
+        best_n : int | None
+            Number of best particles to use for SNR calculation. Defaults to None.
 
         Returns
         -------
@@ -259,7 +261,7 @@ class OptimizeTemplateManager(BaseModel2DTM):
         output_text_path: str | None = None,
         write_individual_csv: bool = False,
         min_snr: float | None = None,
-        best_n: int = 6,
+        best_n: int | None = None,
     ) -> float:
         """Evaluate the template pixel size.
 
@@ -275,8 +277,8 @@ class OptimizeTemplateManager(BaseModel2DTM):
             Defaults to False.
         min_snr : float | None
             Minimum SNR threshold to filter particles. Defaults to None.
-        best_n : int
-            Number of best particles to use for SNR calculation. Defaults to 6.
+        best_n : int | None
+            Number of best particles to use for SNR calculation. Defaults to None.
 
         Returns
         -------
@@ -327,7 +329,7 @@ class OptimizeTemplateManager(BaseModel2DTM):
         self,
         result: dict[str, np.ndarray],
         min_snr: float | None = None,
-        best_n: int = 6,
+        best_n: int | None = None,
     ) -> float:
         """Convert optimize template result to mean SNR.
 
@@ -339,9 +341,10 @@ class OptimizeTemplateManager(BaseModel2DTM):
             Minimum SNR threshold to filter particles.
             If provided, all particles with SNR above
             this threshold are used. Defaults to None.
-        best_n : int
-            Number of best particles to use for SNR calculation. Defaults to 6.
-            If both min_snr and best_n are provided, best_n used and a warning issued.
+        best_n : int | None
+            Number of best particles to use for SNR calculation. Defaults to None.
+            If both min_snr and best_n are provided, applies both filters: first min_snr
+            threshold, then limits to best_n particles.
 
         Returns
         -------
@@ -350,16 +353,22 @@ class OptimizeTemplateManager(BaseModel2DTM):
         """
         # Filter out any infinite or NaN values
         # NOTE: There should not be NaNs or infs, will follow up later
+        min_snr_default = 8.0
         refined_scaled_mip = result["refined_z_score"]
         refined_scaled_mip = refined_scaled_mip[np.isfinite(refined_scaled_mip)]
 
         # Handle filtering logic
-        if min_snr is not None and best_n != 6:
-            print(
-                "Warning: Both min_snr and best_n were provided. "
-                f"Using best_n={best_n} and ignoring min_snr={min_snr}."
-            )
-            # Use best_n
+        if min_snr is not None and best_n is not None:
+            # Use both filters: first min_snr threshold, then limit to best_n
+            refined_scaled_mip = refined_scaled_mip[refined_scaled_mip >= min_snr]
+            if len(refined_scaled_mip) == 0:
+                print(
+                    f"Warning: No particles found with SNR >= {min_snr}. "
+                    "Using all particles instead."
+                )
+                refined_scaled_mip = result["refined_z_score"]
+                refined_scaled_mip = refined_scaled_mip[np.isfinite(refined_scaled_mip)]
+            # Then limit to best_n
             if len(refined_scaled_mip) > best_n:
                 refined_scaled_mip = np.sort(refined_scaled_mip)[-best_n:]
         elif min_snr is not None:
@@ -372,10 +381,22 @@ class OptimizeTemplateManager(BaseModel2DTM):
                 )
                 refined_scaled_mip = result["refined_z_score"]
                 refined_scaled_mip = refined_scaled_mip[np.isfinite(refined_scaled_mip)]
-        else:
-            # Use best_n (default behavior)
+        elif best_n is not None:
+            # Use best_n
             if len(refined_scaled_mip) > best_n:
                 refined_scaled_mip = np.sort(refined_scaled_mip)[-best_n:]
+        else:
+            # Default behavior: use min_snr=8
+            refined_scaled_mip = refined_scaled_mip[
+                refined_scaled_mip >= min_snr_default
+            ]
+            if len(refined_scaled_mip) == 0:
+                print(
+                    f"Warning: No particles found with SNR >= {min_snr_default}. "
+                    "Using all particles instead."
+                )
+                refined_scaled_mip = result["refined_z_score"]
+                refined_scaled_mip = refined_scaled_mip[np.isfinite(refined_scaled_mip)]
 
         # Printing out the results to console
         print(
