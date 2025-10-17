@@ -106,6 +106,7 @@ class OptimizeTemplateManager(BaseModel2DTM):
         write_individual_csv: bool = False,
         min_snr: float | None = None,
         best_n: int | None = None,
+        consecutive_threshold: int = 2,
     ) -> None:
         """Run the refine template program and saves the resultant DataFrame to csv.
 
@@ -125,6 +126,9 @@ class OptimizeTemplateManager(BaseModel2DTM):
             If both min_snr and best_n are provided, applies both filters: first min_snr
             threshold, then limits to best_n particles.
             If neither is provided, uses min_snr=8 as default.
+        consecutive_threshold : int
+            Number of consecutive iterations with decreasing SNR to stop the search.
+            Defaults to 2.
         """
         if self.pixel_size_coarse_search.enabled:
             # Create a file for logging all iterations
@@ -139,6 +143,7 @@ class OptimizeTemplateManager(BaseModel2DTM):
                 write_individual_csv,
                 min_snr,
                 best_n,
+                consecutive_threshold,
             )
             print(f"Optimal template px: {optimal_template_px:.3f} Å")
             # print this to the text file
@@ -152,6 +157,7 @@ class OptimizeTemplateManager(BaseModel2DTM):
         write_individual_csv: bool = False,
         min_snr: float | None = None,
         best_n: int | None = None,
+        consecutive_threshold: int = 2,
     ) -> float:
         """Optimize the pixel size of the template volume.
 
@@ -169,6 +175,9 @@ class OptimizeTemplateManager(BaseModel2DTM):
             Minimum SNR threshold to filter particles. Defaults to None.
         best_n : int | None
             Number of best particles to use for SNR calculation. Defaults to None.
+        consecutive_threshold : int
+            Number of consecutive iterations with decreasing SNR to stop the search.
+            Defaults to 2.
 
         Returns
         -------
@@ -187,7 +196,7 @@ class OptimizeTemplateManager(BaseModel2DTM):
         coarse_px_values = pixel_size_offsets_coarse + initial_template_px
 
         consecutive_decreases = 0
-        consecutive_threshold = 2
+        consecutive_threshold_coarse = 2
         previous_snr = float("-inf")
         for px in coarse_px_values:
             snr = self.evaluate_template_px(
@@ -210,9 +219,9 @@ class OptimizeTemplateManager(BaseModel2DTM):
                 consecutive_decreases = 0
             else:
                 consecutive_decreases += 1
-                if consecutive_decreases >= consecutive_threshold:
+                if consecutive_decreases >= consecutive_threshold_coarse:
                     print(
-                        f"SNR decreased for {consecutive_threshold} iterations. "
+                        f"SNR decreased for {consecutive_threshold_coarse} iterations. "
                         f"Stopping coarse px search."
                     )
                     break
@@ -295,6 +304,7 @@ class OptimizeTemplateManager(BaseModel2DTM):
             base, _ = os.path.splitext(output_text_path)
             csv_path = f"{base}_pix={px:.3f}.csv"
             self.refine_result_to_dataframe(csv_path, result)
+            print(f"Saved result to {csv_path}")
 
         mean_snr = self.results_to_snr(result, min_snr=min_snr, best_n=best_n)
         return mean_snr
