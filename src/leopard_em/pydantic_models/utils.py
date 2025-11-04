@@ -349,6 +349,7 @@ def setup_images_filters_particle_stack(
     particle_stack: "ParticleStack",
     preprocessing_filters: "PreprocessingFilters",
     template: torch.Tensor,
+    apply_global_filtering: bool = True,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Extract and preprocess particle images and calculate filters.
 
@@ -363,6 +364,10 @@ def setup_images_filters_particle_stack(
         Filters to apply to the particle images.
     template : torch.Tensor
         The 3D template volume.
+    apply_global_filtering : bool, optional
+        If True, apply filtering to the full micrograph before particle extraction.
+        If False, filters are calculated and applied to the cropped particle images.
+        Default is True.
 
     Returns
     -------
@@ -374,6 +379,8 @@ def setup_images_filters_particle_stack(
     """
     # Extract out the regions of interest (particles) based on the particle stack
     particle_images = particle_stack.construct_image_stack(
+        preprocessing_filters=preprocessing_filters,
+        apply_global_filtering=apply_global_filtering,
         pos_reference="top-left",
         padding_value=0.0,
         handle_bounds="pad",
@@ -384,21 +391,6 @@ def setup_images_filters_particle_stack(
     # pylint: disable=E1102
     particle_images_dft = torch.fft.rfftn(particle_images, dim=(-2, -1))
     particle_images_dft[..., 0, 0] = 0.0 + 0.0j  # Zero out DC component
-
-    bandpass_filter = preprocessing_filters.bandpass_filter.calculate_bandpass_filter(
-        particle_images_dft.shape[-2:]
-    )
-
-    # Calculate and apply the filters for the particle image stack
-    filter_stack = particle_stack.construct_filter_stack(
-        preprocessing_filters, output_shape=particle_images_dft.shape[-2:]
-    )
-
-    particle_images_dft = preprocess_image(
-        image_rfft=particle_images_dft,
-        cumulative_fourier_filters=filter_stack,
-        bandpass_filter=bandpass_filter,
-    )
 
     # Calculate the filters applied to each template (besides CTF)
     projective_filters = particle_stack.construct_filter_stack(
@@ -424,6 +416,7 @@ def setup_particle_backend_kwargs(
     euler_angle_offsets: torch.Tensor,
     defocus_offsets: torch.Tensor,
     pixel_size_offsets: torch.Tensor,
+    apply_global_filtering: bool,
     device_list: list,
 ) -> dict[str, Any]:
     """Create common kwargs dictionary for template backend functions.
@@ -447,6 +440,9 @@ def setup_particle_backend_kwargs(
         The relative defocus values to search over.
     pixel_size_offsets : torch.Tensor
         The relative pixel size values to search over.
+    apply_global_filtering : bool
+        If True, apply filtering to the full micrograph before particle extraction.
+        If False, filters are calculated and applied to the cropped particle images.
     device_list : list
         List of computational devices to use.
 
@@ -476,7 +472,7 @@ def setup_particle_backend_kwargs(
         template_dft,
         projective_filters,
     ) = setup_images_filters_particle_stack(
-        particle_stack, preprocessing_filters, template
+        particle_stack, preprocessing_filters, template, apply_global_filtering
     )
 
     # The best defocus values for each particle (+ astigmatism)

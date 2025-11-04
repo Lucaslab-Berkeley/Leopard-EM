@@ -37,6 +37,10 @@ class OptimizeTemplateManager(BaseModel2DTM):
         What computational resources to allocate for the program.
     simulator : Simulator
         The simulator object.
+    apply_global_filtering : bool
+        If True, apply filtering to the full micrograph before particle extraction.
+        If False, filter are calculated and applied to the cropped particle images.
+        Default is True.
 
     Methods
     -------
@@ -57,6 +61,8 @@ class OptimizeTemplateManager(BaseModel2DTM):
     preprocessing_filters: PreprocessingFilters
     computational_config: ComputationalConfigRefine
     simulator: Simulator
+
+    apply_global_filtering: bool = True
 
     # Excluded tensors
     template_volume: ExcludedTensor
@@ -97,6 +103,7 @@ class OptimizeTemplateManager(BaseModel2DTM):
             euler_angle_offsets=euler_angle_offsets,
             defocus_offsets=defocus_offsets,
             pixel_size_offsets=pixel_size_offsets,
+            apply_global_filtering=self.apply_global_filtering,
             device_list=self.computational_config.gpu_devices,
         )
 
