@@ -180,6 +180,8 @@ class MatchTemplateManager(BaseModel2DTM):
             image_rfft=image_dft,
             cumulative_fourier_filters=cumulative_filter_image,
             bandpass_filter=bandpass_filter,
+            full_image_shape=(image.shape[-2], image.shape[-1]),
+            extracted_box_shape=(image.shape[-2], image.shape[-1]),
         )
 
         # Calculate the CTF filters at each defocus value

@@ -11,7 +11,6 @@ from pydantic import ConfigDict
 from leopard_em.pydantic_models.config import PreprocessingFilters
 from leopard_em.pydantic_models.custom_types import BaseModel2DTM, ExcludedTensor
 from leopard_em.pydantic_models.formats import MATCH_TEMPLATE_DF_COLUMN_ORDER
-from leopard_em.pydantic_models.utils import preprocess_image
 from leopard_em.utils.data_io import load_mrc_image
 
 TORCH_TO_NUMPY_PADDING_MODE = {
@@ -371,10 +370,46 @@ class ParticleStack(BaseModel2DTM):
         x_col = "refined_pos_x" if "refined_pos_x" in self._df.columns else "pos_x"
         return y_col, x_col
 
+    def load_images_grouped_by_column(
+        self, column_name: str
+    ) -> tuple[torch.Tensor, list[pd.Index]]:
+        """Load images grouped by a column and return images as a tensor with indexes.
+
+        Parameters
+        ----------
+        column_name : str
+            The column name to group by (e.g., "micrograph_path" or "mip_path").
+
+        Returns
+        -------
+        tuple[torch.Tensor, list[pd.Index]]
+            A tuple containing:
+            - A tensor of loaded images with shape (N, H, W) where N is the number of
+              unique images and (H, W) is the image size
+            - A list of pandas Index objects containing the row indexes for particles
+              from each corresponding image
+        """
+        if column_name not in self._df.columns:
+            raise ValueError(f"Column '{column_name}' not found in the DataFrame.")
+
+        # Find the indexes in the DataFrame that correspond to each unique image
+        image_index_groups = self._df.groupby(column_name).groups
+        images_list = []
+        indices = []
+        for img_path, indexes in image_index_groups.items():
+            img = load_mrc_image(img_path)
+            images_list.append(img)
+            indices.append(indexes)
+
+        # Stack images into a tensor (N, H, W)
+        images_tensor = torch.stack(images_list, dim=0)
+        return images_tensor, indices
+
     def construct_image_stack(
         self,
-        preprocessing_filters: PreprocessingFilters | None = None,
-        apply_global_filtering: bool = True,
+        images: torch.Tensor,
+        indices: list[pd.Index],
+        extraction_size: tuple[int, int],
         pos_reference: Literal["center", "top-left"] = "top-left",
         handle_bounds: Literal["pad", "error"] = "pad",
         padding_mode: Literal["constant", "reflect", "replicate"] = "constant",
@@ -425,14 +460,15 @@ class ParticleStack(BaseModel2DTM):
 
         Parameters
         ----------
-        preprocessing_filters : PreprocessingFilters | None, optional
-            The preprocessing filters to apply. If None, no filtering is applied. By
-            default None.
-        apply_global_filtering : bool, optional
-            Whether to apply filtering to full micrograph before extraction or to the
-            cropped images after extraction, by default True (apply filtering to full
-            image). If False, filtering will be applied to the cropped images after
-            extraction.
+        images : torch.Tensor
+            A tensor of loaded images with shape (N, H, W) where N is the number of
+            images and (H, W) is the image size.
+        indices : list[pd.Index]
+            A list of pandas Index objects containing the row indexes for particles
+            from each corresponding image. Should be the same length as the first
+            dimension of `images`.
+        extraction_size : tuple[int, int]
+            The size of the extracted boxes in pixels (height, width).
         pos_reference : Literal["center", "top-left"], optional
             The reference point for the positions, by default "top-left". If "center",
             the boxes extracted will be
@@ -465,42 +501,21 @@ class ParticleStack(BaseModel2DTM):
         # Determine which position columns to use (refined if available)
         y_col, x_col = self._get_position_reference_columns()
 
-        if preprocessing_filters is not None:
-            bp_cfg = preprocessing_filters.bandpass_filter
-
         # Create an empty tensor to store the image stack
         h, w = self.original_template_size
         box_h, box_w = self.extracted_box_size
-        image_stack = torch.zeros((self.num_particles, *self.extracted_box_size))
+        image_stack = torch.zeros((self.num_particles, *extraction_size))
 
-        # Find the indexes in the DataFrame that correspond to each unique image
-        image_index_groups = self._df.groupby("micrograph_path").groups
-        for img_path, indexes in image_index_groups.items():
-            img = load_mrc_image(img_path)
+        # Verify that the number of images matches the number of indices
+        if images.shape[0] != len(indices):
+            raise ValueError(
+                f"Number of images ({images.shape[0]}) does not match the number of "
+                f"indices ({len(indices)})."
+            )
 
-            # If global filtering, process the image before extraction
-            if apply_global_filtering and preprocessing_filters is not None:
-                image_dft = torch.fft.rfftn(img)  # pylint: disable=not-callable
-                image_dft[0, 0] = 0 + 0j
-                # pylint: disable=possibly-used-before-assignment
-                bandpass_filter = bp_cfg.calculate_bandpass_filter(image_dft.shape)
-                cumulative_filter = preprocessing_filters.get_combined_filter(
-                    ref_img_rfft=image_dft,
-                    output_shape=image_dft.shape[-2:],
-                )
-                image_dft = preprocess_image(
-                    image_rfft=image_dft,
-                    cumulative_fourier_filters=cumulative_filter,
-                    bandpass_filter=bandpass_filter,
-                )
-
-                # NOTE: Above function call normalizes the image w.r.t. a full image
-                # cross correlation. We are now doing cropped image cross-correlation,
-                # so scale the normalization by the relative box area to the full image.
-                img = torch.fft.irfftn(image_dft)  # pylint: disable=not-callable
-                img_h, img_w = img.shape[-2:]
-                img *= ((img_h * img_w) / ((box_h + 1) * (box_w + 1))) ** 0.5
-
+        # Loop over each image and its corresponding indexes
+        for i, indexes in enumerate(indices):
+            img = images[i]
             # Get the positions as numpy arrays for indexing
             pos_y = self._df.loc[indexes, y_col].to_numpy()
             pos_x = self._df.loc[indexes, x_col].to_numpy()
@@ -512,10 +527,10 @@ class ParticleStack(BaseModel2DTM):
                 pos_x = pos_x - w // 2
 
             # Our reference is now a top-left corner of a box of the original template
-            # shape, BUT we want a slightly larger box of extracted_box_size AND this
+            # shape, BUT we want a slightly larger box of extraction_size AND this
             # box to be centered around the particle. Therefore, need to shift the
             # position half the difference between the original template size and
-            # the extracted box size.
+            # the extraction size.
             pos_y -= (box_h - h) // 2
             pos_x -= (box_w - w) // 2
 
@@ -529,7 +544,7 @@ class ParticleStack(BaseModel2DTM):
                 img,
                 pos_y,
                 pos_x,
-                self.extracted_box_size,
+                extraction_size,
                 pos_reference="top-left",
                 handle_bounds=handle_bounds,
                 padding_mode=padding_mode,
@@ -537,124 +552,59 @@ class ParticleStack(BaseModel2DTM):
             )
             image_stack[indexes] = cropped_images
 
-        # If not global filtering, apply filtering to the cropped images
-        if not apply_global_filtering and preprocessing_filters is not None:
-            output_shape = (box_h, box_w // 2 + 1)
-            bandpass_filter = bp_cfg.calculate_bandpass_filter(output_shape)
-            cumulative_filter = self.construct_filter_stack(
-                preprocess_filters=preprocessing_filters,
-                output_shape=output_shape,
-            )
-
-            image_stack_dft = torch.fft.rfftn(image_stack, dim=(-2, -1))  # pylint: disable=not-callable
-            image_stack_dft[..., 0, 0] = 0 + 0j  # Zero out DC component
-            image_stack_dft = preprocess_image(
-                image_rfft=image_stack_dft,
-                cumulative_fourier_filters=cumulative_filter,
-                bandpass_filter=bandpass_filter,
-            )
-            image_stack = torch.fft.irfftn(image_stack_dft, dim=(-2, -1))  # pylint: disable=not-callable
-
         self.image_stack = image_stack
 
         return image_stack
 
-    def construct_cropped_statistic_stack(
+    def construct_image_filters(
         self,
-        stat: Literal[
-            "mip",
-            "scaled_mip",
-            "correlation_average",
-            "correlation_variance",
-            "defocus",
-            "psi",
-            "theta",
-            "phi",
-        ],
-        handle_bounds: Literal["pad", "error"] = "pad",
-        padding_mode: Literal["constant", "reflect", "replicate"] = "constant",
-        padding_value: float = 0.0,
+        preprocess_filters: PreprocessingFilters,
+        output_shape: tuple[int, int],
+        images_dft: torch.Tensor,
     ) -> torch.Tensor:
-        """Return a tensor of the specified statistic for each cropped image.
+        """Get stack of Fourier filters from filter config and reference images.
 
-        NOTE: This function is very similar to `construct_image_stack` but returns the
-        statistic in one of the result maps. Shape here is (N, H - h + 1, W - w + 1).
+        Note that here the filters are assumed to be applied globally (i.e. no local
+        whitening, etc. is being done). Whitening filters are calculated with reference
+        to each image (micrograph or particle).
 
         Parameters
         ----------
-        stat : Literal["mip", "scaled_mip", "correlation_average",
-            "correlation_variance", "defocus", "psi", "theta", "phi"]
-            The statistic to extract from the DataFrame.
-        handle_bounds : Literal["pad", "clip", "error"], optional
-            How to handle the bounds of the image, by default "pad". If "pad", the image
-            will be padded with the padding value based on the padding mode. If "error",
-            an error will be raised if any region exceeds the image bounds. NOTE:
-            clipping is not supported since returned stack may have inhomogeneous sizes.
-        padding_mode : Literal["constant", "reflect", "replicate"], optional
-            The padding mode to use when padding the image, by default "constant".
-            "constant" pads with the value `padding_value`, "reflect" pads with the
-            reflection of the image at the edge, and "replicate" pads with the last
-            pixel of the image. These match the modes available in
-            `torch.nn.functional.pad`.
-        padding_value : float, optional
-            The value to use for padding when `padding_mode` is "constant", by default
-            0.0.
+        preprocess_filters : PreprocessingFilters
+            Configuration object of filters to apply.
+        output_shape : tuple[int, int]
+            What shape along the last two dimensions the filters should be.
+        images_dft : torch.Tensor
+            A tensor of images with shape (N, H, W) where N is the number of images
+            (micrographs or particles) and (H, W) is the image size. in Fourier space.
 
         Returns
         -------
         torch.Tensor
-            The stack of statistics with shape (N, H - h + 1, W - w + 1) where N is the
-            number of particles and (H, W) is the extracted box size with (h, w) being
-            the original template size.
+            The stack of filters with shape (N, h, w) where N is the number of images
+            and (h, w) is the output shape.
         """
-        stat_col = f"{stat}_path"
-        y_col, x_col = self._get_position_reference_columns()
+        num_images = images_dft.shape[0]
+        filter_stack = torch.zeros((num_images, *output_shape))
 
-        if stat_col not in self._df.columns:
-            raise ValueError(f"Statistic '{stat}' not found in the DataFrame.")
-
-        # Create an empty tensor to store the stat stack
-        h, w = self.original_template_size
-        box_h, box_w = self.extracted_box_size
-        stat_stack = torch.zeros((self.num_particles, box_h - h + 1, box_w - w + 1))
-
-        # Find the indexes in the DataFrame that correspond to each unique stat map
-        stat_index_groups = self._df.groupby(stat_col).groups
-
-        # Loop over each unique stat map and extract the particles
-        for stat_path, indexes in stat_index_groups.items():
-            stat_map = load_mrc_image(stat_path)
-
-            # with reference to the exact pixel of the statistic (top-left)
-            # need to account for relative extracted box size
-            pos_y = self._df.loc[indexes, y_col].to_numpy()
-            pos_x = self._df.loc[indexes, x_col].to_numpy()
-
-            # NOTE: For both references, we need to shift both x and y
-            # by half the different of the original template shape and extracted box
-            # so that the padding around the statistic peak is symmetric.
-            pos_y -= (box_h - h) // 2
-            pos_x -= (box_w - w) // 2
-
-            pos_y = torch.tensor(pos_y)
-            pos_x = torch.tensor(pos_x)
-
-            cropped_stat_maps = get_cropped_image_regions(
-                stat_map,
-                pos_y,
-                pos_x,
-                (box_h - h + 1, box_w - w + 1),
-                pos_reference="top-left",
-                handle_bounds=handle_bounds,
-                padding_mode=padding_mode,
-                padding_value=padding_value,
+        # Loop over each image and compute the filter
+        for i in range(num_images):
+            img_dft = images_dft[i]
+            cumulative_filter = preprocess_filters.get_combined_filter(
+                ref_img_rfft=img_dft,
+                output_shape=output_shape,
             )
-            stat_stack[indexes] = cropped_stat_maps
 
-        return stat_stack
+            filter_stack[i] = cumulative_filter
 
-    def construct_filter_stack(
-        self, preprocess_filters: PreprocessingFilters, output_shape: tuple[int, int]
+        return filter_stack
+
+    def construct_projective_filters(
+        self,
+        preprocess_filters: PreprocessingFilters,
+        output_shape: tuple[int, int],
+        images_dft: torch.Tensor,
+        indices: list[pd.Index],
     ) -> torch.Tensor:
         """Get stack of Fourier filters from filter config and reference micrographs.
 
@@ -668,27 +618,35 @@ class ParticleStack(BaseModel2DTM):
             Configuration object of filters to apply.
         output_shape : tuple[int, int]
             What shape along the last two dimensions the filters should be.
+        images_dft : torch.Tensor
+            A tensor of micrograph images in Fourier space with shape (N, H, W) where N
+            is the number of unique micrographs and (H, W) is the Fourier space size.
+        indices : list[pd.Index]
+            A list of pandas Index objects containing the row indexes for particles
+            from each corresponding micrograph. Should be the same length as the first
+            dimension of `images_dft`.
 
         Returns
         -------
         torch.Tensor
-            The stack of filters with shape (N, h, w) where N is the number of particles
+            The stack of filters with shape (M, h, w) where M is the number of particles
             and (h, w) is the output shape.
         """
         # Create an empty tensor to store the filter stack
         filter_stack = torch.zeros((self.num_particles, *output_shape))
 
-        # Find the indexes in the DataFrame that correspond to each unique image
-        image_index_groups = self._df.groupby("micrograph_path").groups
+        # Verify that the number of images matches the number of indices
+        if images_dft.shape[0] != len(indices):
+            raise ValueError(
+                f"Number of images ({images_dft.shape[0]}) does not match "
+                f"the number of indices ({len(indices)})."
+            )
 
-        # Loop over each unique image and extract the particles
-        for img_path, indexes in image_index_groups.items():
-            img = load_mrc_image(img_path)
-
-            image_dft = torch.fft.rfftn(img)  # pylint: disable=not-callable
-            image_dft[0, 0] = 0 + 0j
+        # Loop over each micrograph and its corresponding indexes
+        for i, indexes in enumerate(indices):
+            img_dft = images_dft[i]
             cumulative_filter = preprocess_filters.get_combined_filter(
-                ref_img_rfft=image_dft,
+                ref_img_rfft=img_dft,
                 output_shape=output_shape,
             )
 

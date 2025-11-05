@@ -18,6 +18,8 @@ def preprocess_image(
     image_rfft: torch.Tensor,
     cumulative_fourier_filters: torch.Tensor,
     bandpass_filter: torch.Tensor,
+    full_image_shape: tuple[int, int],
+    extracted_box_shape: tuple[int, int],
 ) -> torch.Tensor:
     """Preprocesses and normalizes the image based on the given filters.
 
@@ -30,6 +32,10 @@ def preprocess_image(
         randomization filter, bandpass filter, and arbitrary curve filter.
     bandpass_filter : torch.Tensor
         The bandpass filter used for the image. Used for dimensionality normalization.
+    full_image_shape : tuple[int, int]
+        The shape of the full image.
+    extracted_box_shape : tuple[int, int]
+        The shape of the extracted box.
 
     Returns
     -------
@@ -60,6 +66,12 @@ def preprocess_image(
     # by the square root of that number to normalize the image.
     dimensionality = bandpass_filter.sum() + bandpass_filter[:, 1:-1].sum()
     image_rfft *= dimensionality**0.5
+
+    # NOTE: We need to rescale based on the relative area of the extracted box
+    # to the full image.
+    img_h, img_w = full_image_shape
+    box_h, box_w = extracted_box_shape
+    image_rfft *= ((img_h * img_w) / ((box_h) * (box_w))) ** 0.5
 
     return image_rfft
 
@@ -345,6 +357,51 @@ def get_search_tensors(
     return vals
 
 
+def apply_image_filtering(
+    particle_stack: "ParticleStack",
+    preprocessing_filters: "PreprocessingFilters",
+    images_dft: torch.Tensor,
+    full_image_shape: tuple[int, int],
+    extracted_box_shape: tuple[int, int],
+) -> torch.Tensor:
+    """
+    Apply filtering to a set of images.
+
+    Parameters
+    ----------
+    particle_stack : ParticleStack
+        The particle stack
+    preprocessing_filters : PreprocessingFilters
+        Filters to apply to the images.
+    images_dft : torch.Tensor
+        The images in Fourier space.
+    full_image_shape: tuple[int, int]
+        The shape of the full image.
+    extracted_box_shape: tuple[int, int]
+        The shape of the extracted box.
+
+    Returns
+    -------
+    torch.Tensor
+        The filtered images in Fourier space
+    """
+    bandpass_filter = preprocessing_filters.bandpass_filter.calculate_bandpass_filter(
+        images_dft.shape[-2:]
+    )
+    filter_stack = particle_stack.construct_image_filters(
+        preprocessing_filters,
+        output_shape=images_dft.shape[-2:],
+        images_dft=images_dft,
+    )
+    return preprocess_image(
+        image_rfft=images_dft,
+        cumulative_fourier_filters=filter_stack,
+        bandpass_filter=bandpass_filter,
+        full_image_shape=full_image_shape,
+        extracted_box_shape=extracted_box_shape,
+    )
+
+
 def setup_images_filters_particle_stack(
     particle_stack: "ParticleStack",
     preprocessing_filters: "PreprocessingFilters",
@@ -377,27 +434,62 @@ def setup_images_filters_particle_stack(
         - template_dft: The Fourier transformed template
         - projective_filters: Filters applied to the template
     """
+    box_h, box_w = particle_stack.extracted_box_size
+    # Load the micrographs
+    micrograph_images, micrograph_indexes = (
+        particle_stack.load_images_grouped_by_column(column_name="micrograph_path")
+    )
+    img_h, img_w = micrograph_images.shape[-2:]
+    # if global filering, need to apply the filters to the micrographs
+    projective_filters = None
+    if apply_global_filtering:
+        micrograph_images_dft = torch.fft.rfftn(micrograph_images, dim=(-2, -1))  # pylint: disable=not-callable
+        micrograph_images_dft[..., 0, 0] = 0.0 + 0.0j  # Zero out DC component
+        projective_filters = particle_stack.construct_projective_filters(
+            preprocessing_filters,
+            output_shape=(template.shape[-2], template.shape[-1] // 2 + 1),
+            images_dft=micrograph_images_dft,
+            indices=micrograph_indexes,
+        )
+        micrograph_images_dft = apply_image_filtering(
+            particle_stack,
+            preprocessing_filters,
+            micrograph_images_dft,
+            full_image_shape=(img_h, img_w),
+            extracted_box_shape=(box_h + 1, box_w + 1),
+        )
+        micrograph_images = torch.fft.irfftn(  # pylint: disable=not-callable
+            micrograph_images_dft, dim=(-2, -1)
+        )
     # Extract out the regions of interest (particles) based on the particle stack
     particle_images = particle_stack.construct_image_stack(
-        preprocessing_filters=preprocessing_filters,
-        apply_global_filtering=apply_global_filtering,
+        images=micrograph_images,
+        indices=micrograph_indexes,
+        extraction_size=particle_stack.extracted_box_size,
         pos_reference="top-left",
         padding_value=0.0,
         handle_bounds="pad",
-        padding_mode="constant",
+        padding_mode="reflect",  # avoid issues of zeros
     )
 
-    # FFT the particle images
-    # pylint: disable=E1102
-    particle_images_dft = torch.fft.rfftn(particle_images, dim=(-2, -1))
-    particle_images_dft[..., 0, 0] = 0.0 + 0.0j  # Zero out DC component
-
-    # Calculate the filters applied to each template (besides CTF)
-    projective_filters = particle_stack.construct_filter_stack(
-        preprocessing_filters,
-        output_shape=(template.shape[-2], template.shape[-1] // 2 + 1),
-    )
-
+    if not apply_global_filtering:
+        particle_images_dft = torch.fft.rfftn(particle_images, dim=(-2, -1))  # pylint: disable=not-callable
+        particle_images_dft[..., 0, 0] = 0.0 + 0.0j  # Zero out DC component
+        projective_filters = particle_stack.construct_image_filters(
+            preprocessing_filters,
+            output_shape=(template.shape[-2], template.shape[-1] // 2 + 1),
+            images_dft=particle_images_dft,
+        )
+        particle_images_dft = apply_image_filtering(
+            particle_stack,
+            preprocessing_filters,
+            particle_images_dft,
+            full_image_shape=(box_h, box_w),
+            extracted_box_shape=(box_h, box_w),
+        )
+    else:
+        particle_images_dft = torch.fft.rfftn(particle_images, dim=(-2, -1))  # pylint: disable=not-callable
+        # particle_images_dft[..., 0, 0] = 0.0 + 0.0j  # Zero out DC component
     template_dft = volume_to_rfft_fourier_slice(template)
 
     return (
@@ -451,15 +543,38 @@ def setup_particle_backend_kwargs(
     dict[str, Any]
         Dictionary of keyword arguments for backend functions.
     """
-    # Get correlation statistics
-    corr_mean_stack = particle_stack.construct_cropped_statistic_stack(
-        stat="correlation_average",
+    h, w = particle_stack.original_template_size
+    box_h, box_w = particle_stack.extracted_box_size
+    extracted_box_size = (box_h - h + 1, box_w - w + 1)
+    (
+        correlation_avg_images,
+        correlation_avg_indexes,
+    ) = particle_stack.load_images_grouped_by_column(
+        column_name="correlation_average_path"
+    )
+
+    corr_mean_stack = particle_stack.construct_image_stack(
+        images=correlation_avg_images,
+        indices=correlation_avg_indexes,
+        extraction_size=extracted_box_size,
+        pos_reference="top-left",
         handle_bounds="pad",
         padding_mode="constant",
-        padding_value=0.0,  # pad with zeros
+        padding_value=0.0,
     )
-    corr_std_stack = particle_stack.construct_cropped_statistic_stack(
-        stat="correlation_variance",
+
+    (
+        correlation_var_images,
+        correlation_var_indexes,
+    ) = particle_stack.load_images_grouped_by_column(
+        column_name="correlation_variance_path"
+    )
+
+    corr_std_stack = particle_stack.construct_image_stack(
+        images=correlation_var_images,
+        indices=correlation_var_indexes,
+        extraction_size=extracted_box_size,
+        pos_reference="top-left",
         handle_bounds="pad",
         padding_mode="constant",
         padding_value=1e10,  # large to avoid out of bound pixels having inf z-score
@@ -467,6 +582,7 @@ def setup_particle_backend_kwargs(
     corr_std_stack = corr_std_stack**0.5  # Convert variance to standard deviation
 
     # Extract and preprocess images and filters
+
     (
         particle_images_dft,
         template_dft,
