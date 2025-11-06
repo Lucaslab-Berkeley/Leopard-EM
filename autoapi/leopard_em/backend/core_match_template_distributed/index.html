@@ -1,0 +1,2702 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+      
+        <link rel="prev" href="../core_match_template/">
+      
+      
+        <link rel="next" href="../core_refine_template/">
+      
+      
+      <link rel="icon" href="../../../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.6.5">
+    
+    
+      
+        <title>core_match_template_distributed - Leopard-EM: Two-Dimensional Template Matching in Python</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../../../assets/stylesheets/main.8608ea7d.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../../../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("../../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+    
+  </head>
+  
+  
+    <body dir="ltr">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#leopard_em.backend.core_match_template_distributed" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../../../.." title="Leopard-EM: Two-Dimensional Template Matching in Python" class="md-header__button md-logo" aria-label="Leopard-EM: Two-Dimensional Template Matching in Python" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Leopard-EM: Two-Dimensional Template Matching in Python
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              core_match_template_distributed
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      <label class="md-header__button md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+      </label>
+      <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+    
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../../.." title="Leopard-EM: Two-Dimensional Template Matching in Python" class="md-nav__button md-logo" aria-label="Leopard-EM: Two-Dimensional Template Matching in Python" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Leopard-EM: Two-Dimensional Template Matching in Python
+  </label>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../.." class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Home
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  <span class="md-ellipsis">
+    Tutorials
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            Tutorials
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../tutorials/match_template_intro/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    2DTM Introduction
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../tutorials/batch_processing/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Batch Processing
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../tutorials/distributed_match_template/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Distributed Computing
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  <span class="md-ellipsis">
+    Examples
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            Examples
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../examples/01_basic_configuration/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Configuring Pydantic models in Python
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../examples/02_extract_peak_info/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Extracting results from the template matching search
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../examples/03_compare_scoring_metrics/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Comparing 2DTM scoring metrics
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../examples/04_plotting_2dtm_results/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Visualizing 2DTM result
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../examples/05_structure_reprojection/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Structure projections on an Image
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  <span class="md-ellipsis">
+    Programs
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            Programs
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../programs/overview/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Overview
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../programs/match_template/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Match Template details
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../programs/refine_template/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Refine Template details
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../programs/optimize_template/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Optimize Template details
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../programs/constrained_search/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Constrained Search details
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../data_formats/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Program Output Formats
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../benchmarks/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Benchmarks
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../common_issues/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Common Issues
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../contributing/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Contributing
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="0">
+            
+  
+  <span class="md-ellipsis">
+    API Reference
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            API Reference
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9_1" checked>
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../" class="md-nav__link ">
+              
+  
+  <span class="md-ellipsis">
+    leopard_em
+    
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_9_1" id="__nav_9_1_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_9_1_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_9_1">
+            <span class="md-nav__icon md-icon"></span>
+            leopard_em
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9_1_1" >
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../analysis/" class="md-nav__link ">
+              
+  
+  <span class="md-ellipsis">
+    analysis
+    
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_9_1_1" id="__nav_9_1_1_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_9_1_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9_1_1">
+            <span class="md-nav__icon md-icon"></span>
+            analysis
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../analysis/gev_fit_metric/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    gev_fit_metric
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../analysis/match_template_peaks/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    match_template_peaks
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../analysis/pvalue_metric/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    pvalue_metric
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../analysis/utils/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    utils
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../analysis/zscore_metric/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    zscore_metric
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9_1_2" checked>
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../" class="md-nav__link ">
+              
+  
+  <span class="md-ellipsis">
+    backend
+    
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_9_1_2" id="__nav_9_1_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_9_1_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_9_1_2">
+            <span class="md-nav__icon md-icon"></span>
+            backend
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../core_match_template/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    core_match_template
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  <span class="md-ellipsis">
+    core_match_template_distributed
+    
+  </span>
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  <span class="md-ellipsis">
+    core_match_template_distributed
+    
+  </span>
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#leopard_em.backend.core_match_template_distributed" class="md-nav__link">
+    <span class="md-ellipsis">
+      core_match_template_distributed
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#leopard_em.backend.core_match_template_distributed.core_match_template_distributed" class="md-nav__link">
+    <span class="md-ellipsis">
+      core_match_template_distributed
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../core_refine_template/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    core_refine_template
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cross_correlation/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    cross_correlation
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../distributed/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    distributed
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../process_results/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    process_results
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../utils/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    utils
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9_1_3" >
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../pydantic_models/" class="md-nav__link ">
+              
+  
+  <span class="md-ellipsis">
+    pydantic_models
+    
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_9_1_3" id="__nav_9_1_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_9_1_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9_1_3">
+            <span class="md-nav__icon md-icon"></span>
+            pydantic_models
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9_1_3_1" >
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../pydantic_models/config/" class="md-nav__link ">
+              
+  
+  <span class="md-ellipsis">
+    config
+    
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_9_1_3_1" id="__nav_9_1_3_1_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="4" aria-labelledby="__nav_9_1_3_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9_1_3_1">
+            <span class="md-nav__icon md-icon"></span>
+            config
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../pydantic_models/config/computational_config/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    computational_config
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../pydantic_models/config/correlation_filters/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    correlation_filters
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../pydantic_models/config/defocus_search/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    defocus_search
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../pydantic_models/config/orientation_search/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    orientation_search
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../pydantic_models/config/pixel_size_search/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    pixel_size_search
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../pydantic_models/custom_types/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    custom_types
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9_1_3_3" >
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../pydantic_models/data_structures/" class="md-nav__link ">
+              
+  
+  <span class="md-ellipsis">
+    data_structures
+    
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_9_1_3_3" id="__nav_9_1_3_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="4" aria-labelledby="__nav_9_1_3_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9_1_3_3">
+            <span class="md-nav__icon md-icon"></span>
+            data_structures
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../pydantic_models/data_structures/optics_group/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    optics_group
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../pydantic_models/data_structures/particle_stack/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    particle_stack
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../pydantic_models/formats/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    formats
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9_1_3_5" >
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../pydantic_models/managers/" class="md-nav__link ">
+              
+  
+  <span class="md-ellipsis">
+    managers
+    
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_9_1_3_5" id="__nav_9_1_3_5_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="4" aria-labelledby="__nav_9_1_3_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9_1_3_5">
+            <span class="md-nav__icon md-icon"></span>
+            managers
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../pydantic_models/managers/constrained_search_manager/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    constrained_search_manager
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../pydantic_models/managers/match_template_manager/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    match_template_manager
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../pydantic_models/managers/optimize_template_manager/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    optimize_template_manager
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../pydantic_models/managers/refine_template_manager/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    refine_template_manager
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9_1_3_6" >
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../pydantic_models/results/" class="md-nav__link ">
+              
+  
+  <span class="md-ellipsis">
+    results
+    
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_9_1_3_6" id="__nav_9_1_3_6_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="4" aria-labelledby="__nav_9_1_3_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9_1_3_6">
+            <span class="md-nav__icon md-icon"></span>
+            results
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../pydantic_models/results/match_template_result/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    match_template_result
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../pydantic_models/utils/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    utils
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9_1_4" >
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../utils/" class="md-nav__link ">
+              
+  
+  <span class="md-ellipsis">
+    utils
+    
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_9_1_4" id="__nav_9_1_4_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_9_1_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9_1_4">
+            <span class="md-nav__icon md-icon"></span>
+            utils
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../utils/cross_correlation/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    cross_correlation
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../utils/data_io/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    data_io
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../utils/fourier_slice/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    fourier_slice
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#leopard_em.backend.core_match_template_distributed" class="md-nav__link">
+    <span class="md-ellipsis">
+      core_match_template_distributed
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#leopard_em.backend.core_match_template_distributed.core_match_template_distributed" class="md-nav__link">
+    <span class="md-ellipsis">
+      core_match_template_distributed
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+
+  <h1>core_match_template_distributed</h1>
+
+<div class="doc doc-object doc-module">
+
+
+
+<a id="leopard_em.backend.core_match_template_distributed"></a>
+    <div class="doc doc-contents first">
+
+        <p>Distributed multi-node version of the core match_template implementation.</p>
+
+
+
+
+
+
+
+
+
+  <div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="leopard_em.backend.core_match_template_distributed.core_match_template_distributed" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">core_match_template_distributed</span><span class="p">(</span><span class="n">world_size</span><span class="p">,</span> <span class="n">rank</span><span class="p">,</span> <span class="n">local_rank</span><span class="p">,</span> <span class="n">device</span><span class="p">,</span> <span class="n">orientation_batch_size</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">num_cuda_streams</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">backend</span><span class="o">=</span><span class="s1">&#39;streamed&#39;</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">)</span></code>
+
+</h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Distributed multi-node core function for the match template program.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>world_size</code>
+            </td>
+            <td>
+                  <code><span title="int">int</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Total number of processes in the distributed job.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>rank</code>
+            </td>
+            <td>
+                  <code><span title="int">int</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Global rank of this process.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>local_rank</code>
+            </td>
+            <td>
+                  <code><span title="int">int</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Local rank of this process on the current node.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>device</code>
+            </td>
+            <td>
+                  <code><span title="torch.device">device</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The CUDA device to use for this process. This <em>must</em> be a single device.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>orientation_batch_size</code>
+            </td>
+            <td>
+                  <code><span title="int">int</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Number of orientations to process in a single batch, by default 1.</p>
+              </div>
+            </td>
+            <td>
+                  <code>1</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>num_cuda_streams</code>
+            </td>
+            <td>
+                  <code><span title="int">int</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Number of CUDA streams to use for overlapping data transfers and
+computation, by default 1.</p>
+              </div>
+            </td>
+            <td>
+                  <code>1</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>backend</code>
+            </td>
+            <td>
+                  <code><span title="str">str</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The backend to use for computation. Defaults to 'streamed'.
+Must be 'streamed' or 'batched'.</p>
+              </div>
+            </td>
+            <td>
+                  <code>&#39;streamed&#39;</code>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                <code>**kwargs</code>
+            </td>
+            <td>
+                  <code><span title="dict">dict</span>[<span title="str">str</span>, <span title="torch.Tensor">Tensor</span>]</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Additional keyword arguments passed to the single-GPU core function. For the
+zeroth rank this should be a dictionary of Tensor objects with the following
+fields (all other ranks can pass an empty dictionary):
+- image_dft:
+    Real-fourier transform (RFFT) of the image with large image filters
+    already applied. Has shape (H, W // 2 + 1).
+- template_dft:
+    Real-fourier transform (RFFT) of the template volume to take Fourier
+    slices from. Has shape (l, h, w // 2 + 1) with the last dimension being the
+    half-dimension for real-FFT transformation. NOTE: The original template
+    volume should be a cubic volume, i.e. h == w == l.
+- ctf_filters:
+    Stack of CTF filters at different pixel size (Cs) and  defocus values to use
+    in the search. Has shape (num_Cs, num_defocus, h, w // 2 + 1) where num_Cs
+    are the number of pixel sizes searched over, and num_defocus are the number
+    of defocus values searched over.
+- whitening_filter_template: Precomputed whitening filter for the template.
+    Whitening filter for the template volume. Has shape (h, w // 2 + 1).
+    Gets multiplied with the ctf filters to create a filter stack applied to
+    each orientation projection.
+- euler_angles:
+    Euler angles (in 'ZYZ' convention &amp; in units of degrees) to search over. Has
+    shape (num_orientations, 3).
+- defocus_values: 1D tensor of defocus values to search.
+    What defoucs values correspond with the CTF filters, in units of Angstroms.
+    Has shape (num_defocus,).
+- pixel_values: 1D tensor of pixel values to search.
+    What pixel size values correspond with the CTF filters, in units of
+    Angstroms. Has shape (num_Cs,).</p>
+              </div>
+            </td>
+            <td>
+                  <code>{}</code>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+            <details class="quote">
+              <summary>Source code in <code>src/leopard_em/backend/core_match_template_distributed.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal">354</span>
+<span class="normal">355</span>
+<span class="normal">356</span>
+<span class="normal">357</span>
+<span class="normal">358</span>
+<span class="normal">359</span>
+<span class="normal">360</span>
+<span class="normal">361</span>
+<span class="normal">362</span>
+<span class="normal">363</span>
+<span class="normal">364</span>
+<span class="normal">365</span>
+<span class="normal">366</span>
+<span class="normal">367</span>
+<span class="normal">368</span>
+<span class="normal">369</span>
+<span class="normal">370</span>
+<span class="normal">371</span>
+<span class="normal">372</span>
+<span class="normal">373</span>
+<span class="normal">374</span>
+<span class="normal">375</span>
+<span class="normal">376</span>
+<span class="normal">377</span>
+<span class="normal">378</span>
+<span class="normal">379</span>
+<span class="normal">380</span>
+<span class="normal">381</span>
+<span class="normal">382</span>
+<span class="normal">383</span>
+<span class="normal">384</span>
+<span class="normal">385</span>
+<span class="normal">386</span>
+<span class="normal">387</span>
+<span class="normal">388</span>
+<span class="normal">389</span>
+<span class="normal">390</span>
+<span class="normal">391</span>
+<span class="normal">392</span>
+<span class="normal">393</span>
+<span class="normal">394</span>
+<span class="normal">395</span>
+<span class="normal">396</span>
+<span class="normal">397</span>
+<span class="normal">398</span>
+<span class="normal">399</span>
+<span class="normal">400</span>
+<span class="normal">401</span>
+<span class="normal">402</span>
+<span class="normal">403</span>
+<span class="normal">404</span>
+<span class="normal">405</span>
+<span class="normal">406</span>
+<span class="normal">407</span>
+<span class="normal">408</span>
+<span class="normal">409</span>
+<span class="normal">410</span>
+<span class="normal">411</span>
+<span class="normal">412</span>
+<span class="normal">413</span>
+<span class="normal">414</span>
+<span class="normal">415</span>
+<span class="normal">416</span>
+<span class="normal">417</span>
+<span class="normal">418</span>
+<span class="normal">419</span>
+<span class="normal">420</span>
+<span class="normal">421</span>
+<span class="normal">422</span>
+<span class="normal">423</span>
+<span class="normal">424</span>
+<span class="normal">425</span>
+<span class="normal">426</span>
+<span class="normal">427</span>
+<span class="normal">428</span>
+<span class="normal">429</span>
+<span class="normal">430</span>
+<span class="normal">431</span>
+<span class="normal">432</span>
+<span class="normal">433</span>
+<span class="normal">434</span>
+<span class="normal">435</span>
+<span class="normal">436</span>
+<span class="normal">437</span>
+<span class="normal">438</span>
+<span class="normal">439</span>
+<span class="normal">440</span>
+<span class="normal">441</span>
+<span class="normal">442</span>
+<span class="normal">443</span>
+<span class="normal">444</span>
+<span class="normal">445</span>
+<span class="normal">446</span>
+<span class="normal">447</span>
+<span class="normal">448</span>
+<span class="normal">449</span>
+<span class="normal">450</span>
+<span class="normal">451</span>
+<span class="normal">452</span>
+<span class="normal">453</span>
+<span class="normal">454</span>
+<span class="normal">455</span>
+<span class="normal">456</span>
+<span class="normal">457</span>
+<span class="normal">458</span>
+<span class="normal">459</span>
+<span class="normal">460</span>
+<span class="normal">461</span>
+<span class="normal">462</span>
+<span class="normal">463</span>
+<span class="normal">464</span>
+<span class="normal">465</span>
+<span class="normal">466</span>
+<span class="normal">467</span>
+<span class="normal">468</span>
+<span class="normal">469</span>
+<span class="normal">470</span>
+<span class="normal">471</span>
+<span class="normal">472</span>
+<span class="normal">473</span>
+<span class="normal">474</span>
+<span class="normal">475</span>
+<span class="normal">476</span>
+<span class="normal">477</span>
+<span class="normal">478</span>
+<span class="normal">479</span>
+<span class="normal">480</span>
+<span class="normal">481</span>
+<span class="normal">482</span>
+<span class="normal">483</span>
+<span class="normal">484</span>
+<span class="normal">485</span>
+<span class="normal">486</span>
+<span class="normal">487</span>
+<span class="normal">488</span>
+<span class="normal">489</span>
+<span class="normal">490</span>
+<span class="normal">491</span>
+<span class="normal">492</span>
+<span class="normal">493</span>
+<span class="normal">494</span>
+<span class="normal">495</span>
+<span class="normal">496</span>
+<span class="normal">497</span>
+<span class="normal">498</span>
+<span class="normal">499</span>
+<span class="normal">500</span>
+<span class="normal">501</span>
+<span class="normal">502</span>
+<span class="normal">503</span>
+<span class="normal">504</span>
+<span class="normal">505</span>
+<span class="normal">506</span>
+<span class="normal">507</span>
+<span class="normal">508</span>
+<span class="normal">509</span>
+<span class="normal">510</span>
+<span class="normal">511</span>
+<span class="normal">512</span>
+<span class="normal">513</span>
+<span class="normal">514</span>
+<span class="normal">515</span>
+<span class="normal">516</span>
+<span class="normal">517</span>
+<span class="normal">518</span>
+<span class="normal">519</span>
+<span class="normal">520</span>
+<span class="normal">521</span>
+<span class="normal">522</span>
+<span class="normal">523</span>
+<span class="normal">524</span>
+<span class="normal">525</span>
+<span class="normal">526</span>
+<span class="normal">527</span>
+<span class="normal">528</span>
+<span class="normal">529</span>
+<span class="normal">530</span>
+<span class="normal">531</span>
+<span class="normal">532</span>
+<span class="normal">533</span>
+<span class="normal">534</span>
+<span class="normal">535</span>
+<span class="normal">536</span>
+<span class="normal">537</span>
+<span class="normal">538</span>
+<span class="normal">539</span>
+<span class="normal">540</span>
+<span class="normal">541</span>
+<span class="normal">542</span>
+<span class="normal">543</span>
+<span class="normal">544</span>
+<span class="normal">545</span>
+<span class="normal">546</span>
+<span class="normal">547</span>
+<span class="normal">548</span>
+<span class="normal">549</span>
+<span class="normal">550</span>
+<span class="normal">551</span>
+<span class="normal">552</span>
+<span class="normal">553</span>
+<span class="normal">554</span>
+<span class="normal">555</span>
+<span class="normal">556</span>
+<span class="normal">557</span>
+<span class="normal">558</span>
+<span class="normal">559</span>
+<span class="normal">560</span>
+<span class="normal">561</span>
+<span class="normal">562</span></pre></div></td><td class="code"><div><pre><span></span><code><span class="k">def</span><span class="w"> </span><span class="nf">core_match_template_distributed</span><span class="p">(</span>
+    <span class="n">world_size</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">rank</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">local_rank</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+    <span class="n">device</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">device</span><span class="p">,</span>
+    <span class="n">orientation_batch_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span>
+    <span class="n">num_cuda_streams</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1</span><span class="p">,</span>
+    <span class="n">backend</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;streamed&quot;</span><span class="p">,</span>
+    <span class="o">**</span><span class="n">kwargs</span><span class="p">:</span> <span class="nb">dict</span><span class="p">,</span>
+<span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">torch</span><span class="o">.</span><span class="n">Tensor</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Distributed multi-node core function for the match template program.</span>
+
+<span class="sd">    Parameters</span>
+<span class="sd">    ----------</span>
+<span class="sd">    world_size : int</span>
+<span class="sd">        Total number of processes in the distributed job.</span>
+<span class="sd">    rank : int</span>
+<span class="sd">        Global rank of this process.</span>
+<span class="sd">    local_rank : int</span>
+<span class="sd">        Local rank of this process on the current node.</span>
+<span class="sd">    device : torch.device</span>
+<span class="sd">        The CUDA device to use for this process. This *must* be a single device.</span>
+<span class="sd">    orientation_batch_size : int, optional</span>
+<span class="sd">        Number of orientations to process in a single batch, by default 1.</span>
+<span class="sd">    num_cuda_streams : int, optional</span>
+<span class="sd">        Number of CUDA streams to use for overlapping data transfers and</span>
+<span class="sd">        computation, by default 1.</span>
+<span class="sd">    backend : str, optional</span>
+<span class="sd">        The backend to use for computation. Defaults to &#39;streamed&#39;.</span>
+<span class="sd">        Must be &#39;streamed&#39; or &#39;batched&#39;.</span>
+<span class="sd">    **kwargs : dict[str, torch.Tensor]</span>
+<span class="sd">        Additional keyword arguments passed to the single-GPU core function. For the</span>
+<span class="sd">        zeroth rank this should be a dictionary of Tensor objects with the following</span>
+<span class="sd">        fields (all other ranks can pass an empty dictionary):</span>
+<span class="sd">        - image_dft:</span>
+<span class="sd">            Real-fourier transform (RFFT) of the image with large image filters</span>
+<span class="sd">            already applied. Has shape (H, W // 2 + 1).</span>
+<span class="sd">        - template_dft:</span>
+<span class="sd">            Real-fourier transform (RFFT) of the template volume to take Fourier</span>
+<span class="sd">            slices from. Has shape (l, h, w // 2 + 1) with the last dimension being the</span>
+<span class="sd">            half-dimension for real-FFT transformation. NOTE: The original template</span>
+<span class="sd">            volume should be a cubic volume, i.e. h == w == l.</span>
+<span class="sd">        - ctf_filters:</span>
+<span class="sd">            Stack of CTF filters at different pixel size (Cs) and  defocus values to use</span>
+<span class="sd">            in the search. Has shape (num_Cs, num_defocus, h, w // 2 + 1) where num_Cs</span>
+<span class="sd">            are the number of pixel sizes searched over, and num_defocus are the number</span>
+<span class="sd">            of defocus values searched over.</span>
+<span class="sd">        - whitening_filter_template: Precomputed whitening filter for the template.</span>
+<span class="sd">            Whitening filter for the template volume. Has shape (h, w // 2 + 1).</span>
+<span class="sd">            Gets multiplied with the ctf filters to create a filter stack applied to</span>
+<span class="sd">            each orientation projection.</span>
+<span class="sd">        - euler_angles:</span>
+<span class="sd">            Euler angles (in &#39;ZYZ&#39; convention &amp; in units of degrees) to search over. Has</span>
+<span class="sd">            shape (num_orientations, 3).</span>
+<span class="sd">        - defocus_values: 1D tensor of defocus values to search.</span>
+<span class="sd">            What defoucs values correspond with the CTF filters, in units of Angstroms.</span>
+<span class="sd">            Has shape (num_defocus,).</span>
+<span class="sd">        - pixel_values: 1D tensor of pixel values to search.</span>
+<span class="sd">            What pixel size values correspond with the CTF filters, in units of</span>
+<span class="sd">            Angstroms. Has shape (num_Cs,).</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="c1"># Check proper distributed initialization and CUDA device</span>
+    <span class="n">_check_distributed_and_device</span><span class="p">(</span><span class="n">rank</span><span class="p">,</span> <span class="n">device</span><span class="p">)</span>
+    <span class="n">_</span> <span class="o">=</span> <span class="n">local_rank</span>
+
+    <span class="n">torch</span><span class="o">.</span><span class="n">cuda</span><span class="o">.</span><span class="n">set_device</span><span class="p">(</span><span class="n">device</span><span class="p">)</span>
+
+    <span class="c1"># Extract (only on rank zero) and broadcast tensor data to all ranks</span>
+    <span class="p">(</span>
+        <span class="n">image_dft</span><span class="p">,</span>
+        <span class="n">template_dft</span><span class="p">,</span>
+        <span class="n">ctf_filters</span><span class="p">,</span>
+        <span class="n">whitening_filter_template</span><span class="p">,</span>
+        <span class="n">euler_angles</span><span class="p">,</span>
+        <span class="n">defocus_values</span><span class="p">,</span>
+        <span class="n">pixel_values</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">=</span> <span class="n">_extract_and_broadcast_tensors</span><span class="p">(</span><span class="n">device</span><span class="p">,</span> <span class="n">rank</span><span class="p">,</span> <span class="n">kwargs</span><span class="p">)</span>
+
+    <span class="c1">##############################################################</span>
+    <span class="c1">### Pre-multiply the whitening filter with the CTF filters ###</span>
+    <span class="c1">##############################################################</span>
+
+    <span class="n">projective_filters</span> <span class="o">=</span> <span class="n">ctf_filters</span> <span class="o">*</span> <span class="n">whitening_filter_template</span><span class="p">[</span><span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span>
+    <span class="n">total_projections</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">euler_angles</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="n">defocus_values</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">*</span> <span class="n">pixel_values</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+    <span class="p">)</span>
+
+    <span class="c1">########################################################</span>
+    <span class="c1">### TCP Setup for distributed index queue management ###</span>
+    <span class="c1">########################################################</span>
+
+    <span class="n">distributed_queue</span> <span class="o">=</span> <span class="n">_setup_distributed_queue</span><span class="p">(</span>
+        <span class="n">world_size</span><span class="o">=</span><span class="n">world_size</span><span class="p">,</span>
+        <span class="n">rank</span><span class="o">=</span><span class="n">rank</span><span class="p">,</span>
+        <span class="n">orientation_batch_size</span><span class="o">=</span><span class="n">orientation_batch_size</span><span class="p">,</span>
+        <span class="n">total_indices</span><span class="o">=</span><span class="n">euler_angles</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+    <span class="p">)</span>
+
+    <span class="c1">###########################################################</span>
+    <span class="c1">### Calling the single GPU core match template function ###</span>
+    <span class="c1">###########################################################</span>
+
+    <span class="n">dist</span><span class="o">.</span><span class="n">barrier</span><span class="p">()</span>
+    <span class="p">(</span><span class="n">mip</span><span class="p">,</span> <span class="n">best_global_index</span><span class="p">,</span> <span class="n">correlation_sum</span><span class="p">,</span> <span class="n">correlation_squared_sum</span><span class="p">)</span> <span class="o">=</span> <span class="p">(</span>
+        <span class="n">_core_match_template_single_gpu</span><span class="p">(</span>
+            <span class="n">rank</span><span class="o">=</span><span class="n">rank</span><span class="p">,</span>
+            <span class="n">index_queue</span><span class="o">=</span><span class="n">distributed_queue</span><span class="p">,</span>  <span class="c1"># type: ignore</span>
+            <span class="n">image_dft</span><span class="o">=</span><span class="n">image_dft</span><span class="p">,</span>
+            <span class="n">template_dft</span><span class="o">=</span><span class="n">template_dft</span><span class="p">,</span>
+            <span class="n">euler_angles</span><span class="o">=</span><span class="n">euler_angles</span><span class="p">,</span>
+            <span class="n">projective_filters</span><span class="o">=</span><span class="n">projective_filters</span><span class="p">,</span>
+            <span class="n">defocus_values</span><span class="o">=</span><span class="n">defocus_values</span><span class="p">,</span>
+            <span class="n">pixel_values</span><span class="o">=</span><span class="n">pixel_values</span><span class="p">,</span>
+            <span class="n">orientation_batch_size</span><span class="o">=</span><span class="n">orientation_batch_size</span><span class="p">,</span>
+            <span class="n">num_cuda_streams</span><span class="o">=</span><span class="n">num_cuda_streams</span><span class="p">,</span>
+            <span class="n">backend</span><span class="o">=</span><span class="n">backend</span><span class="p">,</span>
+            <span class="n">device</span><span class="o">=</span><span class="n">device</span><span class="p">,</span>
+        <span class="p">)</span>
+    <span class="p">)</span>
+    <span class="n">dist</span><span class="o">.</span><span class="n">barrier</span><span class="p">()</span>
+
+    <span class="c1"># Gather all tensors to rank zero GPU</span>
+    <span class="p">(</span>
+        <span class="n">gather_mip</span><span class="p">,</span>
+        <span class="n">gather_best_global_index</span><span class="p">,</span>
+        <span class="n">gather_correlation_sum</span><span class="p">,</span>
+        <span class="n">gather_correlation_squared_sum</span><span class="p">,</span>
+    <span class="p">)</span> <span class="o">=</span> <span class="n">_gather_tensors_to_rank_zero</span><span class="p">(</span>
+        <span class="n">world_size</span><span class="o">=</span><span class="n">world_size</span><span class="p">,</span>
+        <span class="n">rank</span><span class="o">=</span><span class="n">rank</span><span class="p">,</span>
+        <span class="n">mip</span><span class="o">=</span><span class="n">mip</span><span class="p">,</span>
+        <span class="n">best_global_index</span><span class="o">=</span><span class="n">best_global_index</span><span class="p">,</span>
+        <span class="n">correlation_sum</span><span class="o">=</span><span class="n">correlation_sum</span><span class="p">,</span>
+        <span class="n">correlation_squared_sum</span><span class="o">=</span><span class="n">correlation_squared_sum</span><span class="p">,</span>
+    <span class="p">)</span>
+
+    <span class="c1">##################################################</span>
+    <span class="c1">### Final aggregation step on the main process ###</span>
+    <span class="c1">##################################################</span>
+
+    <span class="k">if</span> <span class="n">rank</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="k">return</span> <span class="p">{}</span>
+
+    <span class="c1"># Continue on the main process only</span>
+    <span class="k">assert</span> <span class="n">gather_mip</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+    <span class="k">assert</span> <span class="n">gather_best_global_index</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+    <span class="k">assert</span> <span class="n">gather_correlation_sum</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+    <span class="k">assert</span> <span class="n">gather_correlation_squared_sum</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span>
+
+    <span class="n">aggregated_results</span> <span class="o">=</span> <span class="n">aggregate_distributed_results</span><span class="p">(</span>
+        <span class="n">results</span><span class="o">=</span><span class="p">[</span>
+            <span class="p">{</span>
+                <span class="s2">&quot;mip&quot;</span><span class="p">:</span> <span class="n">mip</span><span class="p">,</span>
+                <span class="s2">&quot;best_global_index&quot;</span><span class="p">:</span> <span class="n">gidx</span><span class="p">,</span>
+                <span class="s2">&quot;correlation_sum&quot;</span><span class="p">:</span> <span class="n">corr_sum</span><span class="p">,</span>
+                <span class="s2">&quot;correlation_squared_sum&quot;</span><span class="p">:</span> <span class="n">corr_sq_sum</span><span class="p">,</span>
+            <span class="p">}</span>
+            <span class="k">for</span> <span class="n">mip</span><span class="p">,</span> <span class="n">gidx</span><span class="p">,</span> <span class="n">corr_sum</span><span class="p">,</span> <span class="n">corr_sq_sum</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span>
+                <span class="n">gather_mip</span><span class="p">,</span>
+                <span class="n">gather_best_global_index</span><span class="p">,</span>
+                <span class="n">gather_correlation_sum</span><span class="p">,</span>
+                <span class="n">gather_correlation_squared_sum</span><span class="p">,</span>
+            <span class="p">)</span>
+        <span class="p">]</span>
+    <span class="p">)</span>
+    <span class="n">mip</span> <span class="o">=</span> <span class="n">aggregated_results</span><span class="p">[</span><span class="s2">&quot;mip&quot;</span><span class="p">]</span>
+    <span class="n">best_global_index</span> <span class="o">=</span> <span class="n">aggregated_results</span><span class="p">[</span><span class="s2">&quot;best_global_index&quot;</span><span class="p">]</span>
+    <span class="n">correlation_sum</span> <span class="o">=</span> <span class="n">aggregated_results</span><span class="p">[</span><span class="s2">&quot;correlation_sum&quot;</span><span class="p">]</span>
+    <span class="n">correlation_squared_sum</span> <span class="o">=</span> <span class="n">aggregated_results</span><span class="p">[</span><span class="s2">&quot;correlation_squared_sum&quot;</span><span class="p">]</span>
+
+    <span class="c1"># Ensuring all tensors are now on the CPU device:</span>
+    <span class="c1"># fmt: off</span>
+    <span class="n">mip</span>                     <span class="o">=</span> <span class="n">mip</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span>
+    <span class="n">best_global_index</span>       <span class="o">=</span> <span class="n">best_global_index</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span>
+    <span class="n">correlation_sum</span>         <span class="o">=</span> <span class="n">correlation_sum</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span>
+    <span class="n">correlation_squared_sum</span> <span class="o">=</span> <span class="n">correlation_squared_sum</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span>
+    <span class="n">pixel_values</span>            <span class="o">=</span> <span class="n">pixel_values</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span>
+    <span class="n">defocus_values</span>          <span class="o">=</span> <span class="n">defocus_values</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span>
+    <span class="n">euler_angles</span>            <span class="o">=</span> <span class="n">euler_angles</span><span class="o">.</span><span class="n">cpu</span><span class="p">()</span>
+    <span class="c1"># fmt: on</span>
+
+    <span class="c1"># Map from global search index to the best defocus &amp; angles</span>
+    <span class="c1"># pylint: disable=duplicate-code</span>
+    <span class="n">best_phi</span><span class="p">,</span> <span class="n">best_theta</span><span class="p">,</span> <span class="n">best_psi</span><span class="p">,</span> <span class="n">best_defocus</span> <span class="o">=</span> <span class="n">decode_global_search_index</span><span class="p">(</span>
+        <span class="n">best_global_index</span><span class="p">,</span> <span class="n">pixel_values</span><span class="p">,</span> <span class="n">defocus_values</span><span class="p">,</span> <span class="n">euler_angles</span>
+    <span class="p">)</span>
+
+    <span class="n">mip_scaled</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">empty_like</span><span class="p">(</span><span class="n">mip</span><span class="p">)</span>
+    <span class="n">mip</span><span class="p">,</span> <span class="n">mip_scaled</span><span class="p">,</span> <span class="n">correlation_mean</span><span class="p">,</span> <span class="n">correlation_variance</span> <span class="o">=</span> <span class="n">scale_mip</span><span class="p">(</span>
+        <span class="n">mip</span><span class="o">=</span><span class="n">mip</span><span class="p">,</span>
+        <span class="n">mip_scaled</span><span class="o">=</span><span class="n">mip_scaled</span><span class="p">,</span>
+        <span class="n">correlation_sum</span><span class="o">=</span><span class="n">correlation_sum</span><span class="p">,</span>
+        <span class="n">correlation_squared_sum</span><span class="o">=</span><span class="n">correlation_squared_sum</span><span class="p">,</span>
+        <span class="n">total_correlation_positions</span><span class="o">=</span><span class="n">total_projections</span><span class="p">,</span>
+    <span class="p">)</span>
+
+    <span class="k">return</span> <span class="p">{</span>
+        <span class="s2">&quot;mip&quot;</span><span class="p">:</span> <span class="n">mip</span><span class="o">.</span><span class="n">cpu</span><span class="p">(),</span>
+        <span class="s2">&quot;scaled_mip&quot;</span><span class="p">:</span> <span class="n">mip_scaled</span><span class="o">.</span><span class="n">cpu</span><span class="p">(),</span>
+        <span class="s2">&quot;best_phi&quot;</span><span class="p">:</span> <span class="n">best_phi</span><span class="o">.</span><span class="n">cpu</span><span class="p">(),</span>
+        <span class="s2">&quot;best_theta&quot;</span><span class="p">:</span> <span class="n">best_theta</span><span class="o">.</span><span class="n">cpu</span><span class="p">(),</span>
+        <span class="s2">&quot;best_psi&quot;</span><span class="p">:</span> <span class="n">best_psi</span><span class="o">.</span><span class="n">cpu</span><span class="p">(),</span>
+        <span class="s2">&quot;best_defocus&quot;</span><span class="p">:</span> <span class="n">best_defocus</span><span class="o">.</span><span class="n">cpu</span><span class="p">(),</span>
+        <span class="s2">&quot;correlation_mean&quot;</span><span class="p">:</span> <span class="n">correlation_mean</span><span class="o">.</span><span class="n">cpu</span><span class="p">(),</span>
+        <span class="s2">&quot;correlation_variance&quot;</span><span class="p">:</span> <span class="n">correlation_variance</span><span class="o">.</span><span class="n">cpu</span><span class="p">(),</span>
+        <span class="s2">&quot;total_projections&quot;</span><span class="p">:</span> <span class="n">total_projections</span><span class="p">,</span>
+        <span class="s2">&quot;total_orientations&quot;</span><span class="p">:</span> <span class="n">euler_angles</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+        <span class="s2">&quot;total_defocus&quot;</span><span class="p">:</span> <span class="n">defocus_values</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+    <span class="p">}</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    <script id="__config" type="application/json">{"base": "../../../..", "features": ["content.code.copy"], "search": "../../../../assets/javascripts/workers/search.f8cc74c7.min.js", "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}}</script>
+    
+    
+      <script src="../../../../assets/javascripts/bundle.f1b6f286.min.js"></script>
+      
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.4/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script>
+      
+    
+  </body>
+</html>

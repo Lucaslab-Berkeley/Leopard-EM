@@ -1,0 +1,2463 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+      
+        <link rel="prev" href="../batch_processing/">
+      
+      
+        <link rel="next" href="../../examples/01_basic_configuration/">
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.6.5">
+    
+    
+      
+        <title>Distributed Computing - Leopard-EM: Two-Dimensional Template Matching in Python</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.8608ea7d.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+    
+  </head>
+  
+  
+    <body dir="ltr">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#distributed-multi-node-template-matching-with-leopard-em" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Leopard-EM: Two-Dimensional Template Matching in Python" class="md-header__button md-logo" aria-label="Leopard-EM: Two-Dimensional Template Matching in Python" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Leopard-EM: Two-Dimensional Template Matching in Python
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Distributed Computing
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      <label class="md-header__button md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+      </label>
+      <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+    
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Leopard-EM: Two-Dimensional Template Matching in Python" class="md-nav__button md-logo" aria-label="Leopard-EM: Two-Dimensional Template Matching in Python" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Leopard-EM: Two-Dimensional Template Matching in Python
+  </label>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Home
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  <span class="md-ellipsis">
+    Tutorials
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            Tutorials
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../match_template_intro/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    2DTM Introduction
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../batch_processing/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Batch Processing
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  <span class="md-ellipsis">
+    Distributed Computing
+    
+  </span>
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  <span class="md-ellipsis">
+    Distributed Computing
+    
+  </span>
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#data-pre-requisites" class="md-nav__link">
+    <span class="md-ellipsis">
+      Data pre-requisites
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#setting-up-leopard-em-script-for-distributed-computation" class="md-nav__link">
+    <span class="md-ellipsis">
+      Setting up Leopard-EM script for distributed computation.
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#slurm-script-for-launching-distributed-match-template" class="md-nav__link">
+    <span class="md-ellipsis">
+      SLURM script for launching distributed match template.
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="SLURM script for launching distributed match template.">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#slurm-header" class="md-nav__link">
+    <span class="md-ellipsis">
+      SLURM header
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#setup-number-of-gpus-and-program-variables" class="md-nav__link">
+    <span class="md-ellipsis">
+      Setup, number of GPUs, and program variables
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#entire-script" class="md-nav__link">
+    <span class="md-ellipsis">
+      Entire script
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#queuing-the-distributed-match-template-job" class="md-nav__link">
+    <span class="md-ellipsis">
+      Queuing the distributed match template job
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  <span class="md-ellipsis">
+    Examples
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            Examples
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/01_basic_configuration/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Configuring Pydantic models in Python
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/02_extract_peak_info/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Extracting results from the template matching search
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/03_compare_scoring_metrics/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Comparing 2DTM scoring metrics
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/04_plotting_2dtm_results/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Visualizing 2DTM result
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/05_structure_reprojection/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Structure projections on an Image
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  <span class="md-ellipsis">
+    Programs
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            Programs
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../programs/overview/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Overview
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../programs/match_template/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Match Template details
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../programs/refine_template/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Refine Template details
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../programs/optimize_template/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Optimize Template details
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../programs/constrained_search/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Constrained Search details
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../data_formats/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Program Output Formats
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../benchmarks/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Benchmarks
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../common_issues/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Common Issues
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Contributing
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="0">
+            
+  
+  <span class="md-ellipsis">
+    API Reference
+    
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            API Reference
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9_1" >
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../autoapi/leopard_em/" class="md-nav__link ">
+              
+  
+  <span class="md-ellipsis">
+    leopard_em
+    
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_9_1" id="__nav_9_1_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_9_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9_1">
+            <span class="md-nav__icon md-icon"></span>
+            leopard_em
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9_1_1" >
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../autoapi/leopard_em/analysis/" class="md-nav__link ">
+              
+  
+  <span class="md-ellipsis">
+    analysis
+    
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_9_1_1" id="__nav_9_1_1_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_9_1_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9_1_1">
+            <span class="md-nav__icon md-icon"></span>
+            analysis
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/analysis/gev_fit_metric/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    gev_fit_metric
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/analysis/match_template_peaks/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    match_template_peaks
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/analysis/pvalue_metric/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    pvalue_metric
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/analysis/utils/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    utils
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/analysis/zscore_metric/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    zscore_metric
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9_1_2" >
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../autoapi/leopard_em/backend/" class="md-nav__link ">
+              
+  
+  <span class="md-ellipsis">
+    backend
+    
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_9_1_2" id="__nav_9_1_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_9_1_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9_1_2">
+            <span class="md-nav__icon md-icon"></span>
+            backend
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/backend/core_match_template/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    core_match_template
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/backend/core_match_template_distributed/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    core_match_template_distributed
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/backend/core_refine_template/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    core_refine_template
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/backend/cross_correlation/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    cross_correlation
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/backend/distributed/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    distributed
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/backend/process_results/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    process_results
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/backend/utils/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    utils
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9_1_3" >
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../autoapi/leopard_em/pydantic_models/" class="md-nav__link ">
+              
+  
+  <span class="md-ellipsis">
+    pydantic_models
+    
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_9_1_3" id="__nav_9_1_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_9_1_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9_1_3">
+            <span class="md-nav__icon md-icon"></span>
+            pydantic_models
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9_1_3_1" >
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../autoapi/leopard_em/pydantic_models/config/" class="md-nav__link ">
+              
+  
+  <span class="md-ellipsis">
+    config
+    
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_9_1_3_1" id="__nav_9_1_3_1_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="4" aria-labelledby="__nav_9_1_3_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9_1_3_1">
+            <span class="md-nav__icon md-icon"></span>
+            config
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/pydantic_models/config/computational_config/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    computational_config
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/pydantic_models/config/correlation_filters/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    correlation_filters
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/pydantic_models/config/defocus_search/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    defocus_search
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/pydantic_models/config/orientation_search/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    orientation_search
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/pydantic_models/config/pixel_size_search/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    pixel_size_search
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/pydantic_models/custom_types/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    custom_types
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9_1_3_3" >
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../autoapi/leopard_em/pydantic_models/data_structures/" class="md-nav__link ">
+              
+  
+  <span class="md-ellipsis">
+    data_structures
+    
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_9_1_3_3" id="__nav_9_1_3_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="4" aria-labelledby="__nav_9_1_3_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9_1_3_3">
+            <span class="md-nav__icon md-icon"></span>
+            data_structures
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/pydantic_models/data_structures/optics_group/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    optics_group
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/pydantic_models/data_structures/particle_stack/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    particle_stack
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/pydantic_models/formats/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    formats
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9_1_3_5" >
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../autoapi/leopard_em/pydantic_models/managers/" class="md-nav__link ">
+              
+  
+  <span class="md-ellipsis">
+    managers
+    
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_9_1_3_5" id="__nav_9_1_3_5_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="4" aria-labelledby="__nav_9_1_3_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9_1_3_5">
+            <span class="md-nav__icon md-icon"></span>
+            managers
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/pydantic_models/managers/constrained_search_manager/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    constrained_search_manager
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/pydantic_models/managers/match_template_manager/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    match_template_manager
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/pydantic_models/managers/optimize_template_manager/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    optimize_template_manager
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/pydantic_models/managers/refine_template_manager/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    refine_template_manager
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9_1_3_6" >
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../autoapi/leopard_em/pydantic_models/results/" class="md-nav__link ">
+              
+  
+  <span class="md-ellipsis">
+    results
+    
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_9_1_3_6" id="__nav_9_1_3_6_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="4" aria-labelledby="__nav_9_1_3_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9_1_3_6">
+            <span class="md-nav__icon md-icon"></span>
+            results
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/pydantic_models/results/match_template_result/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    match_template_result
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/pydantic_models/utils/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    utils
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9_1_4" >
+        
+          
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../autoapi/leopard_em/utils/" class="md-nav__link ">
+              
+  
+  <span class="md-ellipsis">
+    utils
+    
+  </span>
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_9_1_4" id="__nav_9_1_4_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_9_1_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9_1_4">
+            <span class="md-nav__icon md-icon"></span>
+            utils
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/utils/cross_correlation/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    cross_correlation
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/utils/data_io/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    data_io
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../autoapi/leopard_em/utils/fourier_slice/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    fourier_slice
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#data-pre-requisites" class="md-nav__link">
+    <span class="md-ellipsis">
+      Data pre-requisites
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#setting-up-leopard-em-script-for-distributed-computation" class="md-nav__link">
+    <span class="md-ellipsis">
+      Setting up Leopard-EM script for distributed computation.
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#slurm-script-for-launching-distributed-match-template" class="md-nav__link">
+    <span class="md-ellipsis">
+      SLURM script for launching distributed match template.
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="SLURM script for launching distributed match template.">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#slurm-header" class="md-nav__link">
+    <span class="md-ellipsis">
+      SLURM header
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#setup-number-of-gpus-and-program-variables" class="md-nav__link">
+    <span class="md-ellipsis">
+      Setup, number of GPUs, and program variables
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#entire-script" class="md-nav__link">
+    <span class="md-ellipsis">
+      Entire script
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#queuing-the-distributed-match-template-job" class="md-nav__link">
+    <span class="md-ellipsis">
+      Queuing the distributed match template job
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+
+<h1 id="distributed-multi-node-template-matching-with-leopard-em">Distributed (multi-node) template matching with Leopard-EM</h1>
+<p>Processing data with 2DTM is a computationally intensive process, but the current 2DTM algorithm is an <a href="https://en.wikipedia.org/wiki/Embarrassingly_parallel">embarrassingly parallel</a> problem.
+Leopard-EM natively supports multi-GPU systems (see <a href="../match_template_intro/">An Introductory 2DTM tutorial</a>) for parallelizing the 2DTM search.
+In this tutorial, we discuss how Leopard-EM can further parallelize 2DTM by using multi-node clusters by running <strong>distributed match template</strong>.</p>
+<p>This tutorial assumes the following:</p>
+<ul>
+<li>You have access to a multi-node cluster with a GPU partition,</li>
+<li>The cluster is using <a href="https://slurm.schedmd.com/documentation.html">SULRM</a> as a job scheduler and workload manager,</li>
+<li>Familiarity with the default <code>match_template</code> program, and</li>
+<li>Base knowledge on scheduling jobs with SLURM.</li>
+</ul>
+<div class="admonition warning">
+<p class="admonition-title">An imperative discussion on <em>when</em> distributed match template is appropriate</p>
+<p>For the sake of discussion, let's assume the cluster partition has the following resources:</p>
+<ul>
+<li>16 total nodes (with sufficient CPU and memory)</li>
+<li>4x GPUs per node, all same type</li>
+<li>Total of 64 GPUs on the partition</li>
+</ul>
+<p>Let's also assume the objectives, in order, for the project are</p>
+<ol>
+<li>Maximize GPU utilization, and</li>
+<li>Process data as efficiently as possible.</li>
+</ol>
+<p>Using these assumptions, we will examine different scenarios and discuss if multi-node, distributed match template is appropriate.</p>
+<p><strong>Scenario 1: Large number of micrographs to process</strong></p>
+<p>If you have a large number of micrographs to process, enough to backlog the queue on your cluster with 2DTM jobs, then running distributed match template <em>does not make sense</em>.
+Assuming perfect strong scaling, running a single distributed match template across all 64 GPUs will finish 64x faster than a single-GPU job.
+However, you'd get the same micrograph processing throughput if each micrograph is processed on a single node (4x GPUs) or even on a single GPU since 16 or 64 jobs could be running concurrently, respectively.</p>
+<p>Requesting a job that takes <em>all</em> the nodes in the partition is also likely to get backlogged in the job queue.
+The SLURM scheduler will try to queue up as many jobs that can run concurrently as possible to maximize cluster utilization, and jobs requesting fewer resources generally get queued faster.
+Your colleagues will also appreciate you not consuming the whole partition for your jobs.</p>
+<p><strong>Scenario 2: Few number of micrographs, and low priority</strong></p>
+<p>If you have only a few micrographs, say three, to process and it takes 16h/micrograph/gpu to run <code>match_template</code>, then the following distribution for time-spans for complete processing are possible:</p>
+<ol>
+<li>Single-GPU, sequential - Each micrograph is processed sequentially on a single-GPU: 16 x 3 = 48 hours.</li>
+<li>Single-GPU, parallel - Three jobs, each single-GPU, running independently and in parallel: 16 x (3 / 3) = 16 hours.
+<!-- 3. Single-node (4x GPUs), sequential - Entire node allocated for one job that processes all three micrographs: (16 / 4) * 3 = 12 hours. --></li>
+<li>Single-node (4x GPUs), parallel - Entire node allocated, three different jobs that each process one micrograph: (16 / 4) * (3 / 3) = 4 hours.</li>
+<li>16-node (64x GPUs), sequential - Whole partition allocated to one job which processed all three micrographs: (16 / 64) * 3 = 0.75 hours.</li>
+</ol>
+<p>Assuming we're happy to get the template matching results at some point it makes sense to request more jobs each using fewer resources.
+Running distributed match template <em>does not make sense</em> under this scenario.
+Again, job queue time must be taken into consideration, and the 16-node job may be sitting in the queue longer than it would have taken for even case (1) to be allocated and completed.</p>
+<p><strong>Scenario 3: Few number of micrographs, and high priority</strong></p>
+<p>Using the same setup as <strong>Scenario 2</strong>, if we <em>really</em> need to get template matching results right now (and there's some mechanism for placing our resource-hungry job at the tippy-top of the queue), then it may make sense to run distributed match template.</p>
+<p><strong>Scenario 4: Obtaining near real-time 2DTM results</strong></p>
+<p>Let's say you're lucky enough to have exclusive access to this partition, and the processing time is 4h/micrograph/gpu (fair assumption for some of the newest GPUs).
+If you really need real-time 2DTM results for your project, then allocating the entire partition would obtain a throughput of 4 / 64 = 1/16 hour = 3.75 minutes to process each micrograph.
+Under this scenario, it makes sense to run the distributed match template program.</p>
+</div>
+<h2 id="data-pre-requisites">Data pre-requisites</h2>
+<p>Here, we have the same pre-requisites as the <a href="../match_template_intro/#data-and-computation-pre-requisites">intro tutorial pre-requisites</a>.
+Note that this includes a fully formed <code>MatchTemplateManager</code> configuration file.</p>
+<p>Distributed computation should work out-of-the-box for PyTorch, so there are no other packages to download/install.</p>
+<h2 id="setting-up-leopard-em-script-for-distributed-computation">Setting up Leopard-EM script for distributed computation.</h2>
+<p>Distributed match template requires a few extra steps to setup inter-node communication before launching the backend program.
+These are handled automatically in the Python script below which is also included on the <a href="https://github.com/Lucaslab-Berkeley/Leopard-EM/blob/main/programs/match_template/run_distributed_match_template.py">Leopard-EM github programs page</a>.</p>
+<p>The script is intended to be run as <code>python --config FILE --output FILE --batch_size INTEGER</code> where the three command line arguments are used to define the match template configuration YAML file, the output csv file, and the orientation batch size, respectively.</p>
+<details class="info">
+<summary><code>run_distributed_match_template.py</code></summary>
+<div class="highlight"><pre><span></span><code><span class="sd">&quot;&quot;&quot;Run the match_template program in a distributed, multi-node environment.</span>
+
+<span class="sd">NOTE: This script needs to be launched using `torchrun` and within a distributed</span>
+<span class="sd">environment where multiple nodes can communicate with each other. See the online</span>
+<span class="sd">documentation and example scripts for more information on running distributed multi</span>
+<span class="sd">node match_template.</span>
+
+<span class="sd">NOTE: The &#39;gpu_ids&#39; field in the YAML config is ignored when running in distributed</span>
+<span class="sd">mode. Each process is assigned to a single GPU based on its local rank.</span>
+<span class="sd">&quot;&quot;&quot;</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">os</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">click</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch.distributed</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">dist</span>
+
+<span class="kn">from</span><span class="w"> </span><span class="nn">leopard_em.pydantic_models.managers</span><span class="w"> </span><span class="kn">import</span> <span class="n">MatchTemplateManager</span>
+
+<span class="c1">#######################################</span>
+<span class="c1">### Editable parameters for program ###</span>
+<span class="c1">#######################################</span>
+
+<span class="c1"># NOTE: You can also use `click` to pass argument to this script from command line</span>
+<span class="n">YAML_CONFIG_PATH</span> <span class="o">=</span> <span class="s2">&quot;/path/to/config.yaml&quot;</span>
+<span class="n">DATAFRAME_OUTPUT_PATH</span> <span class="o">=</span> <span class="s2">&quot;out.csv&quot;</span>
+<span class="n">ORIENTATION_BATCH_SIZE</span> <span class="o">=</span> <span class="mi">20</span>
+
+
+<span class="k">def</span><span class="w"> </span><span class="nf">initialize_distributed</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Initialize the distributed environment.</span>
+
+<span class="sd">    Returns</span>
+<span class="sd">    -------</span>
+<span class="sd">        (world_size, global_rank, local_rank)</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">dist</span><span class="o">.</span><span class="n">init_process_group</span><span class="p">(</span><span class="n">backend</span><span class="o">=</span><span class="s2">&quot;nccl&quot;</span><span class="p">)</span>
+    <span class="n">world_size</span> <span class="o">=</span> <span class="n">dist</span><span class="o">.</span><span class="n">get_world_size</span><span class="p">()</span>
+    <span class="n">rank</span> <span class="o">=</span> <span class="n">dist</span><span class="o">.</span><span class="n">get_rank</span><span class="p">()</span>
+    <span class="n">local_rank</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">environ</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s2">&quot;LOCAL_RANK&quot;</span><span class="p">,</span> <span class="kc">None</span><span class="p">)</span>
+
+    <span class="c1"># Raise error if LOCAL_RANK is not set. This *should* be handled by torchrun, but...</span>
+    <span class="c1"># It is up to the user to rectify this issue on their system.</span>
+    <span class="k">if</span> <span class="n">local_rank</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+        <span class="k">raise</span> <span class="ne">RuntimeError</span><span class="p">(</span><span class="s2">&quot;LOCAL_RANK environment variable unset!.&quot;</span><span class="p">)</span>
+
+    <span class="n">local_rank</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">local_rank</span><span class="p">)</span>
+
+    <span class="k">return</span> <span class="n">world_size</span><span class="p">,</span> <span class="n">rank</span><span class="p">,</span> <span class="n">local_rank</span>
+
+
+<span class="nd">@click</span><span class="o">.</span><span class="n">command</span><span class="p">()</span>
+<span class="nd">@click</span><span class="o">.</span><span class="n">option</span><span class="p">(</span>
+    <span class="s2">&quot;--config&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;-c&quot;</span><span class="p">,</span>
+    <span class="nb">type</span><span class="o">=</span><span class="n">click</span><span class="o">.</span><span class="n">Path</span><span class="p">(</span><span class="n">exists</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">dir_okay</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">path_type</span><span class="o">=</span><span class="nb">str</span><span class="p">),</span>
+    <span class="n">default</span><span class="o">=</span><span class="n">YAML_CONFIG_PATH</span><span class="p">,</span>
+    <span class="n">help</span><span class="o">=</span><span class="s2">&quot;Path to the YAML configuration file.&quot;</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="nd">@click</span><span class="o">.</span><span class="n">option</span><span class="p">(</span>
+    <span class="s2">&quot;--output&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;-o&quot;</span><span class="p">,</span>
+    <span class="nb">type</span><span class="o">=</span><span class="n">click</span><span class="o">.</span><span class="n">Path</span><span class="p">(</span><span class="n">dir_okay</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">path_type</span><span class="o">=</span><span class="nb">str</span><span class="p">),</span>
+    <span class="n">default</span><span class="o">=</span><span class="n">DATAFRAME_OUTPUT_PATH</span><span class="p">,</span>
+    <span class="n">help</span><span class="o">=</span><span class="s2">&quot;Path to save the output dataframe CSV.&quot;</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="nd">@click</span><span class="o">.</span><span class="n">option</span><span class="p">(</span>
+    <span class="s2">&quot;--batch_size&quot;</span><span class="p">,</span>
+    <span class="s2">&quot;-b&quot;</span><span class="p">,</span>
+    <span class="nb">type</span><span class="o">=</span><span class="nb">int</span><span class="p">,</span>
+    <span class="n">default</span><span class="o">=</span><span class="n">ORIENTATION_BATCH_SIZE</span><span class="p">,</span>
+    <span class="n">help</span><span class="o">=</span><span class="s2">&quot;Number of orientations to process in a single batch.&quot;</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">(</span><span class="n">config</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">output</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">batch_size</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="w">    </span><span class="sd">&quot;&quot;&quot;Main function for the distributed match_template program.</span>
+
+<span class="sd">    Each process is associated with a single GPU, and we front-load the distributed</span>
+<span class="sd">    initialization and GPU assignment in this script. This allows both the manager</span>
+<span class="sd">    object and the backend match_template code to remain relatively simple.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">world_size</span><span class="p">,</span> <span class="n">rank</span><span class="p">,</span> <span class="n">local_rank</span> <span class="o">=</span> <span class="n">initialize_distributed</span><span class="p">()</span>
+    <span class="n">time_str</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">strftime</span><span class="p">(</span><span class="s2">&quot;%Y%m</span><span class="si">%d</span><span class="s2">_%H%M%S&quot;</span><span class="p">,</span> <span class="n">time</span><span class="o">.</span><span class="n">localtime</span><span class="p">())</span>
+    <span class="nb">print</span><span class="p">(</span>
+        <span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">time_str</span><span class="si">}</span><span class="s2"> RANK=</span><span class="si">{</span><span class="n">rank</span><span class="si">}</span><span class="s2">: Initialized </span><span class="si">{</span><span class="n">world_size</span><span class="si">}</span><span class="s2"> processes &quot;</span>
+        <span class="sa">f</span><span class="s2">&quot;(local_rank=</span><span class="si">{</span><span class="n">local_rank</span><span class="si">}</span><span class="s2">).&quot;</span>
+    <span class="p">)</span>
+
+    <span class="c1"># Do not pre-load mrc files, unless zeroth rank. Data will be broadcast later.</span>
+    <span class="n">mt_manager</span> <span class="o">=</span> <span class="n">MatchTemplateManager</span><span class="o">.</span><span class="n">from_yaml</span><span class="p">(</span>
+        <span class="n">config</span><span class="p">,</span> <span class="n">preload_mrc_files</span><span class="o">=</span><span class="nb">bool</span><span class="p">(</span><span class="n">rank</span> <span class="o">==</span> <span class="mi">0</span><span class="p">)</span>
+    <span class="p">)</span>
+    <span class="n">mt_manager</span><span class="o">.</span><span class="n">run_match_template_distributed</span><span class="p">(</span>
+        <span class="n">world_size</span><span class="o">=</span><span class="n">world_size</span><span class="p">,</span>
+        <span class="n">rank</span><span class="o">=</span><span class="n">rank</span><span class="p">,</span>
+        <span class="n">local_rank</span><span class="o">=</span><span class="n">local_rank</span><span class="p">,</span>
+        <span class="n">orientation_batch_size</span><span class="o">=</span><span class="n">batch_size</span><span class="p">,</span>
+        <span class="n">do_result_export</span><span class="o">=</span><span class="p">(</span><span class="n">rank</span> <span class="o">==</span> <span class="mi">0</span><span class="p">),</span>  <span class="c1"># Only save results from rank 0</span>
+    <span class="p">)</span>
+
+    <span class="c1"># Only do the df export on rank 0</span>
+    <span class="k">if</span> <span class="n">rank</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+        <span class="n">df</span> <span class="o">=</span> <span class="n">mt_manager</span><span class="o">.</span><span class="n">results_to_dataframe</span><span class="p">()</span>
+        <span class="n">df</span><span class="o">.</span><span class="n">to_csv</span><span class="p">(</span><span class="n">output</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+
+    <span class="c1"># Close the distributed process group</span>
+    <span class="n">dist</span><span class="o">.</span><span class="n">destroy_process_group</span><span class="p">()</span>
+
+    <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Done!&quot;</span><span class="p">)</span>
+
+
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
+    <span class="n">start_time</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span>
+    <span class="n">main</span><span class="p">()</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Total time: </span><span class="si">{</span><span class="n">time</span><span class="o">.</span><span class="n">time</span><span class="p">()</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">start_time</span><span class="si">:</span><span class="s2">.1f</span><span class="si">}</span><span class="s2"> seconds.&quot;</span><span class="p">)</span>
+</code></pre></div>
+</details>
+<h2 id="slurm-script-for-launching-distributed-match-template">SLURM script for launching distributed match template.</h2>
+<p>The SLURM batch script for distributed match template is relatively simple.
+The example script can be found on the <a href="https://github.com/Lucaslab-Berkeley/Leopard-EM/blob/main/programs/match_template/distributed_match_template.slurm">Leopard-EM github programs page</a>, but it's contents are also listed below.
+It does the following</p>
+<ol>
+<li>Requests the number of nodes, node configurations, and other SLURM options,</li>
+<li>Defines a setup command to load the necessary modules / environments to run Leopard-EM,</li>
+<li>Defines the program to run (distributed match template python script), and</li>
+<li>Wraps this into a <code>surn</code> / <code>torchrun</code> launch which actually runs the program across all the nodes.</li>
+</ol>
+<p><strong>There are a portions of the script which need adapted to your specific computing environment.</strong></p>
+<h3 id="slurm-header">SLURM header</h3>
+<p>The header defining the allocations for the job <em>must</em> be edited to match how you would launch a job on your cluster</p>
+<div class="highlight"><pre><span></span><code><span class="c1">#SBATCH --job-name=distributed-match-template-%j</span>
+<span class="c1">#SBATCH --nodes=4               # EDIT: how many nodes allocated</span>
+<span class="c1">#SBATCH --ntasks-per-node=1     # crucial! - only 1 task per node</span>
+<span class="c1">#SBATCH --cpus-per-task=8       # EDIT: match number of GPUs per node</span>
+<span class="c1">#SBATCH --gres=gpu:8            # EDIT: number &amp; type of GPUs per node</span>
+<span class="c1">#SBATCH --time=2:00:00          # EDIT: desired runtime (hh:mm:ss)</span>
+<span class="c1">#SBATCH --partition=&lt;part&gt;      # EDIT: your partition</span>
+<span class="c1">#SBATCH --qos=&lt;qos&gt;             # EDIT: your qos</span>
+<span class="c1">#SBATCH --account=&lt;acct&gt;        # EDIT: your account name</span>
+<span class="c1">#SBATCH --output=%x-%j.out</span>
+</code></pre></div>
+<h3 id="setup-number-of-gpus-and-program-variables">Setup, number of GPUs, and program variables</h3>
+<p>The other portions which you will need to modify are the setup command, the number of GPUs per node, and the path to the Python program to run.</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># EDIT: Necessary commands to set up your environment *before*</span>
+<span class="c1">#       running the program (e.g. loading modules, conda envs, etc.)</span>
+<span class="nv">SETUP</span><span class="o">=</span><span class="s2">&quot;ml anaconda3 &amp;&amp; \</span>
+<span class="s2">    source ~/.bashrc &amp;&amp; \</span>
+<span class="s2">    conda activate leopard-em-dev &amp;&amp; \</span>
+<span class="s2">&quot;</span>
+
+<span class="c1"># EDIT: How many GPUs per node (should match what was requested in --gres)</span>
+<span class="nv">GPUS_PER_NODE</span><span class="o">=</span><span class="m">8</span>
+
+<span class="c1"># EDIT: Define your program an its argument</span>
+<span class="nv">PROGRAM</span><span class="o">=</span><span class="s2">&quot;programs/match_template/run_distributed_match_template.py&quot;</span>
+<span class="c1"># OR if CLI arguments are required:</span>
+<span class="c1"># PROGRAM=&quot;programs/match_template/run_distributed_match_template.py --arg1 val1 --arg2 val2&quot;</span>
+</code></pre></div>
+<p>The rest of the script should work as-is, but there might be particular constraints on your cluster.
+If you're getting errors on the launch, check with your SysAdmin.</p>
+<h3 id="entire-script">Entire script</h3>
+<details>
+<summary><code>distributed_match_template.slurm</code></summary>
+<div class="highlight"><pre><span></span><code><span class="ch">#!/bin/bash</span>
+
+<span class="c1"># ***</span>
+<span class="c1"># *** This is an example SLURM job script for launching a distributed</span>
+<span class="c1"># *** match_template job using torchrun over multiple nodes in a cluster.</span>
+<span class="c1"># *** There are many points at which you will need to modify the script</span>
+<span class="c1"># *** to fit onto your specific cluster environment.</span>
+<span class="c1"># ***</span>
+<span class="c1"># *** NOTE: If you are just trying to saturate GPU resources and have</span>
+<span class="c1"># ***       enough micrographs to process (and no time pressure for</span>
+<span class="c1"># ***       results), then it&#39;s advisable to just launch multiple</span>
+<span class="c1"># ***       single-node jobs instead of distributed jobs. </span>
+<span class="c1"># ***</span>
+
+<span class="c1">#SBATCH --job-name=distributed-match-template-%j</span>
+<span class="c1">#SBATCH --nodes=4               # EDIT: how many nodes allocated</span>
+<span class="c1">#SBATCH --ntasks-per-node=1     # crucial! - only 1 task per node</span>
+<span class="c1">#SBATCH --cpus-per-task=8       # EDIT: match number of GPUs per node</span>
+<span class="c1">#SBATCH --gres=gpu:8            # EDIT: number &amp; type of GPUs per node</span>
+<span class="c1">#SBATCH --time=2:00:00          # EDIT: desired runtime (hh:mm:ss)</span>
+<span class="c1">#SBATCH --partition=&lt;part&gt;      # EDIT: your partition</span>
+<span class="c1">#SBATCH --qos=&lt;qos&gt;             # EDIT: your qos</span>
+<span class="c1">#SBATCH --account=&lt;acct&gt;        # EDIT: your account name</span>
+<span class="c1">#SBATCH --output=%x-%j.out</span>
+
+
+<span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;START TIME: </span><span class="k">$(</span>date<span class="k">)</span><span class="s2">&quot;</span>
+
+
+<span class="c1"># EDIT: Necessary commands to set up your environment *before*</span>
+<span class="c1">#       running the program (e.g. loading modules, conda envs, etc.)</span>
+<span class="nv">SETUP</span><span class="o">=</span><span class="s2">&quot;ml anaconda3 &amp;&amp; \</span>
+<span class="s2">    source ~/.bashrc &amp;&amp; \</span>
+<span class="s2">    conda activate leopard-em-dev &amp;&amp; \</span>
+<span class="s2">&quot;</span>
+
+<span class="c1"># EDIT: How many GPUs per node (should match what was requested in --gres)</span>
+<span class="nv">GPUS_PER_NODE</span><span class="o">=</span><span class="m">8</span>
+
+<span class="c1"># EDIT: Define your program an its argument</span>
+<span class="nv">PROGRAM</span><span class="o">=</span><span class="s2">&quot;programs/match_template/run_distributed_match_template.py&quot;</span>
+<span class="c1"># OR if CLI arguments are required:</span>
+<span class="c1"># PROGRAM=&quot;programs/match_template/run_distributed_match_template.py --arg1 val1 --arg2 val2&quot;</span>
+
+
+
+<span class="c1"># Verbose output for debugging purposes (can comment out if not needed)</span>
+<span class="nb">set</span><span class="w"> </span>-x
+srun<span class="w"> </span>hostname<span class="w">  </span><span class="c1"># each allocated node prints the hostname</span>
+
+<span class="c1"># Some parameters to extract necessary information from SLURM</span>
+<span class="nv">allocated_nodes</span><span class="o">=</span><span class="k">$(</span>scontrol<span class="w"> </span>show<span class="w"> </span>hostname<span class="w"> </span><span class="nv">$SLURM_JOB_NODELIST</span><span class="k">)</span>
+<span class="nv">nodes</span><span class="o">=</span><span class="si">${</span><span class="nv">allocated_nodes</span><span class="p">//</span><span class="s1">$&#39;\n&#39;</span><span class="p">/ </span><span class="si">}</span><span class="w"> </span><span class="c1"># replace newlines with spaces</span>
+<span class="nv">nodes_array</span><span class="o">=(</span><span class="nv">$nodes</span><span class="o">)</span>
+<span class="nv">head_node</span><span class="o">=</span><span class="si">${</span><span class="nv">nodes_array</span><span class="p">[0]</span><span class="si">}</span>
+<span class="nb">echo</span><span class="w"> </span>Head<span class="w"> </span>Node:<span class="w"> </span><span class="nv">$head_node</span>
+<span class="nb">echo</span><span class="w"> </span>Node<span class="w"> </span>List:<span class="w"> </span><span class="nv">$nodes</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">LOGLEVEL</span><span class="o">=</span>INFO
+
+<span class="c1"># The command for torchrun to launch the distributed job</span>
+<span class="c1"># NOTE: --rdzv_id requires an open port, so using a random number.</span>
+<span class="c1">#       But there may be restrictions on allowed ports on your cluster...</span>
+<span class="nv">LAUNCHER</span><span class="o">=</span><span class="s2">&quot;torchrun \</span>
+<span class="s2">    --nproc_per_node=</span><span class="nv">$GPUS_PER_NODE</span><span class="s2"> \</span>
+<span class="s2">    --nnodes=</span><span class="nv">$SLURM_JOB_NUM_NODES</span><span class="s2"> \</span>
+<span class="s2">    --rdzv_id=</span><span class="nv">$RANDOM</span><span class="s2"> \</span>
+<span class="s2">    --rdzv_backend=c10d \</span>
+<span class="s2">    --rdzv_endpoint=</span><span class="nv">$head_node</span><span class="s2">:29500 \</span>
+<span class="s2">    &quot;</span>
+<span class="nv">CMD</span><span class="o">=</span><span class="s2">&quot;</span><span class="nv">$SETUP</span><span class="s2"> </span><span class="nv">$LAUNCHER</span><span class="s2"> </span><span class="nv">$PROGRAM</span><span class="s2">&quot;</span>
+
+
+<span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;Running command:&quot;</span>
+<span class="nb">echo</span><span class="w"> </span><span class="nv">$CMD</span>
+<span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;-------------------&quot;</span>
+srun<span class="w"> </span>/bin/bash<span class="w"> </span>-c<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$CMD</span><span class="s2">&quot;</span>
+
+<span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;END TIME: </span><span class="k">$(</span>date<span class="k">)</span><span class="s2">&quot;</span>
+</code></pre></div>
+</details>
+<h2 id="queuing-the-distributed-match-template-job">Queuing the distributed match template job</h2>
+<p>Placing the job into the queue is as easy as running <code>sbatch distributed_match_template.slurm</code> or whatever name(s) you may have assigned to the scripts.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    <script id="__config" type="application/json">{"base": "../..", "features": ["content.code.copy"], "search": "../../assets/javascripts/workers/search.f8cc74c7.min.js", "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.f1b6f286.min.js"></script>
+      
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.4/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script>
+      
+    
+  </body>
+</html>
