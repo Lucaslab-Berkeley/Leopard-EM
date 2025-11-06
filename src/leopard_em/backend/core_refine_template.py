@@ -15,10 +15,8 @@ from leopard_em.backend.cross_correlation import (
     do_batched_orientation_cross_correlate,
     do_batched_orientation_cross_correlate_cpu,
 )
-from leopard_em.backend.utils import (
-    normalize_template_projection,
-    run_multiprocess_jobs,
-)
+from leopard_em.backend.distributed import run_multiprocess_jobs
+from leopard_em.backend.utils import normalize_template_projection
 from leopard_em.pydantic_models.utils import calculate_ctf_filter_stack_full_args
 from leopard_em.utils.cross_correlation import handle_correlation_mode
 

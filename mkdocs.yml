@@ -24,13 +24,15 @@ markdown_extensions:
   - pymdownx.superfences
   - mdx_math
   - footnotes
+  - tables
 extra_javascript:
   - https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.4/MathJax.js?config=TeX-AMS-MML_HTMLorMML
 nav:
   - Home: index.md
   - Tutorials:
-    - 2DTM Introduction: tutorials/match_template_intro.md
-    - Batch Processing: tutorials/batch_processing.md
+    - 2DTM Introduction:      tutorials/match_template_intro.md
+    - Batch Processing:       tutorials/batch_processing.md
+    - Distributed Computing:  tutorials/distributed_match_template.md
   - Examples:
     - Match Template Config:            examples/01_basic_configuration.ipynb
     - Peaks to DataFrame:               examples/02_extract_peak_info.ipynb
@@ -45,6 +47,7 @@ nav:
     - Optimize Template details:  programs/optimize_template.md
     - Constrained Search details: programs/constrained_search.md
   - Program Output Formats: data_formats.md
+  - Benchmarks: benchmarks.md
   - Common Issues: common_issues.md
   #   - Analyzing Match Template Results: examples/analyzing_results.md
   # - Pydantic Model API: api/pydantic_models.md

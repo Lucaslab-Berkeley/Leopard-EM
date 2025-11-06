@@ -7,7 +7,7 @@ from pydantic import ConfigDict
 
 from leopard_em.backend.core_refine_template import core_refine_template
 from leopard_em.pydantic_models.config import (
-    ComputationalConfig,
+    ComputationalConfigRefine,
     DefocusSearchConfig,
     PixelSizeSearchConfig,
     PreprocessingFilters,
@@ -37,7 +37,7 @@ class RefineTemplateManager(BaseModel2DTM):
         Configuration for orientation refinement.
     preprocessing_filters : PreprocessingFilters
         Filters to apply to the particle images.
-    computational_config : ComputationalConfig
+    computational_config : ComputationalConfigRefine
         What computational resources to allocate for the program.
     template_volume : ExcludedTensor
         The template volume tensor (excluded from serialization).
@@ -61,7 +61,7 @@ class RefineTemplateManager(BaseModel2DTM):
     pixel_size_refinement_config: PixelSizeSearchConfig
     orientation_refinement_config: RefineOrientationConfig
     preprocessing_filters: PreprocessingFilters
-    computational_config: ComputationalConfig
+    computational_config: ComputationalConfigRefine
 
     # Excluded tensors
     template_volume: ExcludedTensor
@@ -164,6 +164,7 @@ class RefineTemplateManager(BaseModel2DTM):
 
         return result
 
+    # pylint: disable=too-many-locals
     def refine_result_to_dataframe(
         self,
         output_dataframe_path: str,
@@ -190,6 +191,7 @@ class RefineTemplateManager(BaseModel2DTM):
         pos_offset_y_ang = pos_offset_y * df_refined["pixel_size"]
         pos_offset_x_ang = pos_offset_x * df_refined["pixel_size"]
 
+        # pylint: disable=protected-access
         if (
             prefer_refined_angles
             and self.particle_stack._get_position_reference_columns()
