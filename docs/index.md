@@ -7,11 +7,25 @@ description: Overview of the Leopard-EM package for 2DTM in Python
 
 Welcome to the **L**ocation & ori**E**ntati**O**n of **PAR**ticles found using two-**D**imensional t**E**mplate **M**atching (Leopard-EM) online documentation!
 Leopard-EM is a Python implementation of Two-Dimensional Template Matching (2DTM) which itself is a data processing method in cryo-EM for locating and orienting particles using a reference structure.
-This package currently reflects the functionality described in Lucas, *et al.* (2021)[^1] with additional programs to maximize the usefulness of 2DTM as well as other user-friendly features for integrating into broader data science workflows.
+<!-- This package currently reflects the functionality described in Lucas, *et al.* (2021)[^1] with additional programs to maximize the usefulness of 2DTM as well as other user-friendly features for integrating into broader data science workflows. -->
 
 !!! note "Citing this work"
 
-    If you use Leopard-EM in your research, please cite (coming soon!).
+    If you use Leopard-EM in your research, please cite the [Leopard-EM preprint](https://doi.org/10.1101/2025.08.26.672452):
+
+    ```
+    @article {Giammar2025.08.26.672452,
+        author = {Giammar, Matthew David and Dickerson, Joshua Luke and Hall, Laina Nicole and Lucas, Bronwyn Ayla},
+        title = {Leopard-EM: An extensible 2DTM package to accelerate in situ structural biology},
+        elocation-id = {2025.08.26.672452},
+        year = {2025},
+        doi = {10.1101/2025.08.26.672452},
+        publisher = {Cold Spring Harbor Laboratory},
+        URL = {https://www.biorxiv.org/content/early/2025/08/29/2025.08.26.672452},
+        eprint = {https://www.biorxiv.org/content/early/2025/08/29/2025.08.26.672452.full.pdf},
+        journal = {bioRxiv}
+    }
+    ```
 
 ## Installation
 
@@ -202,6 +216,6 @@ See the [Installation -- For Developers](#for-developers) section for instructio
 
 The code in this repository is licensed under the **BSD 3-Clause License**. See the [LICENSE](LICENSE) file for full details.
 
-## References
+<!-- ## References
 
-[^1]: Lucas BA, Himes BA, Xue L, Grant T, Mahamid J, Grigorieff N. Locating macromolecular assemblies in cells by 2D template matching with cisTEM. Elife. 2021 Jun 11;10:e68946. doi: 10.7554/eLife.68946. PMID: 34114559; PMCID: PMC8219381.
+[^1]: Lucas BA, Himes BA, Xue L, Grant T, Mahamid J, Grigorieff N. Locating macromolecular assemblies in cells by 2D template matching with cisTEM. Elife. 2021 Jun 11;10:e68946. doi: 10.7554/eLife.68946. PMID: 34114559; PMCID: PMC8219381. -->
