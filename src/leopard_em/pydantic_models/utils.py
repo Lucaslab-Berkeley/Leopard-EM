@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any
 
 import torch
 from torch_fourier_filter.ctf import calculate_ctf_2d
+from torch_fourier_filter.dose_weight import dose_weight_movie
 from torch_fourier_filter.envelopes import b_envelope
 
 # Using the TYPE_CHECKING statement to avoid circular imports
@@ -200,6 +201,55 @@ def calculate_ctf_filter_stack_full_args(
     ctf = torch.stack(ctf_list, dim=0)
 
     return ctf
+
+
+def dose_weight(
+    movie_fft: torch.Tensor,
+    pixel_size: float,
+    pre_exposure: float,
+    fluence_per_frame: float,
+    voltage: float,
+) -> torch.Tensor:
+    """Dose weight a movie.
+
+    Parameters
+    ----------
+    movie_fft : torch.Tensor
+        The movie in Fourier space.
+    pixel_size : float
+        The pixel size.
+    pre_exposure : float
+        The pre-exposure fluence in electrons per Angstrom squared.
+    fluence_per_frame : float
+        The dose per frame in electrons per Angstrom squared.
+    voltage : float
+        The voltage in kV.
+
+    Returns
+    -------
+    torch.Tensor
+        The dose weighted movie.
+    """
+    # get the height and width from the last two dimensions
+    frame_shape = (movie_fft.shape[-2], movie_fft.shape[-1] * 2 - 2)
+    # mean zero
+    # movie_fft[..., 0, 0] = 0.0 + 0.0j
+    # apply dose weight
+    movie_dw_dft = dose_weight_movie(
+        movie_dft=movie_fft,
+        image_shape=frame_shape,
+        pixel_size=pixel_size,
+        pre_exposure=pre_exposure,
+        dose_per_frame=fluence_per_frame,
+        voltage=voltage,
+        crit_exposure_bfactor=-1,
+        rfft=True,
+        fftshift=False,
+    )
+    # inverse FFT
+    movie_dw = torch.fft.irfft2(movie_dw_dft, s=frame_shape, dim=(-2, -1))
+    image_dw = torch.sum(movie_dw, dim=0)
+    return image_dw
 
 
 def get_cs_range(
@@ -407,6 +457,10 @@ def setup_images_filters_particle_stack(
     preprocessing_filters: "PreprocessingFilters",
     template: torch.Tensor,
     apply_global_filtering: bool = True,
+    movie: torch.Tensor | None = None,
+    deformation_field: torch.Tensor | None = None,
+    pre_exposure: float = 0.0,
+    fluence_per_frame: float = 1.0,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Extract and preprocess particle images and calculate filters.
 
@@ -425,6 +479,14 @@ def setup_images_filters_particle_stack(
         If True, apply filtering to the full micrograph before particle extraction.
         If False, filters are calculated and applied to the cropped particle images.
         Default is True.
+    movie: torch.Tensor | None
+        The movie tensor.
+    deformation_field: torch.Tensor | None
+        The deformation field tensor.
+    pre_exposure: float
+        The pre-exposure fluence in electrons per Angstrom squared.
+    fluence_per_frame: float
+        The fluence per frame in electrons per Angstrom squared.
 
     Returns
     -------
@@ -436,9 +498,10 @@ def setup_images_filters_particle_stack(
     """
     box_h, box_w = particle_stack.extracted_box_size
     # Load the micrographs
-    micrograph_images, micrograph_indexes = (
-        particle_stack.load_images_grouped_by_column(column_name="micrograph_path")
-    )
+    if movie is None and deformation_field is None:
+        micrograph_images, micrograph_indexes = (
+            particle_stack.load_images_grouped_by_column(column_name="micrograph_path")
+        )
     img_h, img_w = micrograph_images.shape[-2:]
     # if global filering, need to apply the filters to the micrographs
     projective_filters = None
@@ -462,15 +525,27 @@ def setup_images_filters_particle_stack(
             micrograph_images_dft, dim=(-2, -1)
         )
     # Extract out the regions of interest (particles) based on the particle stack
-    particle_images = particle_stack.construct_image_stack(
-        images=micrograph_images,
-        indices=micrograph_indexes,
-        extraction_size=particle_stack.extracted_box_size,
-        pos_reference="top-left",
-        padding_value=0.0,
-        handle_bounds="pad",
-        padding_mode="reflect",  # avoid issues of zeros
-    )
+    if movie is not None and deformation_field is not None:
+        particle_images = particle_stack.construct_image_stack_from_movie(
+            movie=movie,
+            deformation_field=deformation_field,
+            pos_reference="top-left",
+            handle_bounds="pad",
+            padding_mode="reflect",
+            padding_value=0.0,
+            pre_exposure=pre_exposure,
+            fluence_per_frame=fluence_per_frame,
+        )
+    else:
+        particle_images = particle_stack.construct_image_stack(
+            images=micrograph_images,
+            indices=micrograph_indexes,
+            extraction_size=particle_stack.extracted_box_size,
+            pos_reference="top-left",
+            padding_value=0.0,
+            handle_bounds="pad",
+            padding_mode="reflect",  # avoid issues of zeros
+        )
 
     if not apply_global_filtering:
         particle_images_dft = torch.fft.rfftn(particle_images, dim=(-2, -1))  # pylint: disable=not-callable
@@ -510,6 +585,10 @@ def setup_particle_backend_kwargs(
     pixel_size_offsets: torch.Tensor,
     apply_global_filtering: bool,
     device_list: list,
+    movie: torch.Tensor | None = None,
+    deformation_field: torch.Tensor | None = None,
+    pre_exposure: float = 0.0,
+    fluence_per_frame: float = 1.0,
 ) -> dict[str, Any]:
     """Create common kwargs dictionary for template backend functions.
 
@@ -537,6 +616,14 @@ def setup_particle_backend_kwargs(
         If False, filters are calculated and applied to the cropped particle images.
     device_list : list
         List of computational devices to use.
+    movie: torch.Tensor | None
+        The movie tensor.
+    deformation_field: torch.Tensor | None
+        The deformation field tensor.
+    pre_exposure: float
+        The pre-exposure fluence in electrons per Angstrom squared.
+    fluence_per_frame: float
+        The fluence per frame in electrons per Angstrom squared.
 
     Returns
     -------
@@ -588,7 +675,14 @@ def setup_particle_backend_kwargs(
         template_dft,
         projective_filters,
     ) = setup_images_filters_particle_stack(
-        particle_stack, preprocessing_filters, template, apply_global_filtering
+        particle_stack=particle_stack,
+        preprocessing_filters=preprocessing_filters,
+        template=template,
+        apply_global_filtering=apply_global_filtering,
+        movie=movie,
+        deformation_field=deformation_field,
+        pre_exposure=pre_exposure,
+        fluence_per_frame=fluence_per_frame,
     )
 
     # The best defocus values for each particle (+ astigmatism)

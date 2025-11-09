@@ -54,6 +54,9 @@ dependencies = [
     "ttsim3d>=v0.4.0",
     "lmfit",
     "zenodo-get",
+    "torch-fourier-shift",
+    "torch-motion-correction>=0.0.4",
+    "torch-grid-utils>=v0.0.9"
 ]
 
 [tool.hatch.metadata]

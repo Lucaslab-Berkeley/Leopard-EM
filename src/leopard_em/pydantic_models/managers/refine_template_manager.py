@@ -1,5 +1,6 @@
 """Pydantic model for running the refine template program."""
 
+import warnings
 from typing import Any, ClassVar
 
 import numpy as np
@@ -9,6 +10,7 @@ from leopard_em.backend.core_refine_template import core_refine_template
 from leopard_em.pydantic_models.config import (
     ComputationalConfigRefine,
     DefocusSearchConfig,
+    MovieConfig,
     PixelSizeSearchConfig,
     PreprocessingFilters,
     RefineOrientationConfig,
@@ -45,6 +47,8 @@ class RefineTemplateManager(BaseModel2DTM):
         Default is True.
     template_volume : ExcludedTensor
         The template volume tensor (excluded from serialization).
+    movie_config : MovieConfig
+        Configuration for the movie.
 
     Methods
     -------
@@ -66,7 +70,7 @@ class RefineTemplateManager(BaseModel2DTM):
     orientation_refinement_config: RefineOrientationConfig
     preprocessing_filters: PreprocessingFilters
     computational_config: ComputationalConfigRefine
-
+    movie_config: MovieConfig
     apply_global_filtering: bool = True
 
     # Excluded tensors
@@ -109,6 +113,18 @@ class RefineTemplateManager(BaseModel2DTM):
         # The relative pixel size values to search over
         pixel_size_offsets = self.pixel_size_refinement_config.pixel_size_values
 
+        # Load movie and deformation field
+        movie = self.movie_config.movie
+        deformation_field = self.movie_config.deformation_field
+
+        if movie is not None and self.apply_global_filtering:
+            warnings.warn(
+                "Global filtering cannot be applied with movie refinement. "
+                "Disabling apply_global_filtering.",
+                stacklevel=2,
+            )
+            self.apply_global_filtering = False
+
         # Use the common utility function to set up the backend kwargs
         # pylint: disable=duplicate-code
         return setup_particle_backend_kwargs(
@@ -120,6 +136,10 @@ class RefineTemplateManager(BaseModel2DTM):
             defocus_offsets=defocus_offsets,
             pixel_size_offsets=pixel_size_offsets,
             apply_global_filtering=self.apply_global_filtering,
+            movie=movie,
+            deformation_field=deformation_field,
+            pre_exposure=self.movie_config.pre_exposure,
+            fluence_per_frame=self.movie_config.fluence_per_frame,
             device_list=self.computational_config.gpu_devices,
         )
 
