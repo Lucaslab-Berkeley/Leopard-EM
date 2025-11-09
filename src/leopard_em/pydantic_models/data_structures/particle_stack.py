@@ -641,7 +641,6 @@ class ParticleStack(BaseModel2DTM):
         """
         # Create an empty tensor to store the filter stack
         filter_stack = torch.zeros((self.num_particles, *output_shape))
-
         # Verify that the number of images matches the number of indices
         if images_dft.shape[0] != len(indices):
             raise ValueError(
@@ -903,18 +902,16 @@ class ParticleStack(BaseModel2DTM):
         pixel_sizes = self.get_pixel_size()
         # Determine which position columns to use (refined if available)
         y_col, x_col = self._get_position_reference_columns()
-
         # Create an empty tensor to store the image stack
         h, w = self.original_template_size
         box_h, box_w = self.extracted_box_size
-        t, H, W = movie.shape
+        t, img_h, img_w = movie.shape
         _, _, gh, gw = deformation_field.shape
         normalized_t = torch.linspace(0, 1, steps=t, device=movie.device)
         pixel_grid = coordinate_grid(
-            image_shape=(H, W),
+            image_shape=(img_h, img_w),
             device=movie.device,
         )
-
         # Find the indexes in the DataFrame that correspond to each unique image
         paticle_indexes = self._df.index.tolist()
         pos_y = self._df.loc[paticle_indexes, y_col].to_numpy()
@@ -927,15 +924,8 @@ class ParticleStack(BaseModel2DTM):
 
         pos_y_center = pos_y + h // 2
         pos_x_center = pos_x + w // 2
-
-        # Our reference is now a top-left corner of a box of the original template
-        # shape, BUT we want a slightly larger box of extracted_box_size AND this
-        # box to be centered around the particle. Therefore, need to shift the
-        # position half the difference between the original template size and
-        # the extracted box size.
         pos_y -= (box_h - h) // 2
         pos_x -= (box_w - w) // 2
-
         pos_y = torch.tensor(pos_y)
         pos_x = torch.tensor(pos_x)
         pos_y_center = torch.tensor(pos_y_center)
@@ -954,14 +944,12 @@ class ParticleStack(BaseModel2DTM):
                 t=normalized_t[frame_index],
                 grid_shape=(10 * gh, 10 * gw),
             )
-
             pixel_shifts = get_pixel_shifts(
                 frame=movie_frame,
                 pixel_spacing=pixel_sizes[0],
                 frame_deformation_grid=frame_deformation_field,
                 pixel_grid=pixel_grid,
             )  # (H, W, yx)
-
             y_shifts = -pixel_shifts[
                 pos_y_center, pos_x_center, 0
             ]  # y-component of shifts
@@ -971,7 +959,6 @@ class ParticleStack(BaseModel2DTM):
             print(
                 f"frame {frame_index}: y_shifts: {y_shifts[0]}, x_shifts: {x_shifts[0]}"
             )
-
             # Extract particles from this frame
             cropped_images = get_cropped_image_regions(
                 movie_frame,
@@ -983,9 +970,8 @@ class ParticleStack(BaseModel2DTM):
                 padding_mode=padding_mode,
                 padding_value=padding_value,
             )
-
             # Now Fourier shift the cropped images (use torch-fourier-shift)
-            cropped_images_dft = torch.fft.rfftn(cropped_images, dim=(-2, -1))
+            cropped_images_dft = torch.fft.rfftn(cropped_images, dim=(-2, -1))  # pylint: disable=not-callable
             shifted_fft = fourier_shift_dft_2d(
                 dft=cropped_images_dft,
                 image_shape=(box_h, box_w),
@@ -995,9 +981,7 @@ class ParticleStack(BaseModel2DTM):
             )
             # store them in a tensor shape (N, t, box_h, box_w)
             aligned_particle_movies_rfft[:, frame_index] = shifted_fft
-
         # Dose weight the aligned particle images
-        # TODO: Want to be able to alter dose weighting in future
         aligned_particle_images = torch.zeros((self.num_particles, box_h, box_w))
         for particle_index in range(self.num_particles):
             print(f"Dose weighting particle {particle_index} of {self.num_particles}")
@@ -1012,5 +996,4 @@ class ParticleStack(BaseModel2DTM):
             aligned_particle_images[particle_index] = dw_sum
 
         self.image_stack = aligned_particle_images
-
         return aligned_particle_images

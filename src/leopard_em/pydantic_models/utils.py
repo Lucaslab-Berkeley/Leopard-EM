@@ -247,7 +247,7 @@ def dose_weight(
         fftshift=False,
     )
     # inverse FFT
-    movie_dw = torch.fft.irfft2(movie_dw_dft, s=frame_shape, dim=(-2, -1))
+    movie_dw = torch.fft.irfft2(movie_dw_dft, s=frame_shape, dim=(-2, -1))  # pylint: disable=not-callable
     image_dw = torch.sum(movie_dw, dim=0)
     return image_dw
 
@@ -452,6 +452,7 @@ def apply_image_filtering(
     )
 
 
+# pylint: disable=too-many-locals
 def setup_images_filters_particle_stack(
     particle_stack: "ParticleStack",
     preprocessing_filters: "PreprocessingFilters",
@@ -498,14 +499,14 @@ def setup_images_filters_particle_stack(
     """
     box_h, box_w = particle_stack.extracted_box_size
     # Load the micrographs
-    if movie is None and deformation_field is None:
-        micrograph_images, micrograph_indexes = (
-            particle_stack.load_images_grouped_by_column(column_name="micrograph_path")
-        )
-    img_h, img_w = micrograph_images.shape[-2:]
+
+    micrograph_images, micrograph_indexes = (
+        particle_stack.load_images_grouped_by_column(column_name="micrograph_path")
+    )
     # if global filering, need to apply the filters to the micrographs
     projective_filters = None
     if apply_global_filtering:
+        img_h, img_w = micrograph_images.shape[-2:]
         micrograph_images_dft = torch.fft.rfftn(micrograph_images, dim=(-2, -1))  # pylint: disable=not-callable
         micrograph_images_dft[..., 0, 0] = 0.0 + 0.0j  # Zero out DC component
         projective_filters = particle_stack.construct_projective_filters(
@@ -575,6 +576,8 @@ def setup_images_filters_particle_stack(
 
 
 # pylint: disable=too-many-locals
+# pylint: disable=too-many-arguments
+# pylint: disable=too-many-positional-arguments
 def setup_particle_backend_kwargs(
     particle_stack: "ParticleStack",
     template: torch.Tensor,
