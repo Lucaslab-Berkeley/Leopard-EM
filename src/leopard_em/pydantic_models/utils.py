@@ -51,7 +51,7 @@ def preprocess_image(
     squared_sum += torch.sum(
         squared_image_rfft[..., :, 1:-1], dim=(-2, -1), keepdim=True
     )
-    image_rfft /= torch.sqrt(squared_sum)
+    image_rfft = image_rfft / torch.sqrt(squared_sum)  # Non-in-place preserves gradient
 
     # NOTE: For two Gaussian random variables in d-dimensional space --  A and B --
     # each with mean 0 and variance 1 their correlation will have on average a
@@ -66,13 +66,13 @@ def preprocess_image(
     # Below, we calculate the dimensionality of our cross-correlation and divide
     # by the square root of that number to normalize the image.
     dimensionality = bandpass_filter.sum() + bandpass_filter[:, 1:-1].sum()
-    image_rfft *= dimensionality**0.5
+    image_rfft = image_rfft * dimensionality**0.5
 
     # NOTE: We need to rescale based on the relative area of the extracted box
     # to the full image.
     img_h, img_w = full_image_shape
     box_h, box_w = extracted_box_shape
-    image_rfft *= ((img_h * img_w) / ((box_h) * (box_w))) ** 0.5
+    image_rfft = image_rfft * ((img_h * img_w) / ((box_h) * (box_w))) ** 0.5
 
     return image_rfft
 
@@ -435,14 +435,15 @@ def apply_image_filtering(
     torch.Tensor
         The filtered images in Fourier space
     """
+    device = images_dft.device
     bandpass_filter = preprocessing_filters.bandpass_filter.calculate_bandpass_filter(
         images_dft.shape[-2:]
-    )
+    ).to(device)
     filter_stack = particle_stack.construct_image_filters(
         preprocessing_filters,
         output_shape=images_dft.shape[-2:],
         images_dft=images_dft,
-    )
+    ).to(device)
     return preprocess_image(
         image_rfft=images_dft,
         cumulative_fourier_filters=filter_stack,
@@ -497,24 +498,28 @@ def setup_images_filters_particle_stack(
         - template_dft: The Fourier transformed template
         - projective_filters: Filters applied to the template
     """
+    device = template.device
     box_h, box_w = particle_stack.extracted_box_size
     # Load the micrographs
-
     micrograph_images, micrograph_indexes = (
         particle_stack.load_images_grouped_by_column(column_name="micrograph_path")
     )
+    micrograph_images = micrograph_images.to(device)
+    # micrograph_indexes is a list[pd.Index], not a tensor, so no .to(device) needed
     # if global filering, need to apply the filters to the micrographs
     projective_filters = None
     if apply_global_filtering:
         img_h, img_w = micrograph_images.shape[-2:]
         micrograph_images_dft = torch.fft.rfftn(micrograph_images, dim=(-2, -1))  # pylint: disable=not-callable
+        if micrograph_images.requires_grad:
+            micrograph_images_dft = micrograph_images_dft.clone()
         micrograph_images_dft[..., 0, 0] = 0.0 + 0.0j  # Zero out DC component
         projective_filters = particle_stack.construct_projective_filters(
             preprocessing_filters,
             output_shape=(template.shape[-2], template.shape[-1] // 2 + 1),
             images_dft=micrograph_images_dft,
             indices=micrograph_indexes,
-        )
+        ).to(device)
         micrograph_images_dft = apply_image_filtering(
             particle_stack,
             preprocessing_filters,
@@ -547,15 +552,17 @@ def setup_images_filters_particle_stack(
             handle_bounds="pad",
             padding_mode="reflect",  # avoid issues of zeros
         )
-
+    particle_images = particle_images.to(device)
     if not apply_global_filtering:
         particle_images_dft = torch.fft.rfftn(particle_images, dim=(-2, -1))  # pylint: disable=not-callable
+        if particle_images.requires_grad:
+            particle_images_dft = particle_images_dft.clone()
         particle_images_dft[..., 0, 0] = 0.0 + 0.0j  # Zero out DC component
         projective_filters = particle_stack.construct_image_filters(
             preprocessing_filters,
             output_shape=(template.shape[-2], template.shape[-1] // 2 + 1),
             images_dft=particle_images_dft,
-        )
+        ).to(device)
         particle_images_dft = apply_image_filtering(
             particle_stack,
             preprocessing_filters,
@@ -633,6 +640,7 @@ def setup_particle_backend_kwargs(
     dict[str, Any]
         Dictionary of keyword arguments for backend functions.
     """
+    device = template.device
     h, w = particle_stack.original_template_size
     box_h, box_w = particle_stack.extracted_box_size
     extracted_box_size = (box_h - h + 1, box_w - w + 1)
@@ -642,7 +650,9 @@ def setup_particle_backend_kwargs(
     ) = particle_stack.load_images_grouped_by_column(
         column_name="correlation_average_path"
     )
-
+    correlation_avg_images = correlation_avg_images.to(device)
+    # correlation_avg_indexes is a list[pd.Index], not a tensor,
+    # so no .to(device) needed
     corr_mean_stack = particle_stack.construct_image_stack(
         images=correlation_avg_images,
         indices=correlation_avg_indexes,
@@ -651,7 +661,7 @@ def setup_particle_backend_kwargs(
         handle_bounds="pad",
         padding_mode="constant",
         padding_value=0.0,
-    )
+    ).to(device)
 
     (
         correlation_var_images,
@@ -659,7 +669,9 @@ def setup_particle_backend_kwargs(
     ) = particle_stack.load_images_grouped_by_column(
         column_name="correlation_variance_path"
     )
-
+    correlation_var_images = correlation_var_images.to(device)
+    # correlation_var_indexes is a list[pd.Index], not a tensor,
+    # so no .to(device) needed
     corr_std_stack = particle_stack.construct_image_stack(
         images=correlation_var_images,
         indices=correlation_var_indexes,
@@ -668,7 +680,7 @@ def setup_particle_backend_kwargs(
         handle_bounds="pad",
         padding_mode="constant",
         padding_value=1e10,  # large to avoid out of bound pixels having inf z-score
-    )
+    ).to(device)
     corr_std_stack = corr_std_stack**0.5  # Convert variance to standard deviation
 
     # Extract and preprocess images and filters
@@ -690,7 +702,9 @@ def setup_particle_backend_kwargs(
 
     # The best defocus values for each particle (+ astigmatism)
     defocus_u, defocus_v = particle_stack.get_absolute_defocus()
-    defocus_angle = torch.tensor(particle_stack["astigmatism_angle"])
+    defocus_u = defocus_u.to(device)
+    defocus_v = defocus_v.to(device)
+    defocus_angle = torch.tensor(particle_stack["astigmatism_angle"], device=device)
 
     ctf_kwargs = _setup_ctf_kwargs_from_particle_stack(
         particle_stack, (template.shape[-2], template.shape[-1])

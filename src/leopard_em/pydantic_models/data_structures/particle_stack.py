@@ -930,8 +930,13 @@ class ParticleStack(BaseModel2DTM):
         pos_x = torch.tensor(pos_x)
         pos_y_center = torch.tensor(pos_y_center)
         pos_x_center = torch.tensor(pos_x_center)
+        # Initialize tensor with requires_grad matching the movie tensor to
+        # preserve gradients if they exist
         aligned_particle_movies_rfft = torch.zeros(
-            (self.num_particles, t, box_h, box_w // 2 + 1), dtype=torch.complex64
+            (self.num_particles, t, box_h, box_w // 2 + 1),
+            dtype=torch.complex64,
+            device=movie.device,
+            requires_grad=movie.requires_grad or deformation_field.requires_grad,
         )
         # set frames mean zero
         movie = movie - torch.mean(movie, dim=(-2, -1), keepdim=True)
@@ -982,7 +987,13 @@ class ParticleStack(BaseModel2DTM):
             # store them in a tensor shape (N, t, box_h, box_w)
             aligned_particle_movies_rfft[:, frame_index] = shifted_fft
         # Dose weight the aligned particle images
-        aligned_particle_images = torch.zeros((self.num_particles, box_h, box_w))
+        # Initialize tensor with requires_grad matching input tensors to preserve
+        # gradients if they exist
+        aligned_particle_images = torch.zeros(
+            (self.num_particles, box_h, box_w),
+            device=movie.device,
+            requires_grad=movie.requires_grad or deformation_field.requires_grad,
+        )
         for particle_index in range(self.num_particles):
             print(f"Dose weighting particle {particle_index} of {self.num_particles}")
             particle_dft = aligned_particle_movies_rfft[particle_index]
