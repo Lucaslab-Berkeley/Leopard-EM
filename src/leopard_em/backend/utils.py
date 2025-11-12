@@ -160,6 +160,7 @@ def do_iteration_statistics_updates(
     correlation_squared_sum: torch.Tensor,
     img_h: int,
     img_w: int,
+    needs_valid_cropping: bool = True,
 ) -> None:
     """Helper function for updating maxima and tracked statistics.
 
@@ -197,8 +198,17 @@ def do_iteration_statistics_updates(
         Height of the cross-correlation values.
     img_w : int
         Width of the cross-correlation values.
+    needs_valid_cropping : bool, optional
+        Whether the cross-correlation tensor should be cropped (via a view operation)
+        to the valid dimensions (defined by `img_h` and `img_w`). If False, the
+        cross-correlation tensor is assumed to already be in the valid shape.
     """
-    cc_reshaped = cross_correlation.view(-1, img_h, img_w)
+    if needs_valid_cropping:
+        cc_reshaped = cross_correlation.view(-1, img_h, img_w)
+    else:
+        cc_reshaped = cross_correlation.view(
+            -1, cross_correlation.shape[-2], cross_correlation.shape[-1]
+        )
 
     # Need two passes for maxima operator for memory efficiency
     # and to distinguish between batch position which would both update

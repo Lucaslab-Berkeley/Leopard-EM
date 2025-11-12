@@ -73,10 +73,13 @@ class ComputationalConfigMatch(BaseComputationalConfig):
         - The specific string "cpu" which means to use CPU.
     num_cpus : int
         Total number of CPUs to use, defaults to 1.
-    backend : Optional[str]
-        The backend to use for match template.
-        Must be "streamed" or "batched".
-        Defaults to "streamed".
+    backend : Literal["streamed", "batched", "zipfft"], optional
+        The cross-correlation backend to use for match template. Must be one of
+        "streamed", "batched", or "zipfft". When "streamed", individual 2D
+        cross-correlations are computed across multiple streams using PyTorch while
+        with "batched", all the 2D cross-correlations are computed in a single batched
+        call also with PyTorch. When "zipfft", the zipFFT library is used to compute the
+        cross-correlations. Defaults to "streamed".
     """
 
     # Type-hinting here is ensuring non-negative integers, and list of at least one
@@ -89,7 +92,7 @@ class ComputationalConfigMatch(BaseComputationalConfig):
         ]
     ] = [0]
     num_cpus: Annotated[int, Field(ge=1)] = 1
-    backend: Literal["streamed", "batched"] = "streamed"
+    backend: Literal["streamed", "batched", "zipfft"] = "streamed"
 
 
 class ComputationalConfigRefine(BaseComputationalConfig):

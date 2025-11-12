@@ -16,6 +16,7 @@ import tqdm
 from leopard_em.backend.cross_correlation import (
     do_batched_orientation_cross_correlate,
     do_streamed_orientation_cross_correlate,
+    do_batched_orientation_cross_correlate_zipfft,
 )
 from leopard_em.backend.distributed import (
     MultiprocessWorkIndexQueue,
@@ -423,6 +424,10 @@ def _core_match_template_single_gpu(
               each pixel.
     """
     image_shape_real = (image_dft.shape[0], image_dft.shape[1] * 2 - 2)  # adj. for RFFT
+    cross_correlation_shape_valid = (
+        image_shape_real[0] - template_dft.shape[1] + 1,
+        image_shape_real[1] - (template_dft.shape[2] * 2 - 2) + 1,
+    )
 
     # Create CUDA streams for parallel computation
     streams = [torch.cuda.Stream(device=device) for _ in range(num_cuda_streams)]
@@ -454,21 +459,49 @@ def _core_match_template_single_gpu(
     ### Initialize the tracked output statistics ###
     ################################################
 
-    mip = torch.full(
-        size=image_shape_real,
-        fill_value=-float("inf"),
-        dtype=DEFAULT_STATISTIC_DTYPE,
-        device=device,
-    )
-    best_global_index = torch.full(
-        image_shape_real, fill_value=-1, dtype=torch.int32, device=device
-    )
-    correlation_sum = torch.zeros(
-        size=image_shape_real, dtype=DEFAULT_STATISTIC_DTYPE, device=device
-    )
-    correlation_squared_sum = torch.zeros(
-        size=image_shape_real, dtype=DEFAULT_STATISTIC_DTYPE, device=device
-    )
+    if backend == "zipfft":
+        mip = torch.full(
+            size=cross_correlation_shape_valid,
+            fill_value=-float("inf"),
+            dtype=DEFAULT_STATISTIC_DTYPE,
+            device=device,
+        )
+        best_global_index = torch.full(
+            cross_correlation_shape_valid,
+            fill_value=-1,
+            dtype=torch.int32,
+            device=device,
+        )
+        correlation_sum = torch.zeros(
+            size=cross_correlation_shape_valid,
+            dtype=DEFAULT_STATISTIC_DTYPE,
+            device=device,
+        )
+        correlation_squared_sum = torch.zeros(
+            size=cross_correlation_shape_valid,
+            dtype=DEFAULT_STATISTIC_DTYPE,
+            device=device,
+        )
+        # NOTE: zipFFT expects a pre-transformed, pre-transposed input image FFT
+        # Transpose the 'image_dft' along last two dimensions into contiguous layout
+        # with shape (..., W // 2 + 1, H)
+        image_dft = image_dft.transpose(-2, -1).contiguous()
+    else:
+        mip = torch.full(
+            size=image_shape_real,
+            fill_value=-float("inf"),
+            dtype=DEFAULT_STATISTIC_DTYPE,
+            device=device,
+        )
+        best_global_index = torch.full(
+            image_shape_real, fill_value=-1, dtype=torch.int32, device=device
+        )
+        correlation_sum = torch.zeros(
+            size=image_shape_real, dtype=DEFAULT_STATISTIC_DTYPE, device=device
+        )
+        correlation_squared_sum = torch.zeros(
+            size=image_shape_real, dtype=DEFAULT_STATISTIC_DTYPE, device=device
+        )
 
     ##################################
     ### Start the orientation loop ###
@@ -511,13 +544,20 @@ def _core_match_template_single_gpu(
                         rotation_matrices=rot_matrix,
                         projective_filters=projective_filters,
                     )
-                else:
+                elif backend == "streamed":
                     cross_correlation = do_streamed_orientation_cross_correlate(
                         image_dft=image_dft,
                         template_dft=template_dft,
                         rotation_matrices=rot_matrix,
                         projective_filters=projective_filters,
                         streams=streams,
+                    )
+                elif backend == "zipfft":
+                    cross_correlation = do_batched_orientation_cross_correlate_zipfft(
+                        image_dft=image_dft,
+                        template_dft=template_dft,
+                        rotation_matrices=rot_matrix,
+                        projective_filters=projective_filters,
                     )
 
                 # Update the tracked statistics
@@ -528,8 +568,16 @@ def _core_match_template_single_gpu(
                     best_global_index=best_global_index,
                     correlation_sum=correlation_sum,
                     correlation_squared_sum=correlation_squared_sum,
-                    img_h=image_shape_real[0],
-                    img_w=image_shape_real[1],
+                    img_h=(
+                        image_shape_real[0]
+                        if backend != "zipfft"
+                        else cross_correlation_shape_valid[0]
+                    ),
+                    img_w=(
+                        image_shape_real[1]
+                        if backend != "zipfft"
+                        else cross_correlation_shape_valid[1]
+                    ),
                 )
         except Exception as e:
             index_queue.set_error_flag()
