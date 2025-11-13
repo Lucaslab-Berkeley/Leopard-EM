@@ -345,7 +345,8 @@ class MatchTemplateManager(BaseModel2DTM):
         self.match_template_result.total_defocus = results["total_defocus"]
 
         # Apply the valid cropping mode to the results
-        if do_valid_cropping:
+        # NOTE: zipFFT already applies valid cropping internally
+        if do_valid_cropping and self.computational_config.backend != "zipfft":
             nx = self.template_volume.shape[-1]
             self.match_template_result.apply_valid_cropping((nx, nx))
 
