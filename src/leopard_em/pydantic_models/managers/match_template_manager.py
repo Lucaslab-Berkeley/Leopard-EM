@@ -353,8 +353,9 @@ class MatchTemplateManager(BaseModel2DTM):
         # Store the correlation table for later analysis
         self.match_template_result.correlation_table = results["correlation_table"]
 
-        # Apply the valid cropping mode to the results, if requested
-        if do_valid_cropping:
+        # Apply the valid cropping mode to the results
+        # NOTE: zipFFT already applies valid cropping internally
+        if do_valid_cropping and self.computational_config.backend != "zipfft":
             nx = self.template_volume.shape[-1]
             self.match_template_result.apply_valid_cropping((nx, nx))
 
