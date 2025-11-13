@@ -445,6 +445,9 @@ def do_batched_orientation_cross_correlate_zipfft(
                         image_shape_real[1],
                     )
 
+    # NOTE: zipFFT currently does not apply FFT normalization, so apply it here
+    cross_correlation /= (image_shape_real[0] * image_shape_real[1])
+
     # NOTE: zipFFT internally does not synchronize CUDA, so must do it manually
     torch.cuda.synchronize()
 
