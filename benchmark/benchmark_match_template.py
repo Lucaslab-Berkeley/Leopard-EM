@@ -76,6 +76,7 @@ def benchmark_match_template_single_run(
         **core_kwargs,
         orientation_batch_size=orientation_batch_size,
         num_cuda_streams=mt_manager.computational_config.num_cpus,
+        backend=mt_manager.computational_config.backend,
     )
     total_projections = result["total_projections"]  # number of CCGs calculated, N
 
@@ -102,13 +103,14 @@ def benchmark_match_template_single_run(
     # -->           r = (N - n) / (T_N - T_n)
     # -->           k = N * (T_N - T_n) / (N - n)
 
-    core_kwargs["euler_angles"] = torch.rand(size=(100, 3)) * 180
+    core_kwargs["euler_angles"] = torch.rand(size=(300, 3)) * orientation_batch_size
     start_time = time.perf_counter()
 
     result = core_match_template(
         **core_kwargs,
         orientation_batch_size=orientation_batch_size,
         num_cuda_streams=mt_manager.computational_config.num_cpus,
+        backend=mt_manager.computational_config.backend,
     )
     adjustment_projections = result["total_projections"]  # number of CCGs calculated, n
 
@@ -137,7 +139,7 @@ def run_benchmark(orientation_batch_size: int, num_runs: int) -> dict[str, Any]:
     """Run multiple benchmark iterations and collect statistics."""
     # Download example data to use for benchmarking
     print("Downloading benchmarking data...")
-    download_comparison_data()
+    # download_comparison_data()
     print("Done!")
 
     # Get CUDA device properties

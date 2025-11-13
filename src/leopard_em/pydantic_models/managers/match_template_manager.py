@@ -13,7 +13,7 @@ from leopard_em.backend.core_match_template_distributed import (
     core_match_template_distributed,
 )
 from leopard_em.pydantic_models.config import (
-    ComputationalConfig,
+    ComputationalConfigMatch,
     DefocusSearchConfig,
     MultipleOrientationConfig,
     OrientationSearchConfig,
@@ -57,7 +57,7 @@ class MatchTemplateManager(BaseModel2DTM):
     match_template_result : MatchTemplateResult
         Result of the match template program stored as an instance of the
         `MatchTemplateResult` class.
-    computational_config : ComputationalConfig
+    computational_config : ComputationalConfigMatch
         Parameters for controlling computational resources.
 
     Methods
@@ -98,7 +98,7 @@ class MatchTemplateManager(BaseModel2DTM):
     orientation_search_config: OrientationSearchConfig | MultipleOrientationConfig
     preprocessing_filters: PreprocessingFilters
     match_template_result: MatchTemplateResult
-    computational_config: ComputationalConfig
+    computational_config: ComputationalConfigMatch
 
     # Non-serialized large array-like attributes
     micrograph: ExcludedTensor
@@ -243,6 +243,7 @@ class MatchTemplateManager(BaseModel2DTM):
             **core_kwargs,
             orientation_batch_size=orientation_batch_size,
             num_cuda_streams=self.computational_config.num_cpus,
+            backend=self.computational_config.backend,
         )
 
         # Populate the MatchTemplateResult via a private helper
@@ -313,6 +314,7 @@ class MatchTemplateManager(BaseModel2DTM):
             device,
             orientation_batch_size,
             self.computational_config.num_cpus,
+            self.computational_config.backend,
             **core_kwargs,
         )
 

@@ -127,10 +127,11 @@ def test_core_match_template():
     mip = mrcfile.read("tests/tmp/test_match_template_xenon_216_000_0_output_mip.mrc")
 
     # Check 1: Fewer than 0.2% pixels
-    assert len(diff_defocus[0]) < mip.size, ">0.2 pct defocus values differ"
-    assert len(diff_phi[0]) < mip.size, ">0.2 pct phi values differ"
-    assert len(diff_theta[0]) < mip.size, ">0.2 pct theta values differ"
-    assert len(diff_psi[0]) < mip.size, ">0.2 pct psi values differ"
+    ACC_PCT = 0.002  # 0.2 percent
+    assert len(diff_defocus[0]) < mip.size * ACC_PCT, ">0.2 pct defocus values differ"
+    assert len(diff_phi[0]) < mip.size * ACC_PCT, ">0.2 pct phi values differ"
+    assert len(diff_theta[0]) < mip.size * ACC_PCT, ">0.2 pct theta values differ"
+    assert len(diff_psi[0]) < mip.size * ACC_PCT, ">0.2 pct psi values differ"
 
     # Check 2: Overlap at least 50%
     defocus_set = set(zip(diff_defocus[0], diff_defocus[1]))

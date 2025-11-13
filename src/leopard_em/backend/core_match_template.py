@@ -16,7 +16,9 @@ import torch
 import tqdm
 
 from leopard_em.backend.cross_correlation import (
+    do_batched_orientation_cross_correlate,
     do_streamed_orientation_cross_correlate,
+    do_batched_orientation_cross_correlate_zipfft,
 )
 from leopard_em.backend.distributed import (
     MultiprocessWorkIndexQueue,
@@ -97,7 +99,7 @@ def monitor_match_template_progress(
 def setup_progress_tracking(
     index_queue: "MultiprocessWorkIndexQueue",
     unit_scale: Union[float, int],
-    num_devices: int,
+    devices: list[torch.device],
 ) -> tuple[tqdm.tqdm, dict[int, tqdm.tqdm]]:
     """Setup global and per-device tqdm progress bars for template matching.
 
@@ -107,8 +109,8 @@ def setup_progress_tracking(
         The shared work queue tracking global indices.
     unit_scale : Union[float, int]
         Scaling factor to apply to units
-    num_devices : int
-        Number of GPU devices being used.
+    devices : list[torch.device]
+        List of devices to create per-device progress bars for.
 
     Returns
     -------
@@ -128,7 +130,7 @@ def setup_progress_tracking(
     # Per-device progress bars
     device_pbars = {
         i: tqdm.tqdm(
-            desc=f"GPU {i}",
+            desc=f"device - {d.type} {d.index}",
             dynamic_ncols=True,
             smoothing=0.02,
             unit="corr",
@@ -136,7 +138,7 @@ def setup_progress_tracking(
             position=i + 1,  # place below the global bar
             leave=True,
         )
-        for i in range(num_devices)
+        for i, d in enumerate(devices)
     }
 
     return global_pbar, device_pbars
@@ -149,6 +151,8 @@ def setup_progress_tracking(
 
 
 # pylint: disable=too-many-locals
+# pylint: disable=too-many-arguments
+# pylint: disable=too-many-positional-arguments
 def core_match_template(
     image_dft: torch.Tensor,
     template_dft: torch.Tensor,  # already fftshifted
@@ -160,6 +164,7 @@ def core_match_template(
     device: torch.device | list[torch.device],
     orientation_batch_size: int = 1,
     num_cuda_streams: int = 1,
+    backend: str = "streamed",
 ) -> dict[str, torch.Tensor | dict | int]:
     """Core function for performing the whole-orientation search.
 
@@ -211,6 +216,9 @@ def core_match_template(
         number of cross-correlations to compute per batch, then the number of streams
         will be reduced to the number of cross-correlations per batch. This is done to
         avoid unnecessary overhead and performance degradation.
+    backend : str, optional
+        The backend to use for computation. Defaults to 'streamed'.
+        Must be 'streamed' or 'batched'.
 
     Returns
     -------
@@ -289,7 +297,7 @@ def core_match_template(
     global_pbar, device_pbars = setup_progress_tracking(
         index_queue=index_queue,
         unit_scale=defocus_values.shape[0] * pixel_values.shape[0],
-        num_devices=len(device),
+        devices=device,
     )
     progress_callback = partial(
         monitor_match_template_progress,
@@ -310,6 +318,7 @@ def core_match_template(
             "pixel_values": pixel_values,
             "orientation_batch_size": orientation_batch_size,
             "num_cuda_streams": num_cuda_streams,
+            "backend": backend,
             "device": d,
         }
 
@@ -381,6 +390,7 @@ def _core_match_template_single_gpu(
     pixel_values: torch.Tensor,
     orientation_batch_size: int,
     num_cuda_streams: int,
+    backend: str,
     device: torch.device,
 ) -> tuple[
     torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, tensordict.TensorDict
@@ -390,8 +400,8 @@ def _core_match_template_single_gpu(
     Parameters
     ----------
     rank : int
-        Rank of the device which computation is running on. Results will be stored
-        in the dictionary with this key.
+        Rank of the device which computation is running on. Used for tracking grabbed
+        work from the shared queue.
     index_queue : MultiprocessWorkIndexQueue
         Torch multiprocessing object for retrieving the next batch of orientations to
         process during the 2DTM search.
@@ -418,6 +428,9 @@ def _core_match_template_single_gpu(
         The number of projections to calculate the correlation for at once.
     num_cuda_streams : int
         Number of CUDA streams to use for parallelizing cross-correlation computation.
+    backend : str, optional
+        The backend to use for computation.
+        Defaults to 'streamed'. Must be 'streamed' or 'batched'.
     device : torch.device
         Device to run the computation on. All tensors must be allocated on this device.
 
@@ -474,22 +487,6 @@ def _core_match_template_single_gpu(
     ### Initialize the tracked output statistics ###
     ################################################
 
-    mip = torch.full(
-        size=valid_correlation_shape,
-        fill_value=-float("inf"),
-        dtype=DEFAULT_STATISTIC_DTYPE,
-        device=device,
-    )
-    best_global_index = torch.full(
-        valid_correlation_shape, fill_value=-1, dtype=torch.int32, device=device
-    )
-    correlation_sum = torch.zeros(
-        size=valid_correlation_shape, dtype=DEFAULT_STATISTIC_DTYPE, device=device
-    )
-    correlation_squared_sum = torch.zeros(
-        size=valid_correlation_shape, dtype=DEFAULT_STATISTIC_DTYPE, device=device
-    )
-
     # Correlation table built from 'tensordict' library where any (x, y) positions
     # in correlation map which surpass the threshold will be added to the table.
     # Keys in table are:
@@ -509,6 +506,49 @@ def _core_match_template_single_gpu(
         },
         device=device,
     )
+    if backend == "zipfft":
+        mip = torch.full(
+            size=valid_correlation_shape,
+            fill_value=-float("inf"),
+            dtype=DEFAULT_STATISTIC_DTYPE,
+            device=device,
+        )
+        best_global_index = torch.full(
+            valid_correlation_shape,
+            fill_value=-1,
+            dtype=torch.int32,
+            device=device,
+        )
+        correlation_sum = torch.zeros(
+            size=valid_correlation_shape,
+            dtype=DEFAULT_STATISTIC_DTYPE,
+            device=device,
+        )
+        correlation_squared_sum = torch.zeros(
+            size=valid_correlation_shape,
+            dtype=DEFAULT_STATISTIC_DTYPE,
+            device=device,
+        )
+        # NOTE: zipFFT expects a pre-transformed, pre-transposed input image FFT
+        # Transpose the 'image_dft' along last two dimensions into contiguous layout
+        # with shape (..., W // 2 + 1, H)
+        image_dft = image_dft.transpose(-2, -1).contiguous()
+    else:
+        mip = torch.full(
+            size=image_shape_real,
+            fill_value=-float("inf"),
+            dtype=DEFAULT_STATISTIC_DTYPE,
+            device=device,
+        )
+        best_global_index = torch.full(
+            image_shape_real, fill_value=-1, dtype=torch.int32, device=device
+        )
+        correlation_sum = torch.zeros(
+            size=image_shape_real, dtype=DEFAULT_STATISTIC_DTYPE, device=device
+        )
+        correlation_squared_sum = torch.zeros(
+            size=image_shape_real, dtype=DEFAULT_STATISTIC_DTYPE, device=device
+        )
 
     ##################################
     ### Start the orientation loop ###
@@ -544,13 +584,28 @@ def _core_match_template_single_gpu(
                 batch_search_indices = indices + local_to_global_idx_increment[:, None]
                 batch_search_indices = batch_search_indices.flatten()
 
-                cross_correlation = do_streamed_orientation_cross_correlate(
-                    image_dft=image_dft,
-                    template_dft=template_dft,
-                    rotation_matrices=rot_matrix,
-                    projective_filters=projective_filters,
-                    streams=streams,
-                )
+                if backend == "batched":
+                    cross_correlation = do_batched_orientation_cross_correlate(
+                        image_dft=image_dft,
+                        template_dft=template_dft,
+                        rotation_matrices=rot_matrix,
+                        projective_filters=projective_filters,
+                    )
+                elif backend == "streamed":
+                    cross_correlation = do_streamed_orientation_cross_correlate(
+                        image_dft=image_dft,
+                        template_dft=template_dft,
+                        rotation_matrices=rot_matrix,
+                        projective_filters=projective_filters,
+                        streams=streams,
+                    )
+                elif backend == "zipfft":
+                    cross_correlation = do_batched_orientation_cross_correlate_zipfft(
+                        image_dft=image_dft,
+                        template_dft=template_dft,
+                        rotation_matrices=rot_matrix,
+                        projective_filters=projective_filters,
+                    )
 
                 # Update the tracked statistics
                 do_iteration_statistics_updates_compiled(

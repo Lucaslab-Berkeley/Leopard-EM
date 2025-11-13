@@ -163,6 +163,7 @@ def do_iteration_statistics_updates(
     img_w: int,
     valid_shape_h: int,
     valid_shape_w: int,
+    needs_valid_cropping: bool = True,
 ) -> None:
     """Helper function for updating maxima and tracked statistics.
 
@@ -207,14 +208,23 @@ def do_iteration_statistics_updates(
         Height of the valid region of the cross-correlation values.
     valid_shape_w : int
         Width of the valid region of the cross-correlation values.
+    needs_valid_cropping : bool, optional
+        Whether the cross-correlation tensor should be cropped (via a view operation)
+        to the valid dimensions (defined by `img_h` and `img_w`). If False, the
+        cross-correlation tensor is assumed to already be in the valid shape.
     """
     # NOTE: Using the as_strided view to exclude the "invalid" right and bottom edges
     # of the cross-correlation image.
-    cc_reshaped = cross_correlation.view(-1, img_h, img_w)
-    cc_reshaped = cc_reshaped.as_strided(
-        size=(cc_reshaped.shape[0], valid_shape_h, valid_shape_w),
-        stride=(cc_reshaped.stride(0), cc_reshaped.stride(1), cc_reshaped.stride(2)),
-    )
+    if needs_valid_cropping:
+        cc_reshaped = cross_correlation.view(-1, img_h, img_w)
+        cc_reshaped = cc_reshaped.as_strided(
+            size=(cc_reshaped.shape[0], valid_shape_h, valid_shape_w),
+            stride=(cc_reshaped.stride(0), cc_reshaped.stride(1), cc_reshaped.stride(2)),
+        )
+    else:
+        cc_reshaped = cross_correlation.view(
+            -1, cross_correlation.shape[-2], cross_correlation.shape[-1]
+        )
 
     # Need two passes for maxima operator for memory efficiency
     # and to distinguish between batch position which would both update
