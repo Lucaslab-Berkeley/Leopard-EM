@@ -152,31 +152,29 @@ def normalize_template_projection(
     return projections
 
 
-def do_iteration_statistics_updates(
+# @torch.compile  # type: ignore[misc]
+def _stats_and_table_core(
     cross_correlation: torch.Tensor,
     current_indexes: torch.Tensor,
     mip: torch.Tensor,
     best_global_index: torch.Tensor,
-    correlation_sum: torch.Tensor,
-    correlation_squared_sum: torch.Tensor,
+    threshold: float,
     img_h: int,
     img_w: int,
     valid_shape_h: int,
     valid_shape_w: int,
     needs_valid_cropping: bool = True,
-) -> None:
-    """Helper function for updating maxima and tracked statistics.
-
-    NOTE: The batch dimensions are effectively unraveled since taking the
-    maximum over a single batch dimensions is much faster than
-    multi-dimensional maxima.
-
-    NOTE: Updating the maxima was found to be fastest and least memory
-    impactful when using torch.where directly. Other methods tested were
-    boolean masking and torch.where with tuples of tensor indexes.
-
-    NOTE: This function does the valid cropping of the cross-correlation maps during
-    the statistics update (no need to apply valid cropping post-hoc).
+) -> tuple[
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+]:
+    """Compiled function to find new maxima and do correlation table updates.
 
     Parameters
     ----------
@@ -186,7 +184,8 @@ def do_iteration_statistics_updates(
         different pixel sizes (controlled by spherical aberration Cs) in the
         cross-correlation batch, 'num_defocus' are the number of different defocus
         values in the cross-correlation batch, and 'num_orientations' are the number of
-        different orientations in the cross-correlation batch.
+        different orientations in the cross-correlation batch. H and W can either be the
+        full image heigh/width or the valid cropped height/width.
     current_indexes : torch.Tensor
         The global search indexes for the *current* batch of pixel sizes, defocus
         values, and orientations. Has shape `num_cs * num_defocus * num_orientations`
@@ -196,10 +195,8 @@ def do_iteration_statistics_updates(
         Maximum intensity projection of the cross-correlation values.
     best_global_index : torch.Tensor
         Previous best global search indexes. Has shape (H, W) and is int32 type.
-    correlation_sum : torch.Tensor
-        Sum of cross-correlation values for each pixel.
-    correlation_squared_sum : torch.Tensor
-        Sum of squared cross-correlation values for each pixel.
+    threshold : float
+        The threshold value for adding entries to the correlation table.
     img_h : int
         Height of the cross-correlation values.
     img_w : int
@@ -213,74 +210,63 @@ def do_iteration_statistics_updates(
         to the valid dimensions (defined by `img_h` and `img_w`). If False, the
         cross-correlation tensor is assumed to already be in the valid shape.
     """
-    # NOTE: Using the as_strided view to exclude the "invalid" right and bottom edges
-    # of the cross-correlation image.
+    # create cropped view as in existing functions
     if needs_valid_cropping:
-        cc_reshaped = cross_correlation.view(-1, img_h, img_w)
+        cc_reshaped = cross_correlation.view(
+            -1, cross_correlation.shape[-2], cross_correlation.shape[-1]
+        )
         cc_reshaped = cc_reshaped.as_strided(
             size=(cc_reshaped.shape[0], valid_shape_h, valid_shape_w),
-            stride=(cc_reshaped.stride(0), cc_reshaped.stride(1), cc_reshaped.stride(2)),
+            stride=(
+                cc_reshaped.stride(0),
+                cc_reshaped.stride(1),
+                cc_reshaped.stride(2),
+            ),
         )
     else:
         cc_reshaped = cross_correlation.view(
             -1, cross_correlation.shape[-2], cross_correlation.shape[-1]
         )
 
-    # Need two passes for maxima operator for memory efficiency
-    # and to distinguish between batch position which would both update
+    # per-pixel maxima across the unraveled batch dimension
     max_values, max_indices = torch.max(cc_reshaped, dim=0)
 
-    # Do masked updates with torch.where directly (in-place)
+    # masked mip / index updates (do not modify originals here; return updated tensors)
     update_mask = max_values > mip
-    torch.where(update_mask, max_values, mip, out=mip)
-    torch.where(
-        update_mask,
-        current_indexes[max_indices],
-        best_global_index,
-        out=best_global_index,
+    new_mip = torch.where(update_mask, max_values, mip)
+    new_best_global_index = torch.where(
+        update_mask, current_indexes[max_indices], best_global_index
     )
 
-    correlation_sum += cc_reshaped.sum(dim=0)
-    correlation_squared_sum += (cc_reshaped**2).sum(dim=0)
+    # sums used for statistics
+    corr_sum = cc_reshaped.sum(dim=0)
+    corr_sq_sum = (cc_reshaped * cc_reshaped).sum(dim=0)
 
-
-@torch.compile  # type: ignore[misc]
-def _correlation_table_updates_core(
-    cross_correlation: torch.Tensor,
-    current_indexes: torch.Tensor,
-    threshold: float,
-    img_h: int,
-    img_w: int,
-    valid_shape_h: int,
-    valid_shape_w: int,
-    needs_valid_cropping: bool = True,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-    """Core function which gets compiled for correlation table updates."""
-    # NOTE: Using the as_strided view to exclude the "invalid" right and bottom edges
-    # of the cross-correlation image.
-    if needs_valid_cropping:
-        cc_reshaped = cross_correlation.view(-1, img_h, img_w)
-        cc_reshaped = cc_reshaped.as_strided(
-            size=(cc_reshaped.shape[0], valid_shape_h, valid_shape_w),
-            stride=(cc_reshaped.stride(0), cc_reshaped.stride(1), cc_reshaped.stride(2)),
-        )
-    else:
-        cc_reshaped = cross_correlation.view(
-            -1, cross_correlation.shape[-2], cross_correlation.shape[-1]
-        )
-
-    # Find where correlation surpasses threshold
+    # find threshold exceedances (for correlation table)
     batch_idxs, y_idxs, x_idxs = torch.where(cc_reshaped > threshold)
     values = cc_reshaped[batch_idxs, y_idxs, x_idxs]
     global_idxs = current_indexes[batch_idxs]
 
-    return global_idxs, y_idxs, x_idxs, values
+    return (
+        new_mip,
+        new_best_global_index,
+        corr_sum,
+        corr_sq_sum,
+        global_idxs,
+        y_idxs,
+        x_idxs,
+        values,
+    )
 
 
-def do_correlation_table_updates(
+def do_iteration_and_correlation_table_updates(
     cross_correlation: torch.Tensor,
     current_indexes: torch.Tensor,
     correlation_table: tensordict.TensorDict,
+    mip: torch.Tensor,
+    best_global_index: torch.Tensor,
+    correlation_sum: torch.Tensor,
+    correlation_squared_sum: torch.Tensor,
     threshold: float,
     img_h: int,
     img_w: int,
@@ -288,7 +274,7 @@ def do_correlation_table_updates(
     valid_shape_w: int,
     needs_valid_cropping: bool = True,
 ) -> None:
-    """Updates the correlation table with all (x, y) pos which surpass the threshold.
+    """Helper function for updating maxima, tracked statistics, and correlation table.
 
     Parameters
     ----------
@@ -307,6 +293,14 @@ def do_correlation_table_updates(
     correlation_table : tensordict.TensorDict
         The correlation table to update. Has keys
         ["threshold", "pos_x", "pos_y", "corr_value"] each of which are tensors.
+    mip : torch.Tensor
+        Maximum intensity projection of the cross-correlation values.
+    best_global_index : torch.Tensor
+        Previous best global search indexes. Has shape (H, W) and is int32 type.
+    correlation_sum : torch.Tensor
+        Sum of cross-correlation values for each pixel.
+    correlation_squared_sum : torch.Tensor
+        Sum of squared cross-correlation values for each pixel.
     threshold : float
         The threshold value for adding entries to the correlation table.
     img_h : int
@@ -317,16 +311,26 @@ def do_correlation_table_updates(
         Height of the valid region of the cross-correlation values.
     valid_shape_w : int
         Width of the valid region of the cross-correlation values.
+    needs_valid_cropping : bool, optional
+        Whether the cross-correlation tensor should be cropped (via a view operation)
+        to the valid dimensions (defined by `img_h` and `img_w`). If False, the
+        cross-correlation tensor is assumed to already be in the valid shape.
     """
-    threshold = correlation_table.get("threshold")
-
-    # Short circuit if no entries in the cross-correlation map surpass the threshold
-    if torch.max(cross_correlation) < threshold:
-        return
-
-    global_idxs, y_idxs, x_idxs, values = _correlation_table_updates_core(
+    # call compiled core
+    (
+        new_mip,
+        new_best_global_index,
+        corr_sum,
+        corr_sq_sum,
+        global_idxs,
+        y_idxs,
+        x_idxs,
+        values,
+    ) = _stats_and_table_core(
         cross_correlation,
         current_indexes,
+        mip,
+        best_global_index,
         threshold,
         img_h,
         img_w,
@@ -335,49 +339,26 @@ def do_correlation_table_updates(
         needs_valid_cropping=needs_valid_cropping,
     )
 
-    # # NOTE: Using the as_strided view to exclude the "invalid" right and bottom edges
-    # # of the cross-correlation image.
-    # cc_reshaped = cross_correlation.view(-1, img_h, img_w)
-    # cc_reshaped = cc_reshaped.as_strided(
-    #     size=(cc_reshaped.shape[0], valid_shape_h, valid_shape_w),
-    #     stride=(cc_reshaped.stride(0), cc_reshaped.stride(1), cc_reshaped.stride(2)),
-    # )
+    # update inplace the statistics tensors
+    mip.copy_(new_mip)
+    best_global_index.copy_(new_best_global_index)
 
-    # # Find where correlation surpasses threshold
-    # batch_idxs, y_idxs, x_idxs = torch.where(cc_reshaped > threshold)
-    # values = cc_reshaped[batch_idxs, y_idxs, x_idxs]
-    # global_idxs = current_indexes[batch_idxs]
+    correlation_sum += corr_sum
+    correlation_squared_sum += corr_sq_sum
 
-    # Get temporary tensors to extend the correlation table
-    correlation_table["global_idx"] = torch.cat(
-        [correlation_table["global_idx"], global_idxs]
-    )
-    correlation_table["pos_x"] = torch.cat([correlation_table["pos_x"], x_idxs])
-    correlation_table["pos_y"] = torch.cat([correlation_table["pos_y"], y_idxs])
-    correlation_table["corr_value"] = torch.cat(
-        [correlation_table["corr_value"], values]
-    )
-
-    # # Iterate over unique global indexes and update the correlation table
-    # for global_idx in torch.unique(global_idxs):
-    #     mask = global_idxs == global_idx
-
-    #     # What to place into the table
-    #     table_values = torch.stack(
-    #         [x_idxs[mask].float(), y_idxs[mask].float(), values[mask]], dim=1
-    #     )
-
-    #     # Key for the table. NOTE: there should never be a collision
-    #     key = str(int(global_idx.item()))
-    #     correlation_table[key] = table_values
+    # update correlation_table (tensordict operations not compiled)
+    if global_idxs.numel() > 0:
+        correlation_table["global_idx"] = torch.cat(
+            [correlation_table["global_idx"], global_idxs]
+        )
+        correlation_table["pos_x"] = torch.cat([correlation_table["pos_x"], x_idxs])
+        correlation_table["pos_y"] = torch.cat([correlation_table["pos_y"], y_idxs])
+        correlation_table["corr_value"] = torch.cat(
+            [correlation_table["corr_value"], values]
+        )
 
 
 # These are compiled normalization and stat update functions
 normalize_template_projection_compiled = attempt_torch_compilation(
     normalize_template_projection, backend="inductor", mode="default"
-)
-do_iteration_statistics_updates_compiled = attempt_torch_compilation(
-    do_iteration_statistics_updates,
-    backend="inductor",
-    mode="max-autotune-no-cudagraphs",
 )

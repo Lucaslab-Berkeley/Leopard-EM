@@ -30,10 +30,7 @@ from leopard_em.backend.process_results import (
     process_correlation_table,
     scale_mip,
 )
-from leopard_em.backend.utils import (
-    do_correlation_table_updates,
-    do_iteration_statistics_updates_compiled,
-)
+from leopard_em.backend.utils import do_iteration_and_correlation_table_updates
 
 DEFAULT_STATISTIC_DTYPE = torch.float32
 CORRELATION_TABLE_THRESHOLD = 5.5
@@ -506,49 +503,33 @@ def _core_match_template_single_gpu(
         },
         device=device,
     )
+    mip = torch.full(
+        size=valid_correlation_shape,
+        fill_value=-float("inf"),
+        dtype=DEFAULT_STATISTIC_DTYPE,
+        device=device,
+    )
+    best_global_index = torch.full(
+        valid_correlation_shape,
+        fill_value=-1,
+        dtype=torch.int32,
+        device=device,
+    )
+    correlation_sum = torch.zeros(
+        size=valid_correlation_shape,
+        dtype=DEFAULT_STATISTIC_DTYPE,
+        device=device,
+    )
+    correlation_squared_sum = torch.zeros(
+        size=valid_correlation_shape,
+        dtype=DEFAULT_STATISTIC_DTYPE,
+        device=device,
+    )
     if backend == "zipfft":
-        mip = torch.full(
-            size=valid_correlation_shape,
-            fill_value=-float("inf"),
-            dtype=DEFAULT_STATISTIC_DTYPE,
-            device=device,
-        )
-        best_global_index = torch.full(
-            valid_correlation_shape,
-            fill_value=-1,
-            dtype=torch.int32,
-            device=device,
-        )
-        correlation_sum = torch.zeros(
-            size=valid_correlation_shape,
-            dtype=DEFAULT_STATISTIC_DTYPE,
-            device=device,
-        )
-        correlation_squared_sum = torch.zeros(
-            size=valid_correlation_shape,
-            dtype=DEFAULT_STATISTIC_DTYPE,
-            device=device,
-        )
         # NOTE: zipFFT expects a pre-transformed, pre-transposed input image FFT
         # Transpose the 'image_dft' along last two dimensions into contiguous layout
         # with shape (..., W // 2 + 1, H)
         image_dft = image_dft.transpose(-2, -1).contiguous()
-    else:
-        mip = torch.full(
-            size=image_shape_real,
-            fill_value=-float("inf"),
-            dtype=DEFAULT_STATISTIC_DTYPE,
-            device=device,
-        )
-        best_global_index = torch.full(
-            image_shape_real, fill_value=-1, dtype=torch.int32, device=device
-        )
-        correlation_sum = torch.zeros(
-            size=image_shape_real, dtype=DEFAULT_STATISTIC_DTYPE, device=device
-        )
-        correlation_squared_sum = torch.zeros(
-            size=image_shape_real, dtype=DEFAULT_STATISTIC_DTYPE, device=device
-        )
 
     ##################################
     ### Start the orientation loop ###
@@ -607,26 +588,15 @@ def _core_match_template_single_gpu(
                         projective_filters=projective_filters,
                     )
 
-                # Update the tracked statistics
-                do_iteration_statistics_updates_compiled(
+                # Update tracked statistics and correlation table
+                do_iteration_and_correlation_table_updates(
                     cross_correlation=cross_correlation,
                     current_indexes=batch_search_indices,
+                    correlation_table=correlation_table,
                     mip=mip,
                     best_global_index=best_global_index,
                     correlation_sum=correlation_sum,
                     correlation_squared_sum=correlation_squared_sum,
-                    img_h=image_shape_real[0],
-                    img_w=image_shape_real[1],
-                    valid_shape_h=valid_correlation_shape[0],
-                    valid_shape_w=valid_correlation_shape[1],
-                    needs_valid_cropping=(backend != "zipfft"),
-                )
-
-                # Add new correlation values to the table
-                do_correlation_table_updates(
-                    cross_correlation=cross_correlation,
-                    current_indexes=batch_search_indices,
-                    correlation_table=correlation_table,
                     threshold=CORRELATION_TABLE_THRESHOLD,
                     img_h=image_shape_real[0],
                     img_w=image_shape_real[1],
@@ -672,7 +642,9 @@ def _core_match_template_multiprocess_wrapper(
         correlation_sum,
         correlation_squared_sum,
         correlation_table,
-    ) = _core_match_template_single_gpu(rank, **kwargs)  # type: ignore[arg-type]
+    ) = _core_match_template_single_gpu(
+        rank, **kwargs
+    )  # type: ignore[arg-type]
 
     # NOTE: Need to send all tensors back to the CPU as numpy arrays for the shared
     # process dictionary. This is a workaround for now

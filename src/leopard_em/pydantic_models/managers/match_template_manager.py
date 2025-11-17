@@ -355,7 +355,7 @@ class MatchTemplateManager(BaseModel2DTM):
 
         # Apply the valid cropping mode to the results
         # NOTE: zipFFT already applies valid cropping internally
-        if do_valid_cropping and self.computational_config.backend != "zipfft":
+        if do_valid_cropping:
             nx = self.template_volume.shape[-1]
             self.match_template_result.apply_valid_cropping((nx, nx))
 
