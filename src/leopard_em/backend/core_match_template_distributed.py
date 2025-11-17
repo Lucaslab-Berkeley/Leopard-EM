@@ -473,7 +473,6 @@ def core_match_template_distributed(
         num_cuda_streams=num_cuda_streams,
         backend=backend,
         device=device,
-        device=device,
     )
     dist.barrier()
 

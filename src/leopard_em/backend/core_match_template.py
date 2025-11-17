@@ -533,9 +533,6 @@ def _core_match_template_single_gpu(
         # Transpose the 'image_dft' along last two dimensions into contiguous layout
         # with shape (..., W // 2 + 1, H)
         image_dft = image_dft.transpose(-2, -1).contiguous()
-        # NOTE: zipFFT does not apply backwards FFT normalization, so we instead apply
-        # it to the input image (does not require addtl. multiplications in loop)
-        image_dft *= (image_shape_real[0] * image_shape_real[1])
     else:
         mip = torch.full(
             size=image_shape_real,
@@ -622,6 +619,7 @@ def _core_match_template_single_gpu(
                     img_w=image_shape_real[1],
                     valid_shape_h=valid_correlation_shape[0],
                     valid_shape_w=valid_correlation_shape[1],
+                    needs_valid_cropping=(backend != "zipfft"),
                 )
 
                 # Add new correlation values to the table
@@ -634,6 +632,7 @@ def _core_match_template_single_gpu(
                     img_w=image_shape_real[1],
                     valid_shape_h=valid_correlation_shape[0],
                     valid_shape_w=valid_correlation_shape[1],
+                    needs_valid_cropping=(backend != "zipfft"),
                 )
 
         except Exception as e:

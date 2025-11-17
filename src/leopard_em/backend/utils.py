@@ -253,15 +253,21 @@ def _correlation_table_updates_core(
     img_w: int,
     valid_shape_h: int,
     valid_shape_w: int,
+    needs_valid_cropping: bool = True,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """Core function which gets compiled for correlation table updates."""
     # NOTE: Using the as_strided view to exclude the "invalid" right and bottom edges
     # of the cross-correlation image.
-    cc_reshaped = cross_correlation.view(-1, img_h, img_w)
-    cc_reshaped = cc_reshaped.as_strided(
-        size=(cc_reshaped.shape[0], valid_shape_h, valid_shape_w),
-        stride=(cc_reshaped.stride(0), cc_reshaped.stride(1), cc_reshaped.stride(2)),
-    )
+    if needs_valid_cropping:
+        cc_reshaped = cross_correlation.view(-1, img_h, img_w)
+        cc_reshaped = cc_reshaped.as_strided(
+            size=(cc_reshaped.shape[0], valid_shape_h, valid_shape_w),
+            stride=(cc_reshaped.stride(0), cc_reshaped.stride(1), cc_reshaped.stride(2)),
+        )
+    else:
+        cc_reshaped = cross_correlation.view(
+            -1, cross_correlation.shape[-2], cross_correlation.shape[-1]
+        )
 
     # Find where correlation surpasses threshold
     batch_idxs, y_idxs, x_idxs = torch.where(cc_reshaped > threshold)
@@ -280,6 +286,7 @@ def do_correlation_table_updates(
     img_w: int,
     valid_shape_h: int,
     valid_shape_w: int,
+    needs_valid_cropping: bool = True,
 ) -> None:
     """Updates the correlation table with all (x, y) pos which surpass the threshold.
 
@@ -325,6 +332,7 @@ def do_correlation_table_updates(
         img_w,
         valid_shape_h,
         valid_shape_w,
+        needs_valid_cropping=needs_valid_cropping,
     )
 
     # # NOTE: Using the as_strided view to exclude the "invalid" right and bottom edges
