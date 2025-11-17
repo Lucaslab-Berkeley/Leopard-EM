@@ -17,8 +17,8 @@ import tqdm
 
 from leopard_em.backend.cross_correlation import (
     do_batched_orientation_cross_correlate,
-    do_streamed_orientation_cross_correlate,
     do_batched_orientation_cross_correlate_zipfft,
+    do_streamed_orientation_cross_correlate,
 )
 from leopard_em.backend.distributed import (
     MultiprocessWorkIndexQueue,
@@ -598,8 +598,6 @@ def _core_match_template_single_gpu(
                     correlation_sum=correlation_sum,
                     correlation_squared_sum=correlation_squared_sum,
                     threshold=CORRELATION_TABLE_THRESHOLD,
-                    img_h=image_shape_real[0],
-                    img_w=image_shape_real[1],
                     valid_shape_h=valid_correlation_shape[0],
                     valid_shape_w=valid_correlation_shape[1],
                     needs_valid_cropping=(backend != "zipfft"),
@@ -642,9 +640,7 @@ def _core_match_template_multiprocess_wrapper(
         correlation_sum,
         correlation_squared_sum,
         correlation_table,
-    ) = _core_match_template_single_gpu(
-        rank, **kwargs
-    )  # type: ignore[arg-type]
+    ) = _core_match_template_single_gpu(rank, **kwargs)  # type: ignore[arg-type]
 
     # NOTE: Need to send all tensors back to the CPU as numpy arrays for the shared
     # process dictionary. This is a workaround for now

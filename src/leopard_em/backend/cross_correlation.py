@@ -9,8 +9,8 @@ from leopard_em.backend.utils import (
     normalize_template_projection_compiled,
 )
 
-
 # Determine which batch sizes are supported by zipFFT for powers of 2
+# pylint: disable=c-extension-no-member
 ZIPFFT_SUPPORTED_CONFIGS = zipfft.padded_rconv2d.get_supported_conv_configs()
 ZIPFFT_SUPPORTED_BATCH_SIZES = [
     x[-2]
@@ -426,6 +426,7 @@ def do_batched_orientation_cross_correlate_zipfft(
             # batch size to decompose the projections into. Batch=1 will always be
             # supported.
             if num_orientations in ZIPFFT_SUPPORTED_BATCH_SIZES:
+                # pylint: disable=c-extension-no-member
                 zipfft.padded_rconv2d.corr(
                     projections[k, j, ...],
                     corr_workspace,
@@ -436,6 +437,7 @@ def do_batched_orientation_cross_correlate_zipfft(
                 )
             else:
                 for i in range(num_orientations):
+                    # pylint: disable=c-extension-no-member
                     zipfft.padded_rconv2d.corr(
                         projections[k, j, i, ...],
                         corr_workspace[i, ...],

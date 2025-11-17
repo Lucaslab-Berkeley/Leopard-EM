@@ -6,7 +6,7 @@ import torch
 from pydantic import BaseModel, Field
 
 # Type alias for non-negative integer
-NonNegativeInt = Annotated[int, Field(ge=0)]
+NonNegativeInt = Annotated[int, Field(ge=0)]  # pylint: disable=invalid-name
 
 
 class BaseComputationalConfig(BaseModel):

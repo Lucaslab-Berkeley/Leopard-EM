@@ -152,15 +152,14 @@ def normalize_template_projection(
     return projections
 
 
-# @torch.compile  # type: ignore[misc]
+@torch.compile  # type: ignore[misc]
+# pylint: disable=too-many-locals
 def _stats_and_table_core(
     cross_correlation: torch.Tensor,
     current_indexes: torch.Tensor,
     mip: torch.Tensor,
     best_global_index: torch.Tensor,
     threshold: float,
-    img_h: int,
-    img_w: int,
     valid_shape_h: int,
     valid_shape_w: int,
     needs_valid_cropping: bool = True,
@@ -197,18 +196,14 @@ def _stats_and_table_core(
         Previous best global search indexes. Has shape (H, W) and is int32 type.
     threshold : float
         The threshold value for adding entries to the correlation table.
-    img_h : int
-        Height of the cross-correlation values.
-    img_w : int
-        Width of the cross-correlation values.
     valid_shape_h : int
         Height of the valid region of the cross-correlation values.
     valid_shape_w : int
         Width of the valid region of the cross-correlation values.
     needs_valid_cropping : bool, optional
-        Whether the cross-correlation tensor should be cropped (via a view operation)
-        to the valid dimensions (defined by `img_h` and `img_w`). If False, the
-        cross-correlation tensor is assumed to already be in the valid shape.
+        Whether the cross-correlation tensor should be cropped (via a view operation).
+        If False, the cross-correlation tensor is assumed to already be in the valid
+        shape.
     """
     # create cropped view as in existing functions
     if needs_valid_cropping:
@@ -259,6 +254,9 @@ def _stats_and_table_core(
     )
 
 
+# pylint: disable=too-many-arguments
+# pylint: disable=too-many-positional-arguments
+# pylint: disable=too-many-locals
 def do_iteration_and_correlation_table_updates(
     cross_correlation: torch.Tensor,
     current_indexes: torch.Tensor,
@@ -268,8 +266,6 @@ def do_iteration_and_correlation_table_updates(
     correlation_sum: torch.Tensor,
     correlation_squared_sum: torch.Tensor,
     threshold: float,
-    img_h: int,
-    img_w: int,
     valid_shape_h: int,
     valid_shape_w: int,
     needs_valid_cropping: bool = True,
@@ -303,10 +299,6 @@ def do_iteration_and_correlation_table_updates(
         Sum of squared cross-correlation values for each pixel.
     threshold : float
         The threshold value for adding entries to the correlation table.
-    img_h : int
-        Height of the cross-correlation values.
-    img_w : int
-        Width of the cross-correlation values.
     valid_shape_h : int
         Height of the valid region of the cross-correlation values.
     valid_shape_w : int
@@ -332,8 +324,6 @@ def do_iteration_and_correlation_table_updates(
         mip,
         best_global_index,
         threshold,
-        img_h,
-        img_w,
         valid_shape_h,
         valid_shape_w,
         needs_valid_cropping=needs_valid_cropping,
