@@ -26,8 +26,8 @@ from torch_fourier_filter.envelopes import b_envelope
 
 from leopard_em.backend.cross_correlation import (
     do_batched_orientation_cross_correlate,
-    do_streamed_orientation_cross_correlate,
     do_batched_orientation_cross_correlate_zipfft,
+    do_streamed_orientation_cross_correlate,
 )
 from leopard_em.pydantic_models.utils import get_cs_range
 

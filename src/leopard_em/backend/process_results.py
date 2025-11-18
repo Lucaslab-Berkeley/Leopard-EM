@@ -1,6 +1,9 @@
 """Functions related to result processing after backend functions."""
 
+from typing import Any
+
 import numpy as np
+import tensordict
 import torch
 
 
@@ -56,20 +59,37 @@ def aggregate_distributed_results(
     correlation_sum = torch.from_numpy(correlation_sum)
     correlation_squared_sum = torch.from_numpy(correlation_squared_sum)
 
+    # Merge the correlation table dictionaries
+    # (no key collisions expected after popping "threshold")
+    full_correlation_table = {}
+    for result in results:
+        correlation_table = result["correlation_table"]
+        correlation_table = (
+            correlation_table.cpu().to_dict()
+            if isinstance(correlation_table, tensordict.TensorDict)
+            else correlation_table
+        )
+        threshold = correlation_table.pop("threshold")
+        full_correlation_table.update(correlation_table)
+
+    full_correlation_table["threshold"] = threshold
+
     return {
         "mip": mip_max,
         "best_global_index": best_index,
         "correlation_sum": correlation_sum,
         "correlation_squared_sum": correlation_squared_sum,
+        "correlation_table": full_correlation_table,
     }
 
 
+# pylint: disable=too-many-locals
 def decode_global_search_index(
     global_indices: torch.Tensor,  # integer tensor
     pixel_values: torch.Tensor,  # (num_cs,)
     defocus_values: torch.Tensor,  # (num_defocus,)
     euler_angles: torch.Tensor,  # (num_orientations, 3)
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """Decode flattened global indices back into (cs, defocus, orientation)."""
     _ = pixel_values  # Unused, but possible to add in future
 
@@ -81,7 +101,7 @@ def decode_global_search_index(
     stride_defocus = num_orientations
 
     # Calculate the indexes for each "best" array
-    # pixel_idx = global_indices // stride_cs
+    pixel_idx = global_indices // stride_cs
     rem = global_indices % stride_cs
     defocus_idx = rem // stride_defocus
     orientations_idx = rem % stride_defocus
@@ -90,9 +110,100 @@ def decode_global_search_index(
     theta = euler_angles[orientations_idx, 1]
     psi = euler_angles[orientations_idx, 2]
     defocus = defocus_values[defocus_idx]
-    # pixels = pixel_values[pixel_idx]
+    pixels = pixel_values[pixel_idx]
 
-    return phi, theta, psi, defocus
+    return phi, theta, psi, defocus, pixels
+
+
+# pylint: disable=too-many-locals
+def process_correlation_table(
+    correlation_table: dict[int | str, Any],
+    pixel_values: torch.Tensor,  # (num_cs,)
+    defocus_values: torch.Tensor,  # (num_defocus,)
+    euler_angles: torch.Tensor,  # (num_orientations, 3)
+) -> dict[str, list[float | int]]:
+    """Process the correlation table by applying a threshold.
+
+    Parameters
+    ----------
+    correlation_table : dict[int, torch.Tensor]
+        Dictionary containing the correlation table. Keys are global search indices,
+        values are tensors of shape (num_hits, 3) containing (x, y, cc) values.
+    pixel_values : torch.Tensor
+        Tensor containing the pixel values used in the search. Shape is (num_cs,).
+    defocus_values : torch.Tensor
+        Tensor containing the defocus values used in the search. Shape is
+        (num_defocus,).
+    euler_angles : torch.Tensor
+        Tensor containing the Euler angles used in the search. Shape is
+        (num_orientations, 3).
+
+    Returns
+    -------
+    dict[str, list[float | int]]
+        Processed correlation with keys for the unique point in search space and image
+        position for all cross-correlations which surpassed the threshold.
+    """
+    threshold = correlation_table.pop("threshold")
+    threshold = threshold.item() if isinstance(threshold, torch.Tensor) else threshold
+    # processed_table = {
+    #     "threshold": threshold,
+    #     "pixel_size": [],
+    #     "defocus": [],
+    #     "phi": [],
+    #     "theta": [],
+    #     "psi": [],
+    #     "x": [],
+    #     "y": [],
+    #     "correlation": [],
+    # }
+
+    # Convert string keys to integer tensor for decoding
+    global_indices = correlation_table["global_idx"]
+    phi, theta, psi, defocus, pixel_values = decode_global_search_index(
+        global_indices, pixel_values, defocus_values, euler_angles
+    )
+
+    processed_table = {
+        "threshold": threshold,
+        "pixel_size": pixel_values.numpy().tolist(),
+        "defocus": defocus.numpy().tolist(),
+        "phi": phi.numpy().tolist(),
+        "theta": theta.numpy().tolist(),
+        "psi": psi.numpy().tolist(),
+        "x": correlation_table["pos_x"].numpy().tolist(),
+        "y": correlation_table["pos_y"].numpy().tolist(),
+        "correlation": correlation_table["corr_value"].numpy().tolist(),
+    }
+
+    # # Process each global index
+    # for i, value in enumerate(correlation_table.values()):
+    #     # Get parameters for this index
+    #     this_pixel_size = pixel_values[i].item()
+    #     this_defocus = defocus[i].item()
+    #     this_phi = phi[i].item()
+    #     this_theta = theta[i].item()  # No tuple, just the value
+    #     this_psi = psi[i].item()  # No tuple, just the value
+
+    #     # Count points in this value
+    #     num_points = value.shape[0]
+
+    #     # Extract coordinates and correlation values
+    #     xs = value[:, 0].tolist()
+    #     ys = value[:, 1].tolist()
+    #     ccs = value[:, 2].tolist()
+
+    #     # Append all values at once
+    #     processed_table["pixel_size"].extend([this_pixel_size] * num_points)
+    #     processed_table["defocus"].extend([this_defocus] * num_points)
+    #     processed_table["phi"].extend([this_phi] * num_points)
+    #     processed_table["theta"].extend([this_theta] * num_points)
+    #     processed_table["psi"].extend([this_psi] * num_points)
+    #     processed_table["x"].extend([int(x) for x in xs])
+    #     processed_table["y"].extend([int(y) for y in ys])
+    #     processed_table["correlation"].extend(ccs)
+
+    return processed_table
 
 
 def correlation_sum_and_squared_sum_to_mean_and_variance(
