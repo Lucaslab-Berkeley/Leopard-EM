@@ -3,7 +3,9 @@
 
 from typing import TYPE_CHECKING, Any
 
+import pandas as pd
 import torch
+from torch_cubic_spline_grids import CubicCatmullRomGrid3d
 from torch_fourier_filter.ctf import calculate_ctf_2d
 from torch_fourier_filter.dose_weight import dose_weight_movie
 from torch_fourier_filter.envelopes import b_envelope
@@ -436,14 +438,20 @@ def apply_image_filtering(
         The filtered images in Fourier space
     """
     device = images_dft.device
-    bandpass_filter = preprocessing_filters.bandpass_filter.calculate_bandpass_filter(
-        images_dft.shape[-2:]
-    ).to(device)
-    filter_stack = particle_stack.construct_image_filters(
-        preprocessing_filters,
-        output_shape=images_dft.shape[-2:],
-        images_dft=images_dft,
-    ).to(device)
+
+    # Compute filters without gradient tracking (filters are just preprocessing)
+    with torch.no_grad():
+        bandpass_filter = (
+            preprocessing_filters.bandpass_filter.calculate_bandpass_filter(
+                images_dft.shape[-2:]
+            ).to(device)
+        )
+        filter_stack = particle_stack.construct_image_filters(
+            preprocessing_filters,
+            output_shape=images_dft.shape[-2:],
+            images_dft=images_dft.detach(),
+        ).to(device)
+
     return preprocess_image(
         image_rfft=images_dft,
         cumulative_fourier_filters=filter_stack,
@@ -454,6 +462,8 @@ def apply_image_filtering(
 
 
 # pylint: disable=too-many-locals
+# pylint: disable=too-many-arguments
+# pylint: disable=too-many-positional-arguments
 def setup_images_filters_particle_stack(
     particle_stack: "ParticleStack",
     preprocessing_filters: "PreprocessingFilters",
@@ -463,6 +473,9 @@ def setup_images_filters_particle_stack(
     deformation_field: torch.Tensor | None = None,
     pre_exposure: float = 0.0,
     fluence_per_frame: float = 1.0,
+    image_stack: torch.Tensor | None = None,
+    particle_indices: list[pd.Index] | None = None,
+    images_are_particles: bool = False,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Extract and preprocess particle images and calculate filters.
 
@@ -489,6 +502,12 @@ def setup_images_filters_particle_stack(
         The pre-exposure fluence in electrons per Angstrom squared.
     fluence_per_frame: float
         The fluence per frame in electrons per Angstrom squared.
+    image_stack: torch.Tensor | None
+        The image stack tensor.
+    particle_indices: list[pd.Index] | None
+        The particle indices to process.
+    images_are_particles: bool
+        Whether the images are particles or not. Defaults to False.
 
     Returns
     -------
@@ -500,69 +519,92 @@ def setup_images_filters_particle_stack(
     """
     device = template.device
     box_h, box_w = particle_stack.extracted_box_size
-    # Load the micrographs
-    micrograph_images, micrograph_indexes = (
-        particle_stack.load_images_grouped_by_column(column_name="micrograph_path")
-    )
-    micrograph_images = micrograph_images.to(device)
-    # micrograph_indexes is a list[pd.Index], not a tensor, so no .to(device) needed
-    # if global filering, need to apply the filters to the micrographs
     projective_filters = None
-    if apply_global_filtering:
-        img_h, img_w = micrograph_images.shape[-2:]
-        micrograph_images_dft = torch.fft.rfftn(micrograph_images, dim=(-2, -1))  # pylint: disable=not-callable
-        if micrograph_images.requires_grad:
-            micrograph_images_dft = micrograph_images_dft.clone()
-        micrograph_images_dft[..., 0, 0] = 0.0 + 0.0j  # Zero out DC component
-        projective_filters = particle_stack.construct_projective_filters(
-            preprocessing_filters,
-            output_shape=(template.shape[-2], template.shape[-1] // 2 + 1),
-            images_dft=micrograph_images_dft,
-            indices=micrograph_indexes,
-        ).to(device)
-        micrograph_images_dft = apply_image_filtering(
-            particle_stack,
-            preprocessing_filters,
-            micrograph_images_dft,
-            full_image_shape=(img_h, img_w),
-            extracted_box_shape=(box_h + 1, box_w + 1),
-        )
-        micrograph_images = torch.fft.irfftn(  # pylint: disable=not-callable
-            micrograph_images_dft, dim=(-2, -1)
-        )
-    # Extract out the regions of interest (particles) based on the particle stack
-    if movie is not None and deformation_field is not None:
-        particle_images = particle_stack.construct_image_stack_from_movie(
-            movie=movie,
-            deformation_field=deformation_field,
-            pos_reference="top-left",
-            handle_bounds="pad",
-            padding_mode="reflect",
-            padding_value=0.0,
-            pre_exposure=pre_exposure,
-            fluence_per_frame=fluence_per_frame,
-        )
+    if not images_are_particles:
+        # Load the micrograph
+        if image_stack is not None:
+            micrograph_images = image_stack
+            micrograph_indexes = particle_indices
+            if micrograph_indexes is None:
+                raise ValueError(
+                    "particle_indices must be provided when image_stack is provided."
+                )
+        else:
+            micrograph_images, micrograph_indexes = (
+                particle_stack.load_images_grouped_by_column(
+                    column_name="micrograph_path"
+                )
+            )
+            micrograph_images = micrograph_images.to(device)
+
+        # if global filering, need to apply the filters to the micrographs
+
+        if apply_global_filtering:
+            img_h, img_w = micrograph_images.shape[-2:]
+            micrograph_images_dft = torch.fft.rfftn(micrograph_images, dim=(-2, -1))  # pylint: disable=not-callable
+            if micrograph_images.requires_grad:
+                micrograph_images_dft = micrograph_images_dft.clone()
+            micrograph_images_dft[..., 0, 0] = 0.0 + 0.0j  # Zero out DC component
+
+            # Compute filters without gradient tracking (filters are just preprocessing)
+            with torch.no_grad():
+                projective_filters = particle_stack.construct_projective_filters(
+                    preprocessing_filters,
+                    output_shape=(template.shape[-2], template.shape[-1] // 2 + 1),
+                    images_dft=micrograph_images_dft.detach(),
+                    indices=micrograph_indexes,
+                ).to(device)
+            micrograph_images_dft = apply_image_filtering(
+                particle_stack,
+                preprocessing_filters,
+                micrograph_images_dft,
+                full_image_shape=(img_h, img_w),
+                extracted_box_shape=(box_h + 1, box_w + 1),
+            )
+            micrograph_images = torch.fft.irfftn(  # pylint: disable=not-callable
+                micrograph_images_dft, dim=(-2, -1)
+            )
+        # Extract out the regions of interest (particles) based on the particle stack
+        if movie is not None and deformation_field is not None:
+            particle_images = particle_stack.construct_image_stack_from_movie(
+                movie=movie,
+                deformation_field=deformation_field,
+                pos_reference="top-left",
+                handle_bounds="pad",
+                padding_mode="reflect",
+                padding_value=0.0,
+                pre_exposure=pre_exposure,
+                fluence_per_frame=fluence_per_frame,
+            )
+        else:
+            particle_images = particle_stack.construct_image_stack(
+                images=micrograph_images,
+                indices=micrograph_indexes,
+                extraction_size=particle_stack.extracted_box_size,
+                pos_reference="top-left",
+                padding_value=0.0,
+                handle_bounds="pad",
+                padding_mode="reflect",  # avoid issues of zeros
+            )
+
+        particle_images = particle_images.to(device)
     else:
-        particle_images = particle_stack.construct_image_stack(
-            images=micrograph_images,
-            indices=micrograph_indexes,
-            extraction_size=particle_stack.extracted_box_size,
-            pos_reference="top-left",
-            padding_value=0.0,
-            handle_bounds="pad",
-            padding_mode="reflect",  # avoid issues of zeros
-        )
-    particle_images = particle_images.to(device)
+        particle_images = image_stack
+        particle_stack.image_stack = particle_images
+
     if not apply_global_filtering:
         particle_images_dft = torch.fft.rfftn(particle_images, dim=(-2, -1))  # pylint: disable=not-callable
-        if particle_images.requires_grad:
-            particle_images_dft = particle_images_dft.clone()
+        # if particle_images.requires_grad:
+        #    particle_images_dft = particle_images_dft.clone()
         particle_images_dft[..., 0, 0] = 0.0 + 0.0j  # Zero out DC component
-        projective_filters = particle_stack.construct_image_filters(
-            preprocessing_filters,
-            output_shape=(template.shape[-2], template.shape[-1] // 2 + 1),
-            images_dft=particle_images_dft,
-        ).to(device)
+
+        # Compute filters without gradient tracking (filters are just preprocessing)
+        with torch.no_grad():
+            projective_filters = particle_stack.construct_image_filters(
+                preprocessing_filters,
+                output_shape=(template.shape[-2], template.shape[-1] // 2 + 1),
+                images_dft=particle_images_dft.detach(),
+            ).to(device)
         particle_images_dft = apply_image_filtering(
             particle_stack,
             preprocessing_filters,
@@ -596,9 +638,14 @@ def setup_particle_backend_kwargs(
     apply_global_filtering: bool,
     device_list: list,
     movie: torch.Tensor | None = None,
-    deformation_field: torch.Tensor | None = None,
+    deformation_field: CubicCatmullRomGrid3d | None = None,
     pre_exposure: float = 0.0,
     fluence_per_frame: float = 1.0,
+    image_stack: torch.Tensor | None = None,
+    mean_stack: torch.Tensor | None = None,
+    std_stack: torch.Tensor | None = None,
+    particle_indices: list[pd.Index] | None = None,
+    images_are_particles: bool = False,
 ) -> dict[str, Any]:
     """Create common kwargs dictionary for template backend functions.
 
@@ -634,6 +681,16 @@ def setup_particle_backend_kwargs(
         The pre-exposure fluence in electrons per Angstrom squared.
     fluence_per_frame: float
         The fluence per frame in electrons per Angstrom squared.
+    image_stack: torch.Tensor | None
+        The image stack tensor.
+    mean_stack: torch.Tensor | None
+        The mean stack tensor.
+    std_stack: torch.Tensor | None
+        The std stack tensor.
+    particle_indices: list[pd.Index] | None
+        The particle indices to process.
+    images_are_particles: bool
+        Whether the images are particles or not. Defaults to False.
 
     Returns
     -------
@@ -644,46 +701,72 @@ def setup_particle_backend_kwargs(
     h, w = particle_stack.original_template_size
     box_h, box_w = particle_stack.extracted_box_size
     extracted_box_size = (box_h - h + 1, box_w - w + 1)
-    (
-        correlation_avg_images,
-        correlation_avg_indexes,
-    ) = particle_stack.load_images_grouped_by_column(
-        column_name="correlation_average_path"
-    )
-    correlation_avg_images = correlation_avg_images.to(device)
-    # correlation_avg_indexes is a list[pd.Index], not a tensor,
-    # so no .to(device) needed
-    corr_mean_stack = particle_stack.construct_image_stack(
-        images=correlation_avg_images,
-        indices=correlation_avg_indexes,
-        extraction_size=extracted_box_size,
-        pos_reference="top-left",
-        handle_bounds="pad",
-        padding_mode="constant",
-        padding_value=0.0,
-    ).to(device)
 
-    (
-        correlation_var_images,
-        correlation_var_indexes,
-    ) = particle_stack.load_images_grouped_by_column(
-        column_name="correlation_variance_path"
-    )
-    correlation_var_images = correlation_var_images.to(device)
-    # correlation_var_indexes is a list[pd.Index], not a tensor,
-    # so no .to(device) needed
-    corr_std_stack = particle_stack.construct_image_stack(
-        images=correlation_var_images,
-        indices=correlation_var_indexes,
-        extraction_size=extracted_box_size,
-        pos_reference="top-left",
-        handle_bounds="pad",
-        padding_mode="constant",
-        padding_value=1e10,  # large to avoid out of bound pixels having inf z-score
-    ).to(device)
+    if mean_stack is None:
+        (
+            correlation_avg_images,
+            correlation_avg_indexes,
+        ) = particle_stack.load_images_grouped_by_column(
+            column_name="correlation_average_path"
+        )
+    else:
+        correlation_avg_images = mean_stack
+        if particle_indices is None:
+            raise ValueError(
+                "particle_indices must be provided when mean_stack is provided."
+            )
+        correlation_avg_indexes = particle_indices
+    if not images_are_particles:
+        corr_mean_stack = particle_stack.construct_image_stack(
+            images=correlation_avg_images,
+            indices=correlation_avg_indexes,
+            extraction_size=extracted_box_size,
+            pos_reference="top-left",
+            handle_bounds="pad",
+            padding_mode="constant",
+            padding_value=0.0,
+        ).to(device)
+    else:
+        if particle_indices is None:
+            raise ValueError(
+                "particle_indices must be provided when images_are_particles is True."
+            )
+        corr_mean_stack = mean_stack
+        correlation_avg_indexes = particle_indices
+
+    if std_stack is None:
+        (
+            correlation_var_images,
+            correlation_var_indexes,
+        ) = particle_stack.load_images_grouped_by_column(
+            column_name="correlation_variance_path"
+        )
+    else:
+        correlation_var_images = std_stack
+        if particle_indices is None:
+            raise ValueError(
+                "particle_indices must be provided when std_stack is provided."
+            )
+        correlation_var_indexes = particle_indices
+    if not images_are_particles:
+        corr_std_stack = particle_stack.construct_image_stack(
+            images=correlation_var_images,
+            indices=correlation_var_indexes,
+            extraction_size=extracted_box_size,
+            pos_reference="top-left",
+            handle_bounds="pad",
+            padding_mode="constant",
+            padding_value=1e10,  # large to avoid out of bound pixels having inf z-score
+        ).to(device)
+    else:
+        if particle_indices is None:
+            raise ValueError(
+                "particle_indices must be provided when images_are_particles is True."
+            )
+        corr_std_stack = std_stack
+        correlation_var_indexes = particle_indices
+
     corr_std_stack = corr_std_stack**0.5  # Convert variance to standard deviation
-
-    # Extract and preprocess images and filters
 
     (
         particle_images_dft,
@@ -698,6 +781,9 @@ def setup_particle_backend_kwargs(
         deformation_field=deformation_field,
         pre_exposure=pre_exposure,
         fluence_per_frame=fluence_per_frame,
+        image_stack=image_stack,
+        particle_indices=particle_indices,
+        images_are_particles=images_are_particles,
     )
 
     # The best defocus values for each particle (+ astigmatism)

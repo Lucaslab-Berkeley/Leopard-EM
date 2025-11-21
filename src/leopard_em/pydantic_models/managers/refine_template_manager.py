@@ -5,6 +5,7 @@ from typing import Any, ClassVar
 
 import numpy as np
 from pydantic import ConfigDict
+from torch_cubic_spline_grids import CubicCatmullRomGrid3d
 
 from leopard_em.backend.core_refine_template import core_refine_template
 from leopard_em.pydantic_models.config import (
@@ -115,7 +116,10 @@ class RefineTemplateManager(BaseModel2DTM):
 
         # Load movie and deformation field
         movie = self.movie_config.movie
-        deformation_field = self.movie_config.deformation_field
+        deformation_field_tensor = self.movie_config.deformation_field
+        deformation_field = CubicCatmullRomGrid3d.from_grid_data(
+            deformation_field_tensor
+        )
 
         if movie is not None and self.apply_global_filtering:
             warnings.warn(

@@ -3,6 +3,7 @@
 import warnings
 from typing import Any, ClassVar
 
+import pandas as pd
 import torch
 from pydantic import ConfigDict
 
@@ -85,9 +86,13 @@ class DifferentiableRefineManager(BaseModel2DTM):
 
     def make_backend_core_function_kwargs(
         self,
+        image_stack: torch.Tensor,
+        mean_stack: torch.Tensor,
+        std_stack: torch.Tensor,
+        particle_indices: list[pd.Index],
+        template_tensor: torch.Tensor | None = None,
         prefer_refined_angles: bool = True,
-        movie: torch.Tensor | None = None,
-        deformation_field: torch.Tensor | None = None,
+        images_are_particles: bool = False,
     ) -> dict[str, Any]:
         """Create the kwargs for the backend refine_template core function.
 
@@ -96,41 +101,30 @@ class DifferentiableRefineManager(BaseModel2DTM):
         prefer_refined_angles : bool
             Whether to use the refined angles from the particle stack. Defaults to
             False.
-        movie : torch.Tensor | None, optional
-            Pre-loaded movie tensor. If provided, will be used instead of loading
-            from movie_config. Gradients are preserved if the tensor has
-            requires_grad=True, allowing optimization of the deformation field.
-            Defaults to None.
-        deformation_field : torch.Tensor | None, optional
-            Pre-loaded deformation field tensor. If provided, will be used instead
-            of loading from movie_config. Gradients are preserved if the tensor has
-            requires_grad=True, allowing optimization of the deformation field.
-            Defaults to None.
+        images_are_particles: bool
+            Whether the images are particles or not. Defaults to False.
+        image_stack : torch.Tensor
+            Pre-loaded image stack tensor.
+        mean_stack : torch.Tensor
+            Pre-loaded mean stack tensor.
+        std_stack : torch.Tensor
+            Pre-loaded std stack tensor.
+        template_tensor : torch.Tensor | None
+            Pre-loaded template tensor. If None, will be loaded from the template volume
+            path. Defaults to None.
+        particle_indices : list[pd.Index]
+            The particle indices to process.
         """
-        # Load movie and deformation field if not provided
-        if movie is None:
-            movie = self.movie_config.movie
-        if deformation_field is None:
-            deformation_field = self.movie_config.deformation_field
-        # Determine device from movie or use first GPU device
-        if movie is not None:
-            device = movie.device
-        else:
-            device = self.computational_config.gpu_devices[0]
-        # Move tensors to device only if needed (preserves gradients)
-        if movie is not None and movie.device != device:
-            movie = movie.to(device)
-        if deformation_field is not None and deformation_field.device != device:
-            deformation_field = deformation_field.to(device)
-
+        # Determine device from image_stack
+        device = image_stack.device
         # Ensure the template is loaded in as a Tensor object
-        template = load_template_tensor(
-            template_volume=self.template_volume,
-            template_volume_path=self.template_volume_path,
-        )
-        if not isinstance(template, torch.Tensor):
-            template = torch.from_numpy(template)
-        template = template.to(device)
+        if template_tensor is None:
+            template = load_template_tensor(
+                template_volume=self.template_volume,
+                template_volume_path=self.template_volume_path,
+            ).to(device)
+        else:
+            template = template_tensor.to(device)
 
         # The set of "best" euler angles from match template search
         # Check if refined angles exist, otherwise use the original angles
@@ -146,9 +140,9 @@ class DifferentiableRefineManager(BaseModel2DTM):
         # The relative pixel size values to search over
         pixel_size_offsets = self.pixel_size_refinement_config.pixel_size_values
         pixel_size_offsets = pixel_size_offsets.to(device)
-        if movie is not None and self.apply_global_filtering:
+        if self.apply_global_filtering:
             warnings.warn(
-                "Global filtering cannot be applied with movie refinement. "
+                "Global filtering cannot be applied with particle stack refinement. "
                 "Disabling apply_global_filtering.",
                 stacklevel=2,
             )
@@ -165,19 +159,24 @@ class DifferentiableRefineManager(BaseModel2DTM):
             defocus_offsets=defocus_offsets,
             pixel_size_offsets=pixel_size_offsets,
             apply_global_filtering=self.apply_global_filtering,
-            movie=movie,
-            deformation_field=deformation_field,
-            pre_exposure=self.movie_config.pre_exposure,
-            fluence_per_frame=self.movie_config.fluence_per_frame,
             device_list=[device],
+            image_stack=image_stack,
+            mean_stack=mean_stack,
+            std_stack=std_stack,
+            particle_indices=particle_indices,
+            images_are_particles=images_are_particles,
         )
 
     def run_refine_template(
         self,
         output_dataframe_path: str,
+        image_stack: torch.Tensor,
+        mean_stack: torch.Tensor,
+        std_stack: torch.Tensor,
+        particle_indices: list[pd.Index],
+        template_tensor: torch.Tensor | None = None,
         correlation_batch_size: int = 32,
-        movie: torch.Tensor | None = None,
-        deformation_field: torch.Tensor | None = None,
+        images_are_particles: bool = False,
     ) -> None:
         """Run the refine template program and saves the resultant DataFrame to csv.
 
@@ -185,21 +184,29 @@ class DifferentiableRefineManager(BaseModel2DTM):
         ----------
         output_dataframe_path : str
             Path to save the refined particle data.
+        image_stack : torch.Tensor
+            Pre-loaded image stack tensor.
+        mean_stack : torch.Tensor
+            Pre-loaded mean stack tensor.
+        std_stack : torch.Tensor
+            Pre-loaded std stack tensor.
+        template_tensor : torch.Tensor | None
+            Pre-loaded template tensor. If None, will be loaded from the template volume
+            path. Defaults to None.
+        particle_indices : list[pd.Index]
+            The particle indices to process.
         correlation_batch_size : int
             Number of cross-correlations to process in one batch, defaults to 32.
-        movie : torch.Tensor | None, optional
-            Pre-loaded movie tensor. If provided, will be used instead of loading
-            from movie_config. Gradients are preserved if the tensor has
-            requires_grad=True, allowing optimization of the deformation field.
-            Defaults to None.
-        deformation_field : torch.Tensor | None, optional
-            Pre-loaded deformation field tensor. If provided, will be used instead
-            of loading from movie_config. Gradients are preserved if the tensor has
-            requires_grad=True, allowing optimization of the deformation field.
-            Defaults to None.
+        images_are_particles : bool
+            Whether the images are particles or not. Defaults to False.
         """
         backend_kwargs = self.make_backend_core_function_kwargs(
-            movie=movie, deformation_field=deformation_field
+            image_stack=image_stack,
+            mean_stack=mean_stack,
+            std_stack=std_stack,
+            template_tensor=template_tensor,
+            particle_indices=particle_indices,
+            images_are_particles=images_are_particles,
         )
 
         result = self.get_refine_result(backend_kwargs, correlation_batch_size)

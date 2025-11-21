@@ -389,15 +389,16 @@ class PreprocessingFilters(BaseModel2DTM):
         ac_config = self.arbitrary_curve_filter
 
         # Calculate each of the filters in turn
+        device = ref_img_rfft.device
         whitening_filter_tensor = wf_config.calculate_whitening_filter(
             ref_img_rfft=ref_img_rfft, output_shape=output_shape
-        )
+        ).to(device)
         bandpass_filter_tensor = bf_config.calculate_bandpass_filter(
             output_shape=output_shape
-        )
+        ).to(device)
         arbitrary_curve_filter_tensor = ac_config.calculate_arbitrary_curve_filter(
             output_shape=output_shape
-        )
+        ).to(device)
 
         combined_filter = (
             whitening_filter_tensor

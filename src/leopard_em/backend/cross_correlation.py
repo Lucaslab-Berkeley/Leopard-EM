@@ -147,6 +147,7 @@ def do_batched_orientation_cross_correlate(
     template_dft: torch.Tensor,
     rotation_matrices: torch.Tensor,
     projective_filters: torch.Tensor,
+    requires_grad: bool = False,
 ) -> torch.Tensor:
     """Batched projection and cross-correlation with fixed (batched) filters.
 
@@ -173,6 +174,10 @@ def do_batched_orientation_cross_correlate(
     projective_filters : torch.Tensor
         Multiplied 'ctf_filters' with 'whitening_filter_template'. Has shape
         (num_Cs, num_defocus, h, w // 2 + 1). Is RFFT and not fftshifted.
+    requires_grad : bool, optional
+        Whether the input is requires_grad. Default is False.
+        If True, the input will be cloned before any in-place operations.
+        If False, the input will be used as is.
 
     Returns
     -------
@@ -206,8 +211,11 @@ def do_batched_orientation_cross_correlate(
         rotation_matrices=rotation_matrices,
     )
     fourier_slice = torch.fft.ifftshift(fourier_slice, dim=(-2,))
+    # Zero out the DC component (mean zero) - avoid in-place when requires_grad
+    if requires_grad:
+        fourier_slice = fourier_slice.clone()
     fourier_slice[..., 0, 0] = 0 + 0j  # zero out the DC component (mean zero)
-    fourier_slice *= -1  # flip contrast
+    fourier_slice = -1 * fourier_slice  # flip contrast
 
     # Apply the projective filters on a new batch dimension
     fourier_slice = fourier_slice[None, None, ...] * projective_filters[:, :, None, ...]
@@ -226,13 +234,24 @@ def do_batched_orientation_cross_correlate(
             projections_dft = torch.fft.rfftn(
                 projections[k, j, ...], dim=(-2, -1), s=image_shape_real
             )
+            # Zero out DC component - clone first if requires_grad to avoid in-place
+            if requires_grad:
+                projections_dft = projections_dft.clone()
             projections_dft[..., 0, 0] = 0 + 0j
 
             # Cross correlation step by element-wise multiplication
             projections_dft = image_dft[None, ...] * projections_dft.conj()
-            torch.fft.irfftn(
-                projections_dft, dim=(-2, -1), out=cross_correlation[k, j, ...]
-            )
+
+            if requires_grad:
+                # Don't use out= parameter to preserve autograd
+                cross_correlation[k, j, ...] = torch.fft.irfftn(
+                    projections_dft, dim=(-2, -1)
+                )
+            else:
+                # Use out= parameter for memory efficiency
+                torch.fft.irfftn(
+                    projections_dft, dim=(-2, -1), out=cross_correlation[k, j, ...]
+                )
 
     return cross_correlation
 
