@@ -1,10 +1,9 @@
 """Pydantic model for running the refine template program."""
 
-import warnings
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Self
 
 import numpy as np
-from pydantic import ConfigDict
+from pydantic import ConfigDict, model_validator
 from torch_cubic_spline_grids import CubicCatmullRomGrid3d
 
 from leopard_em.backend.core_refine_template import core_refine_template
@@ -84,6 +83,33 @@ class RefineTemplateManager(BaseModel2DTM):
         if not skip_mrc_preloads:
             self.template_volume = load_mrc_volume(self.template_volume_path)
 
+    @model_validator(mode="after")  # type: ignore
+    def validate_movie_and_global_filtering(self) -> Self:
+        """Validate that global filtering is not enabled when using movies.
+
+        Global filtering cannot be applied with movie refinement, so we
+        raise an error if both are enabled to prevent implicit configuration
+        modifications.
+
+        Returns
+        -------
+        Self
+            The validated model instance.
+
+        Raises
+        ------
+        ValueError
+            If movie is enabled and global filtering is also enabled.
+        """
+        if (
+            self.movie_config.enabled or self.movie_config.movie is not None
+        ) and self.apply_global_filtering:
+            raise ValueError(
+                "Global filtering cannot be applied with movie refinement. "
+                "Please set `apply_global_filtering=False` when using movies."
+            )
+        return self
+
     def make_backend_core_function_kwargs(
         self, prefer_refined_angles: bool = True
     ) -> dict[str, Any]:
@@ -120,14 +146,6 @@ class RefineTemplateManager(BaseModel2DTM):
         deformation_field = CubicCatmullRomGrid3d.from_grid_data(
             deformation_field_tensor
         )
-
-        if movie is not None and self.apply_global_filtering:
-            warnings.warn(
-                "Global filtering cannot be applied with movie refinement. "
-                "Disabling apply_global_filtering.",
-                stacklevel=2,
-            )
-            self.apply_global_filtering = False
 
         # Use the common utility function to set up the backend kwargs
         # pylint: disable=duplicate-code

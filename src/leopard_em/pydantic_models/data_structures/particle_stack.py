@@ -22,7 +22,7 @@ from leopard_em.pydantic_models.custom_types import (
     ExcludedTensor,
 )
 from leopard_em.pydantic_models.formats import MATCH_TEMPLATE_DF_COLUMN_ORDER
-from leopard_em.pydantic_models.utils import dose_weight
+from leopard_em.pydantic_models.utils import dose_weight_movie_to_micrograph
 from leopard_em.utils.data_io import load_mrc_image
 
 TORCH_TO_NUMPY_PADDING_MODE = {
@@ -1158,7 +1158,7 @@ class ParticleStack(BaseModel2DTM):
             df_idx = paticle_indexes[particle_index]
             df_loc = self._df.index.get_loc(df_idx)
 
-            dw_sum = dose_weight(
+            dw_sum = dose_weight_movie_to_micrograph(
                 movie_fft=particle_dft,
                 pixel_size=pixel_sizes[df_loc],
                 pre_exposure=pre_exposure,

@@ -1,11 +1,10 @@
 """Pydantic model for running the refine template program."""
 
-import warnings
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Self
 
 import pandas as pd
 import torch
-from pydantic import ConfigDict
+from pydantic import ConfigDict, model_validator
 
 from leopard_em.backend.core_differentiable_refine import core_differentiable_refine
 from leopard_em.pydantic_models.config import (
@@ -84,6 +83,31 @@ class DifferentiableRefineManager(BaseModel2DTM):
         if not skip_mrc_preloads:
             self.template_volume = load_mrc_volume(self.template_volume_path)
 
+    @model_validator(mode="after")  # type: ignore
+    def validate_global_filtering_disabled(self) -> Self:
+        """Validate that global filtering is not enabled for particle stack refinement.
+
+        Global filtering cannot be applied with particle stack refinement, so we
+        raise an error if it is enabled to prevent implicit configuration
+        modifications.
+
+        Returns
+        -------
+        Self
+            The validated model instance.
+
+        Raises
+        ------
+        ValueError
+            If global filtering is enabled.
+        """
+        if self.apply_global_filtering:
+            raise ValueError(
+                "Global filtering cannot be applied with particle stack refinement. "
+                "Please set `apply_global_filtering=False`."
+            )
+        return self
+
     def make_backend_core_function_kwargs(
         self,
         image_stack: torch.Tensor,
@@ -140,13 +164,6 @@ class DifferentiableRefineManager(BaseModel2DTM):
         # The relative pixel size values to search over
         pixel_size_offsets = self.pixel_size_refinement_config.pixel_size_values
         pixel_size_offsets = pixel_size_offsets.to(device)
-        if self.apply_global_filtering:
-            warnings.warn(
-                "Global filtering cannot be applied with particle stack refinement. "
-                "Disabling apply_global_filtering.",
-                stacklevel=2,
-            )
-            self.apply_global_filtering = False
 
         # Use the common utility function to set up the backend kwargs
         # pylint: disable=duplicate-code
