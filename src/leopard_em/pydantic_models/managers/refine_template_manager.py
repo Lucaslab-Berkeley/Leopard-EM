@@ -1,10 +1,11 @@
 """Pydantic model for running the refine template program."""
 
-from typing import Any, ClassVar, Self
+from typing import Any, ClassVar
 
 import numpy as np
 from pydantic import ConfigDict, model_validator
 from torch_cubic_spline_grids import CubicCatmullRomGrid3d
+from typing_extensions import Self
 
 from leopard_em.backend.core_refine_template import core_refine_template
 from leopard_em.pydantic_models.config import (

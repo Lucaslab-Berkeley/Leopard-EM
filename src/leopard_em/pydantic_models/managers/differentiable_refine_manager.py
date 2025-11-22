@@ -1,10 +1,12 @@
 """Pydantic model for running the refine template program."""
+
 # pylint: disable=duplicate-code
-from typing import Any, ClassVar, Self
+from typing import Any, ClassVar
 
 import pandas as pd
 import torch
 from pydantic import ConfigDict, model_validator
+from typing_extensions import Self
 
 from leopard_em.backend.core_differentiable_refine import core_differentiable_refine
 from leopard_em.pydantic_models.config import (
