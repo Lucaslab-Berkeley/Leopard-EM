@@ -117,6 +117,16 @@ ENV/
 # Temporary files
 *.tmp
 
+#########################################
+### Paths/dirs specific to Leopard-EM ###
+#########################################
+
+# Downloaded data for example notebooks
+docs/examples/constrained_search_tutorial/configs
+docs/examples/constrained_search_tutorial/maps
+docs/examples/constrained_search_tutorial/mgraphs
+docs/examples/constrained_search_tutorial/models
+docs/examples/constrained_search_tutorial/results
 
 small_image_test_data/
 medium_image_test_data/
