@@ -1,5 +1,5 @@
 """Pydantic model for running the refine template program."""
-
+# pylint: disable=duplicate-code
 from typing import Any, ClassVar, Self
 
 import pandas as pd

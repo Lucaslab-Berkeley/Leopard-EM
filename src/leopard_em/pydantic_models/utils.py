@@ -1,4 +1,4 @@
-# pylint: disable=duplicate-code
+# pylint: disable=duplicate-code # pylint: disable=too-many-lines
 """Utility functions shared between pydantic models."""
 
 from typing import TYPE_CHECKING, Any
@@ -774,19 +774,18 @@ def setup_images_filters_particle_stack(
             apply_global_filtering=apply_global_filtering,
             image_stack=image_stack,
         )
-    else:
-        return _setup_images_filters_from_micrographs(
-            particle_stack=particle_stack,
-            preprocessing_filters=preprocessing_filters,
-            template=template,
-            apply_global_filtering=apply_global_filtering,
-            movie=movie,
-            deformation_field=deformation_field,
-            pre_exposure=pre_exposure,
-            fluence_per_frame=fluence_per_frame,
-            image_stack=image_stack,
-            particle_indices=particle_indices,
-        )
+    return _setup_images_filters_from_micrographs(
+        particle_stack=particle_stack,
+        preprocessing_filters=preprocessing_filters,
+        template=template,
+        apply_global_filtering=apply_global_filtering,
+        movie=movie,
+        deformation_field=deformation_field,
+        pre_exposure=pre_exposure,
+        fluence_per_frame=fluence_per_frame,
+        image_stack=image_stack,
+        particle_indices=particle_indices,
+    )
 
 
 # pylint: disable=too-many-arguments

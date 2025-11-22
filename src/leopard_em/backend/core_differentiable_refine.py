@@ -2,6 +2,7 @@
 
 # Following pylint error ignored because torc.fft.* is not recognized as callable
 # pylint: disable=E1102
+# pylint: disable=duplicate-code
 
 import math
 

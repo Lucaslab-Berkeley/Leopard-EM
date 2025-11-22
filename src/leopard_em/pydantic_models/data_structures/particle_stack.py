@@ -1,5 +1,7 @@
 """Particle stack Pydantic model for dealing with extracted particle data."""
 
+# pylint: disable=too-many-lines
+
 import warnings
 from typing import Any, ClassVar, Literal
 
@@ -971,6 +973,7 @@ class ParticleStack(BaseModel2DTM):
 
     # pylint: disable=too-many-arguments
     # pylint: disable=too-many-positional-arguments
+    # pylint: disable=too-many-statements
     def construct_image_stack_from_movie(
         self,
         movie: torch.Tensor,
