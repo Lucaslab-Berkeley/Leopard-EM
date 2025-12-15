@@ -144,9 +144,12 @@ class RefineTemplateManager(BaseModel2DTM):
         # Load movie and deformation field
         movie = self.movie_config.movie
         deformation_field_tensor = self.movie_config.deformation_field
-        deformation_field = CubicCatmullRomGrid3d.from_grid_data(
-            deformation_field_tensor
-        )
+        if self.movie_config.enabled:
+            deformation_field = CubicCatmullRomGrid3d.from_grid_data(
+                deformation_field_tensor
+            )
+        else:
+            deformation_field = None
 
         # Use the common utility function to set up the backend kwargs
         # pylint: disable=duplicate-code
