@@ -56,7 +56,8 @@ dependencies = [
     "zenodo-get",
     "torch-fourier-shift",
     "torch-motion-correction>=0.0.4",
-    "torch-grid-utils>=v0.0.9"
+    "torch-grid-utils>=v0.0.9",
+    "torch-ctf"
 ]
 
 [tool.hatch.metadata]
