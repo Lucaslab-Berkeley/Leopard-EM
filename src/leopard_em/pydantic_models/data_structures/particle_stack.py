@@ -24,8 +24,8 @@ from leopard_em.pydantic_models.custom_types import (
     ExcludedTensor,
 )
 from leopard_em.pydantic_models.formats import MATCH_TEMPLATE_DF_COLUMN_ORDER
-from leopard_em.pydantic_models.utils import dose_weight_movie_to_micrograph
 from leopard_em.utils.data_io import load_mrc_image
+from leopard_em.utils.image_processing import dose_weight_movie_to_micrograph
 
 TORCH_TO_NUMPY_PADDING_MODE = {
     "constant": "constant",

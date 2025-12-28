@@ -17,7 +17,7 @@ from leopard_em.backend.cross_correlation import (
     do_batched_orientation_cross_correlate,
     do_batched_orientation_cross_correlate_cpu,
 )
-from leopard_em.pydantic_models.utils import calculate_ctf_filter_stack_full_args
+from leopard_em.utils.ctf_utils import calculate_ctf_filter_stack_full_args
 
 # This is assuming the Euler angles are in the ZYZ intrinsic format
 # AND that the angles are ordered in (phi, theta, psi)

@@ -20,11 +20,11 @@ from leopard_em.pydantic_models.config import (
 from leopard_em.pydantic_models.custom_types import BaseModel2DTM, ExcludedTensor
 from leopard_em.pydantic_models.data_structures import ParticleStack
 from leopard_em.pydantic_models.formats import CONSTRAINED_DF_COLUMN_ORDER
-from leopard_em.pydantic_models.utils import (
+from leopard_em.utils.backend_setup import (
     _setup_correlation_stacks_from_micrographs,
-    _setup_ctf_kwargs_from_particle_stack,
     setup_images_filters_particle_stack,
 )
+from leopard_em.utils.ctf_utils import _setup_ctf_kwargs_from_particle_stack
 from leopard_em.utils.data_io import load_mrc_volume, load_template_tensor
 
 

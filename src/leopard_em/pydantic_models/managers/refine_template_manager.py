@@ -19,7 +19,7 @@ from leopard_em.pydantic_models.config import (
 from leopard_em.pydantic_models.custom_types import BaseModel2DTM, ExcludedTensor
 from leopard_em.pydantic_models.data_structures import ParticleStack
 from leopard_em.pydantic_models.formats import REFINED_DF_COLUMN_ORDER
-from leopard_em.pydantic_models.utils import setup_particle_backend_kwargs
+from leopard_em.utils.backend_setup import setup_particle_backend_kwargs
 from leopard_em.utils.data_io import load_mrc_volume, load_template_tensor
 
 
