@@ -6,18 +6,18 @@ import pandas as pd
 import torch
 from torch_cubic_spline_grids import CubicCatmullRomGrid3d
 
+from leopard_em.utils.ctf_utils import _setup_ctf_kwargs_from_particle_stack
+from leopard_em.utils.image_processing import (
+    apply_image_filtering,
+    volume_to_rfft_fourier_slice,
+)
+
 # Using the TYPE_CHECKING statement to avoid circular imports
 if TYPE_CHECKING:
     from leopard_em.pydantic_models.config.correlation_filters import (
         PreprocessingFilters,
     )
     from leopard_em.pydantic_models.data_structures.particle_stack import ParticleStack
-
-from leopard_em.utils.ctf_utils import _setup_ctf_kwargs_from_particle_stack
-from leopard_em.utils.image_processing import (
-    apply_image_filtering,
-    volume_to_rfft_fourier_slice,
-)
 
 
 # pylint: disable=too-many-locals
