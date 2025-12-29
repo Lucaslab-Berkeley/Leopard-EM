@@ -868,6 +868,7 @@ def cross_correlate_particle_stack(
             rotation_matrices=batch_rotation_matrices,
         )
         # Apply anisotropic magnification transform if provided
+        # pylint: disable=duplicate-code
         if transform_matrix is not None:
             rfft_shape = (template_h, template_w)
             stack_shape = (batch_rotation_matrices.shape[0],)

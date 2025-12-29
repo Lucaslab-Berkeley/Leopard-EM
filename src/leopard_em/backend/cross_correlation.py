@@ -1,9 +1,7 @@
 """File containing Fourier-slice based cross-correlation functions for 2DTM."""
 
 import torch
-from torch_fourier_slice import (
-    extract_central_slices_rfft_3d, transform_slice_2d
-)
+from torch_fourier_slice import extract_central_slices_rfft_3d, transform_slice_2d
 
 from leopard_em.backend.utils import (
     normalize_template_projection,
@@ -231,6 +229,7 @@ def do_batched_orientation_cross_correlate(
         rotation_matrices=rotation_matrices,
     )
     # Apply anisotropic magnification transform if provided
+    # pylint: disable=duplicate-code
     if transform_matrix is not None:
         rfft_shape = (template_dft.shape[1], template_dft.shape[2])
         stack_shape = (rotation_matrices.shape[0],)
@@ -336,6 +335,7 @@ def do_batched_orientation_cross_correlate_cpu(
         rotation_matrices=rotation_matrices,
     )
     # Apply anisotropic magnification transform if provided
+    # pylint: disable=duplicate-code
     if transform_matrix is not None:
         rfft_shape = (template_dft.shape[1], template_dft.shape[2])
         stack_shape = (rotation_matrices.shape[0],)
