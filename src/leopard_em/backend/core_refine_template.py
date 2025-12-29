@@ -9,7 +9,7 @@ from typing import Literal
 import roma
 import torch
 import tqdm
-from torch_fourier_slice import extract_central_slices_rfft_3d
+from torch_fourier_slice import extract_central_slices_rfft_3d, transform_slice_2d
 
 from leopard_em.backend.cross_correlation import (
     do_batched_orientation_cross_correlate,
@@ -866,8 +866,17 @@ def cross_correlate_particle_stack(
             volume_rfft=template_dft,
             image_shape=(template_h,) * 3,
             rotation_matrices=batch_rotation_matrices,
-            transform_matrix=transform_matrix,
         )
+        # Apply anisotropic magnification transform if provided
+        if transform_matrix is not None:
+            rfft_shape = (template_h, template_w)
+            stack_shape = (batch_rotation_matrices.shape[0],)
+            fourier_slice = transform_slice_2d(
+                projection_image_dfts=fourier_slice,
+                rfft_shape=rfft_shape,
+                stack_shape=stack_shape,
+                transform_matrix=transform_matrix,
+            )
         fourier_slice = torch.fft.ifftshift(fourier_slice, dim=(-2,))
         fourier_slice[..., 0, 0] = 0 + 0j  # zero out the DC component (mean zero)
         fourier_slice *= -1  # flip contrast

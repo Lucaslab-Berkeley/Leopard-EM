@@ -1,7 +1,9 @@
 """File containing Fourier-slice based cross-correlation functions for 2DTM."""
 
 import torch
-from torch_fourier_slice import extract_central_slices_rfft_3d
+from torch_fourier_slice import (
+    extract_central_slices_rfft_3d, transform_slice_2d
+)
 
 from leopard_em.backend.utils import (
     normalize_template_projection,
@@ -77,8 +79,17 @@ def do_streamed_orientation_cross_correlate(
         volume_rfft=template_dft,
         image_shape=(projection_shape_real[0],) * 3,
         rotation_matrices=rotation_matrices,
-        transform_matrix=transform_matrix,
     )
+    # Apply anisotropic magnification transform if provided
+    if transform_matrix is not None:
+        rfft_shape = (template_dft.shape[1], template_dft.shape[2])
+        stack_shape = (num_orientations,)
+        fourier_slices = transform_slice_2d(
+            projection_image_dfts=fourier_slices,
+            rfft_shape=rfft_shape,
+            stack_shape=stack_shape,
+            transform_matrix=transform_matrix,
+        )
     fourier_slices = torch.fft.ifftshift(fourier_slices, dim=(-2,))
     fourier_slices[..., 0, 0] = 0 + 0j  # zero out the DC component (mean zero)
     fourier_slices *= -1  # flip contrast
@@ -218,8 +229,17 @@ def do_batched_orientation_cross_correlate(
         volume_rfft=template_dft,
         image_shape=(projection_shape_real[0],) * 3,  # NOTE: requires cubic template
         rotation_matrices=rotation_matrices,
-        transform_matrix=transform_matrix,
     )
+    # Apply anisotropic magnification transform if provided
+    if transform_matrix is not None:
+        rfft_shape = (template_dft.shape[1], template_dft.shape[2])
+        stack_shape = (rotation_matrices.shape[0],)
+        fourier_slice = transform_slice_2d(
+            projection_image_dfts=fourier_slice,
+            rfft_shape=rfft_shape,
+            stack_shape=stack_shape,
+            transform_matrix=transform_matrix,
+        )
     fourier_slice = torch.fft.ifftshift(fourier_slice, dim=(-2,))
     # Zero out the DC component (mean zero) - avoid in-place when requires_grad
     if requires_grad:
@@ -314,8 +334,17 @@ def do_batched_orientation_cross_correlate_cpu(
         volume_rfft=template_dft,
         image_shape=(projection_shape_real[0],) * 3,  # NOTE: requires cubic template
         rotation_matrices=rotation_matrices,
-        transform_matrix=transform_matrix,
     )
+    # Apply anisotropic magnification transform if provided
+    if transform_matrix is not None:
+        rfft_shape = (template_dft.shape[1], template_dft.shape[2])
+        stack_shape = (rotation_matrices.shape[0],)
+        fourier_slice = transform_slice_2d(
+            projection_image_dfts=fourier_slice,
+            rfft_shape=rfft_shape,
+            stack_shape=stack_shape,
+            transform_matrix=transform_matrix,
+        )
     fourier_slice = torch.fft.ifftshift(fourier_slice, dim=(-2,))
     fourier_slice[..., 0, 0] = 0 + 0j  # zero out the DC component (mean zero)
     fourier_slice *= -1  # flip contrast
