@@ -603,17 +603,7 @@ def setup_particle_backend_kwargs(
 
     # Extract mag_matrix from particle stack and convert to 2x2 tensor
     # All particles should have the same mag_matrix value
-    mag_matrix_tensor = None
-    if "mag_matrix" in particle_stack._df.columns:  # pylint: disable=protected-access
-        mag_matrix_list = particle_stack["mag_matrix"].iloc[0]
-        if (
-            mag_matrix_list is not None
-            and isinstance(mag_matrix_list, list)
-            and len(mag_matrix_list) == 4
-        ):
-            mag_matrix_tensor = torch.tensor(
-                mag_matrix_list, dtype=torch.float32, device=device
-            ).reshape(2, 2)
+    mag_matrix_tensor = ctf_kwargs["mag_matrix"]
 
     return {
         "particle_stack_dft": particle_images_dft,

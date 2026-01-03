@@ -302,6 +302,8 @@ def _core_refine_template_single_gpu(
     corr_mean = corr_mean.to(device)
     corr_std = corr_std.to(device)
     projective_filters = projective_filters.to(device)
+    if transform_matrix is not None:
+        transform_matrix = transform_matrix.to(device)
 
     ########################################
     ### Setup constants and progress bar ###

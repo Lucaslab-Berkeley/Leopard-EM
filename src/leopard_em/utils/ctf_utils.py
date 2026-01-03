@@ -1,8 +1,10 @@
 """CTF (Contrast Transfer Function) utility functions."""
 
+import ast
 import json
 from typing import TYPE_CHECKING, Any
 
+import numpy as np
 import torch
 from torch_ctf import calculate_ctf_2d
 from torch_fourier_filter.envelopes import b_envelope
@@ -163,23 +165,25 @@ def calculate_ctf_filter_stack(
 
 
 def _parse_json_string_from_series_value(value: Any) -> Any:
-    """Parse a value that may be a JSON string, dict, or None.
+    """Parse a value that may be a JSON string, dict, None, or NaN.
 
     Parameters
     ----------
     value : Any
-        The value to parse. Can be a JSON string, dict, or None.
+        The value to parse. Can be a JSON string, dict, None, or NaN
+        (from empty CSV fields).
 
     Returns
     -------
     Any
         Parsed dict if value was a JSON string, original dict if already a dict,
-        or None if value was None.
+        or None if value was None or NaN.
     """
+    # Handle NaN values from empty CSV fields (pandas converts empty fields to NaN)
+    if value is None or (isinstance(value, float) and np.isnan(value)):
+        return None
     if isinstance(value, str) and value:
         return json.loads(value)
-    if value is None:
-        return None
     # Already a dict (backward compatibility)
     return value
 
@@ -211,16 +215,29 @@ def _setup_ctf_kwargs_from_particle_stack(
     assert particle_stack["ctf_B_factor"].nunique() == 1
 
     # Convert mag_matrix from list to 2x2 tensor if provided
-    mag_matrix_list = particle_stack["mag_matrix"].to_list()
+    # Handle empty/NaN values from CSV (pandas converts empty fields to NaN)
+    mag_matrix_value = particle_stack["mag_matrix"].iloc[0]
     mag_matrix_tensor = None
-    if mag_matrix_list is not None and len(mag_matrix_list) == 4:
-        mag_matrix_tensor = torch.tensor(
-            [
-                [mag_matrix_list[0], mag_matrix_list[1]],
-                [mag_matrix_list[2], mag_matrix_list[3]],
-            ],
-            dtype=torch.float32,
-        )
+    if mag_matrix_value is not None and not (
+        isinstance(mag_matrix_value, float) and np.isnan(mag_matrix_value)
+    ):
+        # mag_matrix_value might be a list or a string representation of a list
+        if isinstance(mag_matrix_value, str):
+            mag_matrix_list = ast.literal_eval(mag_matrix_value)
+        else:
+            mag_matrix_list = mag_matrix_value
+        if isinstance(mag_matrix_list, list) and len(mag_matrix_list) == 4:
+            # Check that all elements are valid numbers (not NaN)
+            if all(
+                isinstance(x, (int, float)) and not np.isnan(x) for x in mag_matrix_list
+            ):
+                mag_matrix_tensor = torch.tensor(
+                    [
+                        [mag_matrix_list[0], mag_matrix_list[1]],
+                        [mag_matrix_list[2], mag_matrix_list[3]],
+                    ],
+                    dtype=torch.float32,
+                )
 
     # Parse JSON strings for zernike coefficients if they're stored as strings
     even_zernikes_dict = _parse_json_string_from_series_value(
@@ -229,6 +246,18 @@ def _setup_ctf_kwargs_from_particle_stack(
     odd_zernikes_dict = _parse_json_string_from_series_value(
         particle_stack["odd_zernikes"].iloc[0]
     )
+
+    # Convert dictionary values to tensors
+    if even_zernikes_dict is not None:
+        even_zernikes_dict = {
+            key: torch.tensor(value, dtype=torch.float32)
+            for key, value in even_zernikes_dict.items()
+        }
+    if odd_zernikes_dict is not None:
+        odd_zernikes_dict = {
+            key: torch.tensor(value, dtype=torch.float32)
+            for key, value in odd_zernikes_dict.items()
+        }
 
     return {
         "voltage": particle_stack["voltage"][0].item(),
