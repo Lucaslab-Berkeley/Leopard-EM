@@ -71,7 +71,6 @@ def get_rfft_slices_from_volume(
         The Fourier slices of the volume.
 
     """
-    shape = volume.shape
     volume_rfft = torch.fft.fftshift(volume, dim=(-3, -2, -1))  # pylint: disable=not-callable
     volume_rfft = torch.fft.fftn(volume_rfft, dim=(-3, -2, -1))  # pylint: disable=not-callable
     volume_rfft = torch.fft.fftshift(volume_rfft, dim=(-3, -2))  # pylint: disable=not-callable
@@ -82,7 +81,6 @@ def get_rfft_slices_from_volume(
     # Use torch_fourier_slice to take the Fourier slice
     fourier_slices = extract_central_slices_rfft_3d(
         volume_rfft=volume_rfft,
-        image_shape=shape,
         rotation_matrices=rot_matrix,
     )
 

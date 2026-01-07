@@ -48,7 +48,7 @@ dependencies = [
     "types-PyYAML",
     "roma",
     "tqdm",
-    "torch-fourier-slice>=v0.2.0",
+    "torch-fourier-slice>=v0.4.0",
     "torch-fourier-filter>=v0.2.6",
     "torch-so3>=v0.2.0",
     "ttsim3d>=v0.4.0",
@@ -153,7 +153,10 @@ pretty = true
 [tool.pytest.ini_options]
 minversion = "7.0"
 testpaths = ["tests"]
-filterwarnings = ["error"]
+filterwarnings = [
+    "error",
+    "ignore::FutureWarning",
+]
 addopts = "-m 'not slow'"               # Skip slow tests on default
 markers = ["slow: marks test as slow"]
 

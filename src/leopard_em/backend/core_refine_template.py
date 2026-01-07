@@ -839,7 +839,6 @@ def cross_correlate_particle_stack(
         # Extract the Fourier slice and apply the projective filters
         fourier_slice = extract_central_slices_rfft_3d(
             volume_rfft=template_dft,
-            image_shape=(template_h,) * 3,
             rotation_matrices=batch_rotation_matrices,
         )
         fourier_slice = torch.fft.ifftshift(fourier_slice, dim=(-2,))
