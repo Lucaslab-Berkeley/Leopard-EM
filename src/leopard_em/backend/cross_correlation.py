@@ -75,7 +75,6 @@ def do_streamed_orientation_cross_correlate(
     # Do a batched Fourier slice extraction for all the orientations at once.
     fourier_slices = extract_central_slices_rfft_3d(
         volume_rfft=template_dft,
-        image_shape=(projection_shape_real[0],) * 3,
         rotation_matrices=rotation_matrices,
     )
     # Apply anisotropic magnification transform if provided
@@ -225,7 +224,6 @@ def do_batched_orientation_cross_correlate(
     # Extract central slice(s) from the template volume
     fourier_slice = extract_central_slices_rfft_3d(
         volume_rfft=template_dft,
-        image_shape=(projection_shape_real[0],) * 3,  # NOTE: requires cubic template
         rotation_matrices=rotation_matrices,
     )
     # Apply anisotropic magnification transform if provided
@@ -331,7 +329,6 @@ def do_batched_orientation_cross_correlate_cpu(
     # Extract central slice(s) from the template volume
     fourier_slice = extract_central_slices_rfft_3d(
         volume_rfft=template_dft,
-        image_shape=(projection_shape_real[0],) * 3,  # NOTE: requires cubic template
         rotation_matrices=rotation_matrices,
     )
     # Apply anisotropic magnification transform if provided
