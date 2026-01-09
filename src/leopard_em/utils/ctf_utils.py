@@ -47,11 +47,6 @@ def calculate_ctf_filter_stack_full_args(
     torch.Tensor
         Tensor of CTF filter values for the specified shape and parameters. Will have
         shape (num_pixel_sizes, num_defocus_offsets, h, w // 2 + 1)
-
-    # Raises
-    # ------
-    # ValueError
-    #     If not all the required parameters are passed as additional keyword arguments.
     """
     # Calculate the defocus values + offsets in terms of Angstrom
     defocus = defocus_offsets + ((defocus_u + defocus_v) / 2)

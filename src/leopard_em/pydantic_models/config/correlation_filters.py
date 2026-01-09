@@ -380,7 +380,8 @@ class PreprocessingFilters(BaseModel2DTM):
         Returns
         -------
         torch.Tensor
-            The combined filter for the desired output shape.
+            The combined filter for the desired output shape. The tensor will be on
+            the same device as the reference image (`ref_img_rfft`).
         """
         # NOTE: Phase randomization filter is not currently enabled
         # pr_config = self.phase_randomization_filter
