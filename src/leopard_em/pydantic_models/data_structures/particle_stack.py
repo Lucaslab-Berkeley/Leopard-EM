@@ -253,8 +253,8 @@ def _get_cropped_image_regions_torch(
     for y, x in zip(pos_y, pos_x):
         # Check bounds and clamp to edges if out of bounds
         # Convert to Python ints for comparison and clamping
-        y = int(y.item() if hasattr(y, 'item') else y)
-        x = int(x.item() if hasattr(x, 'item') else x)
+        y = int(y.item() if hasattr(y, "item") else y)
+        x = int(x.item() if hasattr(x, "item") else x)
         original_y, original_x = y, x
         if (
             y < 0
