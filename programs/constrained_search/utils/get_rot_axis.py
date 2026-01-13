@@ -110,6 +110,47 @@ def main() -> None:
     df1 = mmdf.read(pdb_file1)
     df2 = mmdf.read(pdb_file2)
 
+    # Check if atom counts match
+    if len(df1) != len(df2):
+        print("Warning: PDB files have different numbers of atoms:")
+        print(f"  {pdb_file1}: {len(df1)} atoms")
+        print(f"  {pdb_file2}: {len(df2)} atoms")
+        print("\nAttempting to filter to CA (alpha carbon) atoms for alignment...")
+
+        # Filter to CA atoms if available
+        if "atom_name" in df1.columns and "atom_name" in df2.columns:
+            df1_ca = df1[df1["atom_name"] == "CA"].copy()
+            df2_ca = df2[df2["atom_name"] == "CA"].copy()
+
+            if len(df1_ca) > 0 and len(df2_ca) > 0:
+                if len(df1_ca) != len(df2_ca):
+                    print(
+                        "Error: Even after filtering to CA atoms, counts don't match:"
+                    )
+                    print(f"  {pdb_file1}: {len(df1_ca)} CA atoms")
+                    print(f"  {pdb_file2}: {len(df2_ca)} CA atoms")
+                    print(
+                        "\nCannot perform rigid registration with "
+                        "mismatched atom counts."
+                    )
+                    sys.exit(1)
+                print(f"Using {len(df1_ca)} CA atoms for alignment.")
+                df1 = df1_ca
+                df2 = df2_ca
+            else:
+                print("Error: No CA atoms found in one or both PDB files.")
+                print(
+                    "Cannot perform rigid registration with " "mismatched atom counts."
+                )
+                sys.exit(1)
+        else:
+            print(
+                "Error: Cannot filter atoms - 'atom_name' column not found "
+                "in PDB data."
+            )
+            print("Cannot perform rigid registration with mismatched atom counts.")
+            sys.exit(1)
+
     # Extract coordinates
     coords1 = torch.tensor(df1[["x", "y", "z"]].values, dtype=torch.float32)
     coords2 = torch.tensor(df2[["x", "y", "z"]].values, dtype=torch.float32)
