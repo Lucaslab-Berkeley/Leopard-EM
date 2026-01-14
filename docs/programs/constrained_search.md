@@ -55,7 +55,7 @@ particle_stack_constrained:  # This is from the constrained particles
 
 We must specify what angular space to perform the orientation search over.
 The first thing we must specify is the primary rotation axis, which we set as the Z axis.
-If unknown, this can be calculated using two PDB models (one rotated and one unrotated) using the script [get_rot_axis.py](https://raw.githubusercontent.com/Lucaslab-Berkeley/Leopard-EM/refs/heads/main/programs/constrained_search/utils/get_center_vector.py).
+If unknown, this can be calculated using two PDB models (one rotated and one unrotated) using the script [get_rot_axis.py](https://raw.githubusercontent.com/Lucaslab-Berkeley/Leopard-EM/refs/heads/main/programs/constrained_search/utils/get_rot_axis.py).
 
 As well as searching over one rotation axis, we can search over a second axis, which by default is the y axis.
 This can be changed to any axis orthogonal to the primary axis by specifying a `roll_axis` and using the `base_grid_method: roll`.
