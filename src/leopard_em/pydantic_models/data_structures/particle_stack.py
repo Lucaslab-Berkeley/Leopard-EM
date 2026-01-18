@@ -251,17 +251,25 @@ def _get_cropped_image_regions_torch(
 
     regions = []
     for y, x in zip(pos_y, pos_x):
-        # Check bounds and clamp to edges if out of bounds
-        # Convert to Python ints for comparison and clamping
+        # Convert to Python ints for comparison
         y = int(y.item() if hasattr(y, "item") else y)
         x = int(x.item() if hasattr(x, "item") else x)
         original_y, original_x = y, x
+
+        # Check bounds
         if (
             y < 0
             or x < 0
             or y + box_size[0] > image.shape[0]
             or x + box_size[1] > image.shape[1]
         ):
+            if handle_bounds == "error":
+                raise IndexError(
+                    f"Region bounds [{original_y}:{original_y + box_size[0]}, "
+                    f"{original_x}:{original_x + box_size[1]}] exceed "
+                    f"image dimensions {image.shape}"
+                )
+            # For "pad" mode, warn and clamp coordinates
             warnings.warn(
                 f"Region bounds [{original_y}:{original_y + box_size[0]}, "
                 f"{original_x}:{original_x + box_size[1]}] exceed "
