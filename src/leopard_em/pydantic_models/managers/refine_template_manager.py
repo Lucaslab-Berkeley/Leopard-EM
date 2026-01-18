@@ -22,7 +22,11 @@ from leopard_em.pydantic_models.custom_types import BaseModel2DTM, ExcludedTenso
 from leopard_em.pydantic_models.data_structures import ParticleStack
 from leopard_em.pydantic_models.formats import REFINED_DF_COLUMN_ORDER
 from leopard_em.utils.backend_setup import setup_particle_backend_kwargs
-from leopard_em.utils.data_io import load_mrc_volume, load_template_tensor
+from leopard_em.utils.data_io import (
+    load_mrc_volume,
+    load_template_tensor,
+    read_particle_shifts_from_csv,
+)
 
 
 class RefineTemplateManager(BaseModel2DTM):
@@ -116,15 +120,33 @@ class RefineTemplateManager(BaseModel2DTM):
         # The relative pixel size values to search over
         pixel_size_offsets = self.pixel_size_refinement_config.pixel_size_values
 
-        # Load movie and deformation field
+        # Load movie, deformation field, and particle shifts
         movie = self.movie_config.movie
-        deformation_field_tensor = self.movie_config.deformation_field
+        particle_shifts = None
+        deformation_field = None
+
         if self.movie_config.enabled:
-            deformation_field = CubicCatmullRomGrid3d.from_grid_data(
-                deformation_field_tensor
-            )
-        else:
-            deformation_field = None
+            # Particle shifts take precedence over deformation field
+            if self.movie_config.particle_shifts_path:
+                if movie is None:
+                    raise ValueError(
+                        "Movie must be loaded when using particle shifts. "
+                        "Ensure movie_path is set and movie is enabled."
+                    )
+                t, _, _ = movie.shape
+                num_particles = self.particle_stack.num_particles
+                particle_shifts = read_particle_shifts_from_csv(
+                    csv_path=self.movie_config.particle_shifts_path,
+                    num_frames=t,
+                    num_particles=num_particles,
+                )
+            else:
+                # Use deformation field if particle shifts not provided
+                deformation_field_tensor = self.movie_config.deformation_field
+                if deformation_field_tensor is not None:
+                    deformation_field = CubicCatmullRomGrid3d.from_grid_data(
+                        deformation_field_tensor
+                    )
 
         # Use the common utility function to set up the backend kwargs
         # pylint: disable=duplicate-code
@@ -139,6 +161,7 @@ class RefineTemplateManager(BaseModel2DTM):
             apply_global_filtering=self.apply_global_filtering,
             movie=movie,
             deformation_field=deformation_field,
+            particle_shifts=particle_shifts,
             pre_exposure=self.movie_config.pre_exposure,
             fluence_per_frame=self.movie_config.fluence_per_frame,
             device_list=self.computational_config.gpu_devices,

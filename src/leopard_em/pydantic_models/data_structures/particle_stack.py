@@ -938,7 +938,7 @@ class ParticleStack(BaseModel2DTM):
 
         return shifted_fft
 
-    def _compute_frame_particle_shifts_from_deformation(
+    def compute_frame_particle_shifts_from_deformation(
         self,
         movie_frame: torch.Tensor,
         deformation_field: CubicCatmullRomGrid3d,
@@ -1126,7 +1126,7 @@ class ParticleStack(BaseModel2DTM):
             if particle_shifts is not None:
                 frame_shifts = particle_shifts[frame_index]  # (N, 2)
             else:
-                frame_shifts = self._compute_frame_particle_shifts_from_deformation(
+                frame_shifts = self.compute_frame_particle_shifts_from_deformation(
                     movie_frame=movie_frame,
                     deformation_field=deformation_field,
                     normalized_t_value=normalized_t[frame_index],

@@ -18,6 +18,10 @@ class MovieConfig(BaseModel2DTM):
         Path to the movie file.
     deformation_field_path: str
         Path to the deformation field file.
+    particle_shifts_path: str
+        Path to the particle shifts CSV file. If provided, takes precedence over
+        deformation_field_path. The CSV should have columns: particle_index, frame,
+        y_shift, x_shift.
     pre_exposure: float
         Pre-exposure time in seconds.
     fluence_per_frame: float
@@ -27,6 +31,7 @@ class MovieConfig(BaseModel2DTM):
     enabled: bool = False
     movie_path: str = ""
     deformation_field_path: str = ""
+    particle_shifts_path: str = ""
     pre_exposure: float = 0.0
     fluence_per_frame: float = 1.0
 
@@ -41,5 +46,8 @@ class MovieConfig(BaseModel2DTM):
     def deformation_field(self) -> torch.Tensor:
         """Get the deformation field tensor."""
         if not self.enabled:
+            return None
+        if self.particle_shifts_path:
+            # Particle shifts take precedence, so don't load deformation field
             return None
         return read_deformation_field_from_csv(self.deformation_field_path)
