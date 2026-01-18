@@ -1000,6 +1000,7 @@ class ParticleStack(BaseModel2DTM):
     # pylint: disable=too-many-arguments
     # pylint: disable=too-many-positional-arguments
     # pylint: disable=too-many-statements
+    # pylint: disable=too-many-branches
     def construct_image_stack_from_movie(
         self,
         movie: torch.Tensor,

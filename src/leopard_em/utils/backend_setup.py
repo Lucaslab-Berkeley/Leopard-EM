@@ -92,6 +92,7 @@ def _process_particle_images_for_filters(
 
 # pylint: disable=too-many-locals
 # pylint: disable=too-many-arguments
+# pylint: disable=too-many-positional-arguments
 def _setup_images_filters_from_micrographs(
     particle_stack: "ParticleStack",
     preprocessing_filters: "PreprocessingFilters",
