@@ -5,9 +5,8 @@ from typing import Any, ClassVar
 import numpy as np
 import pandas as pd
 import torch
-from pydantic import ConfigDict, model_validator
+from pydantic import ConfigDict
 from torch_cubic_spline_grids import CubicCatmullRomGrid3d
-from typing_extensions import Self
 
 from leopard_em.backend.core_differentiable_refine import core_differentiable_refine
 from leopard_em.backend.core_refine_template import core_refine_template
@@ -86,33 +85,6 @@ class RefineTemplateManager(BaseModel2DTM):
         # Load the data from the MRC files
         if not skip_mrc_preloads:
             self.template_volume = load_mrc_volume(self.template_volume_path)
-
-    @model_validator(mode="after")  # type: ignore
-    def validate_movie_and_global_filtering(self) -> Self:
-        """Validate that global filtering is not enabled when using movies.
-
-        Global filtering cannot be applied with movie refinement, so we
-        raise an error if both are enabled to prevent implicit configuration
-        modifications.
-
-        Returns
-        -------
-        Self
-            The validated model instance.
-
-        Raises
-        ------
-        ValueError
-            If movie is enabled and global filtering is also enabled.
-        """
-        if (
-            self.movie_config.enabled or self.movie_config.movie is not None
-        ) and self.apply_global_filtering:
-            raise ValueError(
-                "Global filtering cannot be applied with movie refinement. "
-                "Please set `apply_global_filtering=False` when using movies."
-            )
-        return self
 
     def make_backend_core_function_kwargs(
         self, prefer_refined_angles: bool = True
@@ -298,17 +270,7 @@ class RefineTemplateManager(BaseModel2DTM):
         images_are_particles : bool
             Whether the images are particles or not. Defaults to False.
 
-        Raises
-        ------
-        ValueError
-            If global filtering is enabled. Global filtering cannot be applied with
-            particle stack refinement.
         """
-        if self.apply_global_filtering:
-            raise ValueError(
-                "Global filtering cannot be applied with particle stack refinement. "
-                "Please set `apply_global_filtering=False`."
-            )
         backend_kwargs = self.make_differentiable_backend_kwargs(
             image_stack=image_stack,
             mean_stack=mean_stack,
