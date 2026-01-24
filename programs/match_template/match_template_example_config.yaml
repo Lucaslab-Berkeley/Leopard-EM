@@ -35,6 +35,7 @@ orientation_search_config:
   base_grid_method: uniform
   psi_step: 1.5      # in degrees
   theta_step: 2.5  # in degrees
+  symmetry: C1 
 preprocessing_filters:
   whitening_filter:
     enabled: true
