@@ -26,15 +26,16 @@ from torch_fourier_filter.envelopes import b_envelope
 
 from leopard_em.backend.cross_correlation import (
     do_batched_orientation_cross_correlate,
+    do_batched_orientation_cross_correlate_zipfft,
     do_streamed_orientation_cross_correlate,
 )
 from leopard_em.pydantic_models.utils import get_cs_range
 
-IMAGE_SHAPE = (1024, 1024)
-TEMPLATE_SHAPE = (128, 128, 128)
-NUM_ORIENTATIONS = 10
+IMAGE_SHAPE = (4096, 4096)
+TEMPLATE_SHAPE = (512, 512, 512)
+NUM_ORIENTATIONS = 4
 NUM_DEFOCUS_VALUES = 5
-NUM_PIXEL_SIZES = 4
+NUM_PIXEL_SIZES = 2
 NUM_STREAMS = 1
 
 
@@ -132,4 +133,56 @@ def test_stream_and_batch_cross_correlate_consistency(sample_input_data):
     assert torch.allclose(streamed_result, batched_result, atol=5e-3, rtol=5e-3), (
         f"Streamed and batched cross-correlation results not within tolerance.\n"
         f"Max absolute difference: {max_abs_diff}\n"
+    )
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA device not available")
+def test_batched_zipfft_cross_correlate_consistency(sample_input_data):
+    """Test that the batched zip-FFT cross-correlation method is consistent."""
+    cross_correlate_kwargs = sample_input_data
+
+    batched_result = do_batched_orientation_cross_correlate(**cross_correlate_kwargs)
+
+    # NOTE: zipFFT does valid cropping internally, so need to adjust the bached result
+    batched_result = batched_result[
+        ...,
+        : IMAGE_SHAPE[-2] - TEMPLATE_SHAPE[-2] + 1,
+        : IMAGE_SHAPE[-1] - TEMPLATE_SHAPE[-1] + 1,
+    ]
+
+    # NOTE: Need to transpose the input 'image_dft' for the zip-FFT method
+    image_dft = cross_correlate_kwargs["image_dft"].transpose(-1, -2).clone()
+    cross_correlate_kwargs["image_dft"] = image_dft
+
+    zipfft_result = do_batched_orientation_cross_correlate_zipfft(
+        **cross_correlate_kwargs
+    )
+
+    assert zipfft_result.shape == batched_result.shape
+
+    max_abs_diff = (zipfft_result - batched_result).abs().max().item()
+    max_rel_diff = (
+        ((zipfft_result - batched_result).abs() / batched_result.abs().clamp_min(1e-8))
+        .max()
+        .item()
+    )
+
+    # NOTE: Taking the L2 norm of the difference since FFT plans execute differently
+    # and are not guaranteed to be bitwise identical and likely include small numerical
+    # differences.
+    l2_norm_diff = torch.norm(zipfft_result - batched_result).item()
+    l2_norm_diff /= torch.prod(torch.tensor(zipfft_result.shape)).item()
+
+    # ### DEBUGGING: Save each result to file
+    # import numpy as np
+
+    # np.save("batched_result.npy", batched_result.cpu().numpy())
+    # np.save("zipfft_result.npy", zipfft_result.cpu().numpy())
+    # ### END DEBUGGING
+
+    assert l2_norm_diff < 1e-6, (
+        f"Batched and zip-FFT cross-correlation results differ too much.\n"
+        f"L2 norm of difference: {l2_norm_diff}\n"
+        f"Max absolute difference: {max_abs_diff}\n"
+        f"Max relative difference: {max_rel_diff}\n"
     )

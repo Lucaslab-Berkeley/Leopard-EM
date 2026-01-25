@@ -56,14 +56,20 @@ def mrcfile_allclose(path_a: str, path_b: str, **kwargs) -> bool:
 )
 @pytest.mark.slow
 def test_core_match_template():
-    download_comparison_data()
+    # download_comparison_data()
     mt_manager = setup_match_template_manager()
 
     # Run the match template program
     mt_manager.run_match_template(
         orientation_batch_size=ORIENTATION_BATCH_SIZE,
         do_result_export=True,  # Saves the statistics immediately upon completion
+        do_valid_cropping=False,  # testing backend doing valid cropping in-place
     )
+
+    corr_table = mt_manager.match_template_result.correlation_table
+    import pandas as pd
+
+    pd.DataFrame(corr_table).to_csv("tests/tmp/test_corr_table.csv")
 
     # Ensure the MIPs are the same, if they are not then there's an issue...
     assert mrcfile_allclose(

@@ -454,21 +454,25 @@ def core_match_template_distributed(
     ###########################################################
 
     dist.barrier()
-    (mip, best_global_index, correlation_sum, correlation_squared_sum) = (
-        _core_match_template_single_gpu(
-            rank=rank,
-            index_queue=distributed_queue,  # type: ignore
-            image_dft=image_dft,
-            template_dft=template_dft,
-            euler_angles=euler_angles,
-            projective_filters=projective_filters,
-            defocus_values=defocus_values,
-            pixel_values=pixel_values,
-            orientation_batch_size=orientation_batch_size,
-            num_cuda_streams=num_cuda_streams,
-            backend=backend,
-            device=device,
-        )
+    (
+        mip,
+        best_global_index,
+        correlation_sum,
+        correlation_squared_sum,
+        _,  # TODO: include correlation_table in distributed version
+    ) = _core_match_template_single_gpu(
+        rank=rank,
+        index_queue=distributed_queue,  # type: ignore
+        image_dft=image_dft,
+        template_dft=template_dft,
+        euler_angles=euler_angles,
+        projective_filters=projective_filters,
+        defocus_values=defocus_values,
+        pixel_values=pixel_values,
+        orientation_batch_size=orientation_batch_size,
+        num_cuda_streams=num_cuda_streams,
+        backend=backend,
+        device=device,
     )
     dist.barrier()
 
@@ -534,7 +538,7 @@ def core_match_template_distributed(
 
     # Map from global search index to the best defocus & angles
     # pylint: disable=duplicate-code
-    best_phi, best_theta, best_psi, best_defocus = decode_global_search_index(
+    best_phi, best_theta, best_psi, best_defocus, _ = decode_global_search_index(
         best_global_index, pixel_values, defocus_values, euler_angles
     )
 

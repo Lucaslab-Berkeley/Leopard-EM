@@ -1,12 +1,23 @@
 """File containing Fourier-slice based cross-correlation functions for 2DTM."""
 
 import torch
+import zipfft
 from torch_fourier_slice import extract_central_slices_rfft_3d
 
 from leopard_em.backend.utils import (
     normalize_template_projection,
     normalize_template_projection_compiled,
 )
+
+# Determine which batch sizes are supported by zipFFT for powers of 2
+# pylint: disable=c-extension-no-member
+ZIPFFT_SUPPORTED_CONFIGS = zipfft.padded_rconv2d.get_supported_conv_configs()
+ZIPFFT_SUPPORTED_BATCH_SIZES = [
+    x[-2]
+    for x in ZIPFFT_SUPPORTED_CONFIGS
+    if (x[0] == 512 and x[1] == 512 and x[2] == 4096 and x[3] == 4096)
+]
+ZIPFFT_SUPPORTED_BATCH_SIZES.sort(reverse=True)  # largest to smallest‰
 
 
 # pylint: disable=too-many-locals,E1102
@@ -305,5 +316,138 @@ def do_batched_orientation_cross_correlate_cpu(
     # Cross correlation step by element-wise multiplication
     projections_dft = image_dft[None, None, None, ...] * projections_dft.conj()
     cross_correlation = torch.fft.irfftn(projections_dft, dim=(-2, -1))
+
+    return cross_correlation
+
+
+# pylint: disable=E1102
+def do_batched_orientation_cross_correlate_zipfft(
+    image_dft: torch.Tensor,
+    template_dft: torch.Tensor,
+    rotation_matrices: torch.Tensor,
+    projective_filters: torch.Tensor,
+) -> torch.Tensor:
+    """Batched projection and cross-correlation using zipfft backend.
+
+    This function uses the zipfft library for accelerated 2D cross-correlation
+    compared to `do_batched_orientation_cross_correlate`.
+
+    NOTE: that this function returns a cross-correlogram with "same" mode (i.e. the
+    same size as the input image). See numpy correlate docs for more information.
+
+    Parameters
+    ----------
+    image_dft : torch.Tensor
+        Real-fourier transform (RFFT) of the image with large image filters
+        already applied. Has shape (H, W // 2 + 1).
+    template_dft : torch.Tensor
+        Real-fourier transform (RFFT) of the template volume to take Fourier
+        slices from. Has shape (l, h, w // 2 + 1) where (l, h, w) is the original
+        real-space shape of the template volume.
+    rotation_matrices : torch.Tensor
+        Rotation matrices to apply to the template volume. Has shape
+        (num_orientations, 3, 3).
+    projective_filters : torch.Tensor
+        Multiplied 'ctf_filters' with 'whitening_filter_template'. Has shape
+        (num_Cs, num_defocus, h, w // 2 + 1). Is RFFT and not fftshifted.
+
+    Returns
+    -------
+    torch.Tensor
+        Cross-correlation of the image with the template volume for each
+        orientation and defocus value. Will have shape
+        (num_Cs, num_defocus, num_orientations, H, W).
+    """
+    # Accounting for RFFT shape
+    projection_shape_real = (template_dft.shape[1], template_dft.shape[2] * 2 - 2)
+    image_shape_real = (
+        image_dft.shape[0] * 2 - 2,
+        image_dft.shape[1],
+    )  # NOTE: transposed
+
+    num_orientations = rotation_matrices.shape[0]
+    num_Cs = projective_filters.shape[0]  # pylint: disable=invalid-name
+    num_defocus = projective_filters.shape[1]
+
+    # Output shape for cross-correlation
+    output_shape = (
+        image_shape_real[0] - projection_shape_real[0] + 1,
+        image_shape_real[1] - projection_shape_real[1] + 1,
+    )
+
+    cross_correlation = torch.empty(
+        size=(num_Cs, num_defocus, num_orientations, *output_shape),
+        dtype=image_dft.real.dtype,
+        device=image_dft.device,
+    )
+
+    # Extract central slice(s) from the template volume
+    fourier_slice = extract_central_slices_rfft_3d(
+        volume_rfft=template_dft,
+        image_shape=(projection_shape_real[0],) * 3,  # NOTE: requires cubic template
+        rotation_matrices=rotation_matrices,
+    )
+    fourier_slice = torch.fft.ifftshift(fourier_slice, dim=(-2,))
+    fourier_slice[..., 0, 0] = 0 + 0j  # zero out the DC component (mean zero)
+    fourier_slice *= -1  # flip contrast
+
+    # Apply the projective filters on a new batch dimension
+    fourier_slice = fourier_slice[None, None, ...] * projective_filters[:, :, None, ...]
+
+    # Inverse Fourier transform into real space and normalize
+    projections = torch.fft.irfftn(fourier_slice, dim=(-2, -1))
+    projections = torch.fft.ifftshift(projections, dim=(-2, -1))
+    projections = normalize_template_projection_compiled(
+        projections,
+        projection_shape_real,
+        image_shape_real,
+    )
+
+    # Create workspace for FFT operations
+    # Shape: (num_orientations, fft_size_y, fft_size_x // 2 + 1)
+    corr_workspace = torch.empty(
+        num_orientations,
+        image_shape_real[0],
+        image_shape_real[1] // 2 + 1,
+        dtype=torch.complex64,
+        device=image_dft.device,
+    )
+
+    for j in range(num_defocus):
+        for k in range(num_Cs):
+            # Use zipfft for cross-correlation
+            # projections[k, j, ...] has shape (num_orientations, H_proj, W_proj)
+            # image_dft has already been pre-transposed into contiguous layout
+            # with (W // 2 + 1, H) for memory efficiency
+            # cross_correlation[k, j, ...] has shape (num_orientations, H_out, W_out)
+
+            # NOTE: zipFFT only supports certain batch sizes for optimal performance,
+            # iterate through ZIPFFT_SUPPORTED_BATCH_SIZES to find the largest supported
+            # batch size to decompose the projections into. Batch=1 will always be
+            # supported.
+            if num_orientations in ZIPFFT_SUPPORTED_BATCH_SIZES:
+                # pylint: disable=c-extension-no-member
+                zipfft.padded_rconv2d.corr(
+                    projections[k, j, ...],
+                    corr_workspace,
+                    image_dft,
+                    cross_correlation[k, j, ...],
+                    image_shape_real[0],
+                    image_shape_real[1],
+                )
+            else:
+                for i in range(num_orientations):
+                    # pylint: disable=c-extension-no-member
+                    zipfft.padded_rconv2d.corr(
+                        projections[k, j, i, ...],
+                        corr_workspace[i, ...],
+                        image_dft,
+                        cross_correlation[k, j, i, ...],
+                        image_shape_real[0],
+                        image_shape_real[1],
+                    )
+
+    # NOTE: zipFFT internally does not synchronize CUDA, so must do it manually
+    torch.cuda.synchronize()
 
     return cross_correlation

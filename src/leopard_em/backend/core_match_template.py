@@ -4,17 +4,20 @@
 # pylint: disable=E1102
 
 import time
+import traceback
 import warnings
 from functools import partial
 from multiprocessing import set_start_method
 from typing import Any, Union
 
 import roma
+import tensordict
 import torch
 import tqdm
 
 from leopard_em.backend.cross_correlation import (
     do_batched_orientation_cross_correlate,
+    do_batched_orientation_cross_correlate_zipfft,
     do_streamed_orientation_cross_correlate,
 )
 from leopard_em.backend.distributed import (
@@ -24,17 +27,20 @@ from leopard_em.backend.distributed import (
 from leopard_em.backend.process_results import (
     aggregate_distributed_results,
     decode_global_search_index,
+    process_correlation_table,
     scale_mip,
 )
-from leopard_em.backend.utils import do_iteration_statistics_updates_compiled
+from leopard_em.backend.utils import do_iteration_and_correlation_table_updates
 
 DEFAULT_STATISTIC_DTYPE = torch.float32
+CORRELATION_TABLE_THRESHOLD = 5.5
 
 # Turn off gradient calculations by default
 torch.set_grad_enabled(False)
 
 # Set multiprocessing start method to spawn
 set_start_method("spawn", force=True)
+torch.multiprocessing.set_sharing_strategy("file_system")
 
 
 def monitor_match_template_progress(
@@ -77,6 +83,7 @@ def monitor_match_template_progress(
             time.sleep(poll_interval)
     except Exception as e:
         print(f"Error occurred: {e}")
+        traceback.print_exc()
         queue.set_error_flag()
         raise e
     finally:
@@ -155,7 +162,7 @@ def core_match_template(
     orientation_batch_size: int = 1,
     num_cuda_streams: int = 1,
     backend: str = "streamed",
-) -> dict[str, torch.Tensor]:
+) -> dict[str, torch.Tensor | dict | int]:
     """Core function for performing the whole-orientation search.
 
     With the RFFT, the last dimension (fastest dimension) is half the width
@@ -212,7 +219,7 @@ def core_match_template(
 
     Returns
     -------
-    dict[str, torch.Tensor]
+    dict[str, torch.Tensor | dict | int]
         Dictionary containing the following key, value pairs:
 
             - "mip": Maximum intensity projection of the cross-correlation values across
@@ -222,10 +229,12 @@ def core_match_template(
             - "best_theta": Best theta angle for each pixel.
             - "best_psi": Best psi angle for each pixel.
             - "best_defocus": Best defocus value for each pixel.
-            - "best_pixel_size": Best pixel size value for each pixel.
-            - "correlation_sum": Sum of cross-correlation values for each pixel.
-            - "correlation_squared_sum": Sum of squared cross-correlation values for
+            - "correlation_mean": Sum of cross-correlation values for each pixel.
+            - "correlation_variance": Sum of squared cross-correlation values for
+            - "correlation_table": Processed correlation table with all points in search
+              space and image positions where correlation value exceeded a threshold.
               each pixel.
+            - "total_projections": Total number of cross-correlations computed.
             - "total_orientations": Total number of orientations searched.
             - "total_defocus": Total number of defocus values searched.
     """
@@ -327,7 +336,7 @@ def core_match_template(
     correlation_squared_sum = aggregated_results["correlation_squared_sum"]
 
     # Map from global search index to the best defocus & angles
-    best_phi, best_theta, best_psi, best_defocus = decode_global_search_index(
+    best_phi, best_theta, best_psi, best_defocus, _ = decode_global_search_index(
         best_global_index, pixel_values, defocus_values, euler_angles
     )
 
@@ -340,6 +349,14 @@ def core_match_template(
         total_correlation_positions=total_projections,
     )
 
+    # Process the correlation table into a more interpretable format
+    correlation_table = process_correlation_table(
+        aggregated_results["correlation_table"],
+        pixel_values,
+        defocus_values,
+        euler_angles,
+    )
+
     return {
         "mip": mip,
         "scaled_mip": mip_scaled,
@@ -349,6 +366,7 @@ def core_match_template(
         "best_defocus": best_defocus,
         "correlation_mean": correlation_mean,
         "correlation_variance": correlation_variance,
+        "correlation_table": correlation_table,
         "total_projections": total_projections,
         "total_orientations": euler_angles.shape[0],
         "total_defocus": defocus_values.shape[0],
@@ -371,7 +389,9 @@ def _core_match_template_single_gpu(
     num_cuda_streams: int,
     backend: str,
     device: torch.device,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+) -> tuple[
+    torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, tensordict.TensorDict
+]:
     """Single-GPU call for template matching.
 
     Parameters
@@ -421,8 +441,18 @@ def _core_match_template_single_gpu(
             - correlation_sum: Sum of cross-correlation values for each pixel.
             - correlation_squared_sum: Sum of squared cross-correlation values for
               each pixel.
+            - correlation_table: Table of search indices and image positions where
+              correlation values exceeded a threshold.
     """
     image_shape_real = (image_dft.shape[0], image_dft.shape[1] * 2 - 2)  # adj. for RFFT
+    projection_shape_real = (
+        template_dft.shape[1],
+        template_dft.shape[2] * 2 - 2,  # adj. for RFFT
+    )
+    valid_correlation_shape = (
+        image_shape_real[0] - projection_shape_real[0] + 1,
+        image_shape_real[1] - projection_shape_real[1] + 1,
+    )
 
     # Create CUDA streams for parallel computation
     streams = [torch.cuda.Stream(device=device) for _ in range(num_cuda_streams)]
@@ -454,21 +484,52 @@ def _core_match_template_single_gpu(
     ### Initialize the tracked output statistics ###
     ################################################
 
+    # Correlation table built from 'tensordict' library where any (x, y) positions
+    # in correlation map which surpass the threshold will be added to the table.
+    # Keys in table are:
+    #   - "threshold": float threshold value used for the table.
+    #   - "global_idx": int32 global search index.
+    #   - "pos_x": int32 x position in image where corr value surpassed threshold.
+    #   - "pos_y": int32 y position in image where corr value surpassed threshold.
+    #   - "corr_value": float32 correlation value at (pos_x, pos_y) for the given
+    #                   global index.
+    correlation_table = tensordict.TensorDict(
+        {
+            "threshold": CORRELATION_TABLE_THRESHOLD,
+            "global_idx": torch.tensor([], dtype=torch.int32, device=device),
+            "pos_x": torch.tensor([], dtype=torch.int32, device=device),
+            "pos_y": torch.tensor([], dtype=torch.int32, device=device),
+            "corr_value": torch.tensor([], dtype=torch.float32, device=device),
+        },
+        device=device,
+    )
     mip = torch.full(
-        size=image_shape_real,
+        size=valid_correlation_shape,
         fill_value=-float("inf"),
         dtype=DEFAULT_STATISTIC_DTYPE,
         device=device,
     )
     best_global_index = torch.full(
-        image_shape_real, fill_value=-1, dtype=torch.int32, device=device
+        valid_correlation_shape,
+        fill_value=-1,
+        dtype=torch.int32,
+        device=device,
     )
     correlation_sum = torch.zeros(
-        size=image_shape_real, dtype=DEFAULT_STATISTIC_DTYPE, device=device
+        size=valid_correlation_shape,
+        dtype=DEFAULT_STATISTIC_DTYPE,
+        device=device,
     )
     correlation_squared_sum = torch.zeros(
-        size=image_shape_real, dtype=DEFAULT_STATISTIC_DTYPE, device=device
+        size=valid_correlation_shape,
+        dtype=DEFAULT_STATISTIC_DTYPE,
+        device=device,
     )
+    if backend == "zipfft":
+        # NOTE: zipFFT expects a pre-transformed, pre-transposed input image FFT
+        # Transpose the 'image_dft' along last two dimensions into contiguous layout
+        # with shape (..., W // 2 + 1, H)
+        image_dft = image_dft.transpose(-2, -1).contiguous()
 
     ##################################
     ### Start the orientation loop ###
@@ -511,7 +572,7 @@ def _core_match_template_single_gpu(
                         rotation_matrices=rot_matrix,
                         projective_filters=projective_filters,
                     )
-                else:
+                elif backend == "streamed":
                     cross_correlation = do_streamed_orientation_cross_correlate(
                         image_dft=image_dft,
                         template_dft=template_dft,
@@ -519,18 +580,29 @@ def _core_match_template_single_gpu(
                         projective_filters=projective_filters,
                         streams=streams,
                     )
+                elif backend == "zipfft":
+                    cross_correlation = do_batched_orientation_cross_correlate_zipfft(
+                        image_dft=image_dft,
+                        template_dft=template_dft,
+                        rotation_matrices=rot_matrix,
+                        projective_filters=projective_filters,
+                    )
 
-                # Update the tracked statistics
-                do_iteration_statistics_updates_compiled(
+                # Update tracked statistics and correlation table
+                do_iteration_and_correlation_table_updates(
                     cross_correlation=cross_correlation,
                     current_indexes=batch_search_indices,
+                    correlation_table=correlation_table,
                     mip=mip,
                     best_global_index=best_global_index,
                     correlation_sum=correlation_sum,
                     correlation_squared_sum=correlation_squared_sum,
-                    img_h=image_shape_real[0],
-                    img_w=image_shape_real[1],
+                    threshold=CORRELATION_TABLE_THRESHOLD,
+                    valid_shape_h=valid_correlation_shape[0],
+                    valid_shape_w=valid_correlation_shape[1],
+                    needs_valid_cropping=(backend != "zipfft"),
                 )
+
         except Exception as e:
             index_queue.set_error_flag()
             print(f"Error occurred in process {rank}: {e}")
@@ -542,7 +614,13 @@ def _core_match_template_single_gpu(
 
     torch.cuda.synchronize(device)
 
-    return mip, best_global_index, correlation_sum, correlation_squared_sum
+    return (
+        mip,
+        best_global_index,
+        correlation_sum,
+        correlation_squared_sum,
+        correlation_table,
+    )
 
 
 def _core_match_template_multiprocess_wrapper(
@@ -556,9 +634,13 @@ def _core_match_template_multiprocess_wrapper(
 
     See the _core_match_template_single_gpu function for parameter descriptions.
     """
-    mip, best_global_index, correlation_sum, correlation_squared_sum = (
-        _core_match_template_single_gpu(rank, **kwargs)  # type: ignore[arg-type]
-    )
+    (
+        mip,
+        best_global_index,
+        correlation_sum,
+        correlation_squared_sum,
+        correlation_table,
+    ) = _core_match_template_single_gpu(rank, **kwargs)  # type: ignore[arg-type]
 
     # NOTE: Need to send all tensors back to the CPU as numpy arrays for the shared
     # process dictionary. This is a workaround for now
@@ -567,6 +649,7 @@ def _core_match_template_multiprocess_wrapper(
         "best_global_index": best_global_index.cpu().numpy(),
         "correlation_sum": correlation_sum.cpu().numpy(),
         "correlation_squared_sum": correlation_squared_sum.cpu().numpy(),
+        "correlation_table": correlation_table.cpu(),
     }
 
     # Place the results in the shared multi-process manager dictionary so accessible
