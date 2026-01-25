@@ -6,6 +6,8 @@ This script can be modified to benchmark images of other sizes (e.g. K3 images).
 
 NOTE: This benchmark can take up to 10 minutes given the moderate sized search space and
 GPU requirements.
+
+NOTE: This script _must_ be run from the root of the Leopard-EM repository.
 """
 
 import json
@@ -135,12 +137,28 @@ def benchmark_match_template_single_run(
     }
 
 
-def run_benchmark(orientation_batch_size: int, num_runs: int) -> dict[str, Any]:
-    """Run multiple benchmark iterations and collect statistics."""
+def run_benchmark(
+    orientation_batch_size: int, num_runs: int, download_data: bool
+) -> dict[str, Any]:
+    """Run multiple benchmark iterations and collect statistics.
+
+    Parameters
+    ----------
+    orientation_batch_size : int
+        Number of orientations to process in a single batch (config option for
+        core_match_template).
+    num_runs : int
+        Number of benchmark runs to perform for statistical analysis.
+    download_data : bool
+        Whether to download the benchmark data from Zenodo. If False, assumes data
+        has already been downloaded. This can be useful if you want to modify the
+        YAML config file to be something different than what's provided from Zenodo.
+    """
     # Download example data to use for benchmarking
-    print("Downloading benchmarking data...")
-    # download_comparison_data()
-    print("Done!")
+    if download_data:
+        print("Downloading benchmarking data...")
+        download_comparison_data()
+        print("Done!")
 
     # Get CUDA device properties
     device = torch.cuda.get_device_properties(0)
@@ -230,7 +248,15 @@ def save_benchmark_results(result: dict, output_file: str) -> None:
     type=str,
     help="Output file for benchmark results (default: benchmark_results.json)",
 )
-def main(orientation_batch_size: int, num_runs: int, output_file: str):
+@click.option(
+    "--download-data/--no-download-data",
+    default=True,
+    help="Whether to download benchmark data from Zenodo (default: --download-data). "
+    "Use --no-download-data if you want to use existing files on disk.",
+)
+def main(
+    orientation_batch_size: int, num_runs: int, output_file: str, download_data: bool
+) -> None:
     """Main benchmarking function with Click CLI interface."""
     if not torch.cuda.is_available():
         print("CUDA not available exiting...")
@@ -240,9 +266,9 @@ def main(orientation_batch_size: int, num_runs: int, output_file: str):
     print(f"  Orientation batch size: {orientation_batch_size}")
     print(f"  Number of runs: {num_runs}")
     print(f"  Output file: {output_file}")
+    print(f"  Download data: {download_data}")
 
-    result = run_benchmark(orientation_batch_size, num_runs)
-    # pprint(result)
+    result = run_benchmark(orientation_batch_size, num_runs, download_data)
     save_benchmark_results(result, output_file)
 
 
