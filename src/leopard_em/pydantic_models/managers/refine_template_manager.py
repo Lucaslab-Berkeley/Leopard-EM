@@ -117,7 +117,10 @@ class RefineTemplateManager(BaseModel2DTM):
         )
 
     def run_refine_template(
-        self, output_dataframe_path: str, correlation_batch_size: int = 32
+        self,
+        output_dataframe_path: str,
+        correlation_batch_size: int = 32,
+        apply_ewald: bool = False,
     ) -> None:
         """Run the refine template program and saves the resultant DataFrame to csv.
 
@@ -127,17 +130,24 @@ class RefineTemplateManager(BaseModel2DTM):
             Path to save the refined particle data.
         correlation_batch_size : int
             Number of cross-correlations to process in one batch, defaults to 32.
+        apply_ewald : bool, optional
+            Whether to apply Ewald sphere correction. Defaults to False.
         """
         backend_kwargs = self.make_backend_core_function_kwargs()
 
-        result = self.get_refine_result(backend_kwargs, correlation_batch_size)
+        result = self.get_refine_result(
+            backend_kwargs, correlation_batch_size, apply_ewald=apply_ewald
+        )
 
         self.refine_result_to_dataframe(
             output_dataframe_path=output_dataframe_path, result=result
         )
 
     def get_refine_result(
-        self, backend_kwargs: dict, correlation_batch_size: int = 32
+        self,
+        backend_kwargs: dict,
+        correlation_batch_size: int = 32,
+        apply_ewald: bool = False,
     ) -> dict[str, np.ndarray]:
         """Get refine template result.
 
@@ -147,6 +157,8 @@ class RefineTemplateManager(BaseModel2DTM):
             Keyword arguments for the backend processing
         correlation_batch_size : int
             Number of orientations to process at once. Defaults to 32.
+        apply_ewald : bool, optional
+            Whether to apply Ewald sphere correction. Defaults to False.
 
         Returns
         -------
@@ -158,6 +170,7 @@ class RefineTemplateManager(BaseModel2DTM):
         result = core_refine_template(
             batch_size=correlation_batch_size,
             num_cuda_streams=self.computational_config.num_cpus,
+            apply_ewald=apply_ewald,
             **backend_kwargs,
         )
         result = {k: v.cpu().numpy() for k, v in result.items()}
