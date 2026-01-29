@@ -1,5 +1,6 @@
 """Root-level model for serialization and validation of 2DTM parameters."""
 
+import json
 import os
 from typing import Any, ClassVar, Literal, Optional
 
@@ -23,12 +24,12 @@ from leopard_em.pydantic_models.custom_types import BaseModel2DTM, ExcludedTenso
 from leopard_em.pydantic_models.data_structures import OpticsGroup
 from leopard_em.pydantic_models.formats import MATCH_TEMPLATE_DF_COLUMN_ORDER
 from leopard_em.pydantic_models.results import MatchTemplateResult
-from leopard_em.pydantic_models.utils import (
-    calculate_ctf_filter_stack,
+from leopard_em.utils.ctf_utils import calculate_ctf_filter_stack
+from leopard_em.utils.data_io import load_mrc_image, load_mrc_volume
+from leopard_em.utils.image_processing import (
     preprocess_image,
     volume_to_rfft_fourier_slice,
 )
-from leopard_em.utils.data_io import load_mrc_image, load_mrc_volume
 
 
 # pylint: disable=no-self-argument
@@ -213,6 +214,7 @@ class MatchTemplateManager(BaseModel2DTM):
             "defocus_values": defocus_values,
             "pixel_values": pixel_size_offsets,
             "device": self.computational_config.gpu_devices,
+            "transform_matrix": self.optics_group.mag_matrix_tensor,
         }
 
     def run_match_template(
@@ -431,6 +433,21 @@ class MatchTemplateManager(BaseModel2DTM):
         df["amplitude_contrast_ratio"] = self.optics_group.amplitude_contrast_ratio
         df["phase_shift"] = self.optics_group.phase_shift
         df["ctf_B_factor"] = self.optics_group.ctf_B_factor
+        # Convert dict columns to JSON strings for CSV serialization
+        even_zernikes_value = (
+            json.dumps(self.optics_group.even_zernikes)
+            if self.optics_group.even_zernikes is not None
+            else None
+        )
+        odd_zernikes_value = (
+            json.dumps(self.optics_group.odd_zernikes)
+            if self.optics_group.odd_zernikes is not None
+            else None
+        )
+        df["even_zernikes"] = [even_zernikes_value] * len(df)
+        df["odd_zernikes"] = [odd_zernikes_value] * len(df)
+        # Repeat mag_matrix list for each row in the DataFrame
+        df["mag_matrix"] = [self.optics_group.mag_matrix] * len(df)
 
         # Add paths to the micrograph and reference template
         df["micrograph_path"] = self.micrograph_path

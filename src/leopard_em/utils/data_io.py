@@ -6,6 +6,7 @@ from typing import Any, Optional, Union
 
 import mrcfile
 import numpy as np
+import pandas as pd
 import torch
 
 
@@ -198,3 +199,63 @@ def load_template_tensor(
         template = template.to(torch.float32)
 
     return template
+
+
+def read_particle_shifts_from_csv(
+    csv_path: str | os.PathLike | Path,
+    num_frames: int,
+    num_particles: int,
+) -> torch.Tensor:
+    """Read particle shifts from a CSV file and convert to tensor format.
+
+    The CSV file should have columns: particle_index, frame, y_shift, x_shift.
+    The output tensor has shape (T, N, 2) where T is the number of frames,
+    N is the number of particles, and 2 represents (y_shift, x_shift).
+
+    Parameters
+    ----------
+    csv_path : str | os.PathLike | Path
+        Path to the CSV file containing particle shifts.
+    num_frames : int
+        Number of frames in the movie.
+    num_particles : int
+        Number of particles.
+
+    Returns
+    -------
+    torch.Tensor
+        Particle shifts tensor with shape (T, N, 2) where T is frames,
+        N is particles, and 2 is (y_shift, x_shift).
+    """
+    df = pd.read_csv(csv_path)
+
+    # Validate required columns
+    required_columns = ["particle_index", "frame", "y_shift", "x_shift"]
+    if not all(col in df.columns for col in required_columns):
+        raise ValueError(
+            f"CSV file must have columns: {required_columns}. "
+            f"Found columns: {list(df.columns)}"
+        )
+
+    # Initialize output tensor with zeros
+    shifts = torch.zeros((num_frames, num_particles, 2), dtype=torch.float32)
+
+    # Fill in the shifts from the CSV
+    for _, row in df.iterrows():
+        particle_idx = int(row["particle_index"])
+        frame_idx = int(row["frame"])
+        y_shift = float(row["y_shift"])
+        x_shift = float(row["x_shift"])
+
+        # Validate indices
+        if particle_idx < 0 or particle_idx >= num_particles:
+            raise ValueError(
+                f"Particle index {particle_idx} out of range [0, {num_particles})"
+            )
+        if frame_idx < 0 or frame_idx >= num_frames:
+            raise ValueError(f"Frame index {frame_idx} out of range [0, {num_frames})")
+
+        shifts[frame_idx, particle_idx, 0] = y_shift
+        shifts[frame_idx, particle_idx, 1] = x_shift
+
+    return shifts
