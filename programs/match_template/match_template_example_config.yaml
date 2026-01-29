@@ -35,7 +35,7 @@ orientation_search_config:
   base_grid_method: uniform
   psi_step: 1.5      # in degrees
   theta_step: 2.5  # in degrees
-  symmetry: C1 
+  symmetry: C1  # Symmetry of structure being searched (default C1)
 preprocessing_filters:
   whitening_filter:
     enabled: true
@@ -48,6 +48,6 @@ preprocessing_filters:
     high_freq_cutoff: null  # Both in terms of Nyquist frequency (e.g. low-pass to 3 Å @ 1.06 Å/px would be high_freq_cutoff=0.353)
     low_freq_cutoff: null
 computational_config:
-  gpu_ids:
+  gpu_ids:  # Use "all" for all GPUs
   - 0
   num_cpus: 1
