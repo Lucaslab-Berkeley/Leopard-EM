@@ -92,13 +92,15 @@ def _process_particle_images_for_filters(
 
 # pylint: disable=too-many-locals
 # pylint: disable=too-many-arguments
+# pylint: disable=too-many-positional-arguments
 def _setup_images_filters_from_micrographs(
     particle_stack: "ParticleStack",
     preprocessing_filters: "PreprocessingFilters",
     template: torch.Tensor,
     apply_global_filtering: bool,
     movie: torch.Tensor | None,
-    deformation_field: torch.Tensor | None,
+    deformation_field: CubicCatmullRomGrid3d | None,
+    particle_shifts: torch.Tensor | None,
     pre_exposure: float,
     fluence_per_frame: float,
     image_stack: torch.Tensor | None,
@@ -120,8 +122,11 @@ def _setup_images_filters_from_micrographs(
         If True, apply filtering to the full micrograph before particle extraction.
     movie: torch.Tensor | None
         The movie tensor.
-    deformation_field: torch.Tensor | None
+    deformation_field: CubicCatmullRomGrid3d | None
         The deformation field tensor.
+    particle_shifts: torch.Tensor | None
+        The particle shifts tensor. If provided, takes precedence over
+        deformation_field. Shape is (T, N, 2) where T is frames, N is particles.
     pre_exposure: float
         The pre-exposure fluence in electrons per Angstrom squared.
     fluence_per_frame: float
@@ -185,10 +190,13 @@ def _setup_images_filters_from_micrographs(
         )
 
     # Extract particle images
-    if movie is not None and deformation_field is not None:
+    if movie is not None and (
+        deformation_field is not None or particle_shifts is not None
+    ):
         particle_images = particle_stack.construct_image_stack_from_movie(
             movie=movie,
             deformation_field=deformation_field,
+            particle_shifts=particle_shifts,
             pos_reference="top-left",
             handle_bounds="pad",
             padding_mode="reflect",
@@ -274,7 +282,8 @@ def setup_images_filters_particle_stack(
     template: torch.Tensor,
     apply_global_filtering: bool = True,
     movie: torch.Tensor | None = None,
-    deformation_field: torch.Tensor | None = None,
+    deformation_field: CubicCatmullRomGrid3d | None = None,
+    particle_shifts: torch.Tensor | None = None,
     pre_exposure: float = 0.0,
     fluence_per_frame: float = 1.0,
     image_stack: torch.Tensor | None = None,
@@ -300,8 +309,11 @@ def setup_images_filters_particle_stack(
         Default is True.
     movie: torch.Tensor | None
         The movie tensor.
-    deformation_field: torch.Tensor | None
+    deformation_field: CubicCatmullRomGrid3d | None
         The deformation field tensor.
+    particle_shifts: torch.Tensor | None
+        The particle shifts tensor. If provided, takes precedence over
+        deformation_field. Shape is (T, N, 2) where T is frames, N is particles.
     pre_exposure: float
         The pre-exposure fluence in electrons per Angstrom squared.
     fluence_per_frame: float
@@ -340,6 +352,7 @@ def setup_images_filters_particle_stack(
         apply_global_filtering=apply_global_filtering,
         movie=movie,
         deformation_field=deformation_field,
+        particle_shifts=particle_shifts,
         pre_exposure=pre_exposure,
         fluence_per_frame=fluence_per_frame,
         image_stack=image_stack,
@@ -493,6 +506,7 @@ def setup_particle_backend_kwargs(
     device_list: list,
     movie: torch.Tensor | None = None,
     deformation_field: CubicCatmullRomGrid3d | None = None,
+    particle_shifts: torch.Tensor | None = None,
     pre_exposure: float = 0.0,
     fluence_per_frame: float = 1.0,
     image_stack: torch.Tensor | None = None,
@@ -529,8 +543,11 @@ def setup_particle_backend_kwargs(
         List of computational devices to use.
     movie: torch.Tensor | None
         The movie tensor.
-    deformation_field: torch.Tensor | None
+    deformation_field: CubicCatmullRomGrid3d | None
         The deformation field tensor.
+    particle_shifts: torch.Tensor | None
+        The particle shifts tensor. If provided, takes precedence over
+        deformation_field. Shape is (T, N, 2) where T is frames, N is particles.
     pre_exposure: float
         The pre-exposure fluence in electrons per Angstrom squared.
     fluence_per_frame: float
@@ -584,6 +601,7 @@ def setup_particle_backend_kwargs(
         apply_global_filtering=apply_global_filtering,
         movie=movie,
         deformation_field=deformation_field,
+        particle_shifts=particle_shifts,
         pre_exposure=pre_exposure,
         fluence_per_frame=fluence_per_frame,
         image_stack=image_stack,
