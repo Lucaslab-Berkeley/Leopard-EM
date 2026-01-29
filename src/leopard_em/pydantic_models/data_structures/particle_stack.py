@@ -251,17 +251,35 @@ def _get_cropped_image_regions_torch(
 
     regions = []
     for y, x in zip(pos_y, pos_x):
-        # Check bounds and raise error if out of bounds
+        # Convert to Python ints for comparison
+        y = int(y.item() if hasattr(y, "item") else y)
+        x = int(x.item() if hasattr(x, "item") else x)
+        original_y, original_x = y, x
+
+        # Check bounds
         if (
             y < 0
             or x < 0
             or y + box_size[0] > image.shape[0]
             or x + box_size[1] > image.shape[1]
         ):
-            raise IndexError(
-                f"Region bounds [{y}:{y + box_size[0]}, {x}:{x + box_size[1]}] exceed "
-                f"image dimensions {image.shape}"
+            if handle_bounds == "error":
+                raise IndexError(
+                    f"Region bounds [{original_y}:{original_y + box_size[0]}, "
+                    f"{original_x}:{original_x + box_size[1]}] exceed "
+                    f"image dimensions {image.shape}"
+                )
+            # For "pad" mode, warn and clamp coordinates
+            warnings.warn(
+                f"Region bounds [{original_y}:{original_y + box_size[0]}, "
+                f"{original_x}:{original_x + box_size[1]}] exceed "
+                f"image dimensions {image.shape}. Clamping to edges.",
+                UserWarning,
+                stacklevel=2,
             )
+            # Clamp coordinates to keep region within image bounds
+            y = max(0, min(y, image.shape[0] - box_size[0]))
+            x = max(0, min(x, image.shape[1] - box_size[1]))
 
         regions.append(image[y : y + box_size[0], x : x + box_size[1]])
 
@@ -864,88 +882,43 @@ class ParticleStack(BaseModel2DTM):
     @staticmethod
     # pylint: disable=too-many-arguments
     # pylint: disable=too-many-positional-arguments
-    def _process_single_frame_for_checkpoint(
+    def _process_single_frame_with_shifts_checkpoint(
         movie_frame: torch.Tensor,
-        deformation_field: CubicCatmullRomGrid3d,
-        normalized_t_value: torch.Tensor,
-        pixel_grid: torch.Tensor,
-        pixel_spacing: float,
-        pos_y_center: torch.Tensor,
-        pos_x_center: torch.Tensor,
+        shifts: torch.Tensor,  # (N, 2) -> (dy, dx)
         pos_y: torch.Tensor,
         pos_x: torch.Tensor,
         extracted_box_size: tuple[int, int],
-        gh: int,
-        gw: int,
         handle_bounds: Literal["pad", "error"],
         padding_mode: Literal["constant", "reflect", "replicate"],
         padding_value: float,
     ) -> torch.Tensor:
-        """Process a single frame with gradient checkpointing.
+        """
+        Process a single frame using *precomputed particle shifts*.
 
-        This function extracts particles from a single movie frame, computes
-        the deformation-based shifts, and returns the Fourier-shifted FFTs.
+        This function is safe for gradient checkpointing and contains no
+        deformation-field evaluation.
 
         Parameters
         ----------
         movie_frame : torch.Tensor
-            Single frame from the movie.
-        deformation_field : CubicCatmullRomGrid3d
-            The deformation field grid.
-        normalized_t_value : torch.Tensor
-            The normalized time value for this frame (0 to 1).
-        pixel_grid : torch.Tensor
-            Coordinate grid for the full image.
-        pixel_spacing : float
-            Pixel size for this particle.
-        pos_y_center : torch.Tensor
-            Y positions of particle centers.
-        pos_x_center : torch.Tensor
-            X positions of particle centers.
-        pos_y : torch.Tensor
-            Y positions for extraction (top-left).
-        pos_x : torch.Tensor
-            X positions for extraction (top-left).
+            Single movie frame (H, W)
+        shifts : torch.Tensor
+            Per-particle shifts with shape (N, 2) as (dy, dx)
+        pos_y, pos_x : torch.Tensor
+            Top-left extraction positions
         extracted_box_size : tuple[int, int]
-            Size of boxes to extract (height, width).
-        gh : int
-            Grid height of deformation field.
-        gw : int
-            Grid width of deformation field.
-        handle_bounds : Literal["pad", "error"]
-            How to handle image bounds.
-        padding_mode : Literal["constant", "reflect", "replicate"]
-            Padding mode for extraction.
-        padding_value : float
-            Value for constant padding.
+            (box_h, box_w)
+        handle_bounds, padding_mode, padding_value
+            Passed through to cropping
 
         Returns
         -------
         torch.Tensor
-            Shifted FFTs for all particles in this frame.
+            Shifted FFTs with shape (N, box_h, box_w//2 + 1)
         """
         box_h, box_w = extracted_box_size
 
-        # Evaluate deformation field at this time point
-        frame_deformation_field = evaluate_deformation_field_at_t(
-            deformation_field=deformation_field,
-            t=normalized_t_value.item(),  # Convert to float
-            grid_shape=(10 * gh, 10 * gw),
-        )
-
-        # Compute pixel shifts
-        pixel_shifts = get_pixel_shifts(
-            frame=movie_frame,
-            pixel_spacing=pixel_spacing,
-            frame_deformation_grid=frame_deformation_field,
-            pixel_grid=pixel_grid,
-        )
-
-        # Extract shifts at particle centers
-        y_shifts = -pixel_shifts[pos_y_center, pos_x_center, 0]
-        x_shifts = -pixel_shifts[pos_y_center, pos_x_center, 1]
-
-        # Extract particles from this frame
+        # Extract particle images
         cropped_images = get_cropped_image_regions(
             movie_frame,
             pos_y,
@@ -957,27 +930,90 @@ class ParticleStack(BaseModel2DTM):
             padding_value=padding_value,
         )
 
-        # Compute FFT of cropped images
-        cropped_images_dft = torch.fft.rfftn(cropped_images, dim=(-2, -1))  # pylint: disable=not-callable
+        # FFT
+        cropped_images_dft = torch.fft.rfftn(  # pylint: disable=not-callable
+            cropped_images, dim=(-2, -1)
+        )
 
-        # Apply Fourier shift
+        # Fourier shift
         shifted_fft = fourier_shift_dft_2d(
             dft=cropped_images_dft,
             image_shape=(box_h, box_w),
-            shifts=torch.stack((y_shifts, x_shifts), dim=-1),
+            shifts=shifts,
             rfft=True,
             fftshifted=False,
         )
 
         return shifted_fft
 
+    def compute_frame_particle_shifts_from_deformation(
+        self,
+        movie_frame: torch.Tensor,
+        deformation_field: CubicCatmullRomGrid3d,
+        normalized_t_value: torch.Tensor,
+        pixel_grid: torch.Tensor,
+        pixel_spacing: float,
+        pos_y_center: torch.Tensor,
+        pos_x_center: torch.Tensor,
+        gh: int,
+        gw: int,
+    ) -> torch.Tensor:
+        """
+        Compute per-particle shifts for a single frame from a deformation field.
+
+        Parameters
+        ----------
+        movie_frame : torch.Tensor
+            Single movie frame (H, W)
+        deformation_field : CubicCatmullRomGrid3d
+            The deformation field grid.
+        normalized_t_value : torch.Tensor
+            The normalized time value for the frame.
+        pixel_grid : torch.Tensor
+            The pixel grid tensor.
+        pixel_spacing : float
+            The pixel spacing.
+        pos_y_center : torch.Tensor
+            The center y position.
+        pos_x_center : torch.Tensor
+            The center x position.
+        gh : int
+            The height of the deformation field grid.
+        gw : int
+            The width of the deformation field grid.
+
+        Returns
+        -------
+        torch.Tensor
+            Shifts with shape (N, 2) as (dy, dx)
+        """
+        frame_deformation_field = evaluate_deformation_field_at_t(
+            deformation_field=deformation_field,
+            t=normalized_t_value.item(),
+            grid_shape=(10 * gh, 10 * gw),
+        )
+
+        pixel_shifts = get_pixel_shifts(
+            frame=movie_frame,
+            pixel_spacing=pixel_spacing,
+            frame_deformation_grid=frame_deformation_field,
+            pixel_grid=pixel_grid,
+        )
+
+        y_shifts = -pixel_shifts[pos_y_center, pos_x_center, 0]
+        x_shifts = -pixel_shifts[pos_y_center, pos_x_center, 1]
+
+        return torch.stack((y_shifts, x_shifts), dim=-1)
+
     # pylint: disable=too-many-arguments
     # pylint: disable=too-many-positional-arguments
     # pylint: disable=too-many-statements
+    # pylint: disable=too-many-branches
     def construct_image_stack_from_movie(
         self,
         movie: torch.Tensor,
-        deformation_field: CubicCatmullRomGrid3d,
+        deformation_field: CubicCatmullRomGrid3d | None = None,
+        particle_shifts: torch.Tensor | None = None,
         pos_reference: Literal["center", "top-left"] = "top-left",
         handle_bounds: Literal["pad", "error"] = "pad",
         padding_mode: Literal["constant", "reflect", "replicate"] = "constant",
@@ -993,8 +1029,13 @@ class ParticleStack(BaseModel2DTM):
         ----------
         movie : torch.Tensor
             The movie tensor.
-        deformation_field : CubicCatmullRomGrid3d
+        deformation_field : CubicCatmullRomGrid3d | None, optional
             The deformation field grid.
+        particle_shifts : torch.Tensor | None, optional
+            The particle shifts to apply to the movie. If None, the particle shifts
+            are computed from the deformation field. If provided, the particle shifts
+            are used to shift the movie. One must be provided.
+            Shape is (T, N, 2) where T = number of frames, N = number of particles,
         pos_reference : Literal["center", "top-left"], optional
             The reference point for the positions, by default "top-left". If "center",
             the boxes extracted are image[y - box_size // 2 : y + box_size // 2, ...].
@@ -1032,6 +1073,10 @@ class ParticleStack(BaseModel2DTM):
             The stack of images with shape (N, H, W) where N is the number of particles
             and (H, W) is the extracted box size.
         """
+        if (deformation_field is None) == (particle_shifts is None):
+            raise ValueError(
+                "One of `deformation_field` or `particle_shifts` must be provided."
+            )
         pixel_sizes = self.get_pixel_size()
         # Determine which position columns to use (refined if available)
         y_col, x_col = self._get_position_reference_columns()
@@ -1039,7 +1084,10 @@ class ParticleStack(BaseModel2DTM):
         h, w = self.original_template_size
         box_h, box_w = self.extracted_box_size
         t, img_h, img_w = movie.shape
-        _, _, gh, gw = deformation_field.data.shape
+        if deformation_field is not None:
+            _, _, gh, gw = deformation_field.data.shape
+        else:
+            gh = gw = 0
         normalized_t = torch.linspace(0, 1, steps=t, device=movie.device)
         pixel_grid = coordinate_grid(
             image_shape=(img_h, img_w),
@@ -1081,10 +1129,13 @@ class ParticleStack(BaseModel2DTM):
         movie = movie - torch.mean(movie, dim=(-2, -1), keepdim=True)
 
         for frame_index, movie_frame in enumerate(movie):
-            if use_gradient_checkpointing:
-                # Use gradient checkpointing to save memory
-                shifted_fft = checkpoint(
-                    self._process_single_frame_for_checkpoint,
+            # ------------------------------------------------------------
+            # Obtain shifts (dy, dx) for this frame
+            # ------------------------------------------------------------
+            if particle_shifts is not None:
+                frame_shifts = particle_shifts[frame_index]  # (N, 2)
+            else:
+                frame_shifts = self.compute_frame_particle_shifts_from_deformation(
                     movie_frame=movie_frame,
                     deformation_field=deformation_field,
                     normalized_t_value=normalized_t[frame_index],
@@ -1092,55 +1143,36 @@ class ParticleStack(BaseModel2DTM):
                     pixel_spacing=pixel_sizes[0].item(),
                     pos_y_center=pos_y_center,
                     pos_x_center=pos_x_center,
-                    pos_y=pos_y,
-                    pos_x=pos_x,
-                    extracted_box_size=self.extracted_box_size,
                     gh=gh,
                     gw=gw,
-                    handle_bounds=handle_bounds,
-                    padding_mode=padding_mode,
-                    padding_value=padding_value,
-                    use_reentrant=False,
-                )
-            else:
-                # Process without checkpointing (for debugging)
-                frame_deformation_field = evaluate_deformation_field_at_t(
-                    deformation_field=deformation_field,
-                    t=normalized_t[frame_index],
-                    grid_shape=(10 * gh, 10 * gw),
                 )
 
-                pixel_shifts = get_pixel_shifts(
-                    frame=movie_frame,
-                    pixel_spacing=pixel_sizes[0],
-                    frame_deformation_grid=frame_deformation_field,
-                    pixel_grid=pixel_grid,
-                )
-
-                y_shifts = -pixel_shifts[pos_y_center, pos_x_center, 0]
-                x_shifts = -pixel_shifts[pos_y_center, pos_x_center, 1]
-
-                cropped_images = get_cropped_image_regions(
+            # ------------------------------------------------------------
+            # Apply shifts + FFT (checkpointed)
+            # ------------------------------------------------------------
+            if use_gradient_checkpointing:
+                shifted_fft = checkpoint(
+                    self._process_single_frame_with_shifts_checkpoint,
                     movie_frame,
+                    frame_shifts,
                     pos_y,
                     pos_x,
                     self.extracted_box_size,
-                    pos_reference="top-left",
+                    handle_bounds,
+                    padding_mode,
+                    padding_value,
+                    use_reentrant=False,
+                )
+            else:
+                shifted_fft = self._process_single_frame_with_shifts_checkpoint(
+                    movie_frame=movie_frame,
+                    shifts=frame_shifts,
+                    pos_y=pos_y,
+                    pos_x=pos_x,
+                    extracted_box_size=self.extracted_box_size,
                     handle_bounds=handle_bounds,
                     padding_mode=padding_mode,
                     padding_value=padding_value,
-                )
-
-                cropped_images_dft = torch.fft.rfftn(  # pylint: disable=not-callable
-                    cropped_images, dim=(-2, -1)
-                )
-
-                shifted_fft = fourier_shift_dft_2d(
-                    dft=cropped_images_dft,
-                    image_shape=(box_h, box_w),
-                    shifts=torch.stack((y_shifts, x_shifts), dim=-1),
-                    rfft=True,
-                    fftshifted=False,
                 )
 
             # Store the shifted FFTs

@@ -1,7 +1,7 @@
 """File containing Fourier-slice based cross-correlation functions for 2DTM."""
 
 import torch
-from torch_fourier_slice import extract_central_slices_rfft_3d
+from torch_fourier_slice import extract_central_slices_rfft_3d, transform_slice_2d
 
 from leopard_em.backend.utils import (
     normalize_template_projection,
@@ -16,6 +16,7 @@ def do_streamed_orientation_cross_correlate(
     rotation_matrices: torch.Tensor,
     projective_filters: torch.Tensor,
     streams: list[torch.cuda.Stream],
+    transform_matrix: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """Calculates a grid of 2D cross-correlations over multiple CUDA streams.
 
@@ -46,6 +47,9 @@ def do_streamed_orientation_cross_correlate(
     streams : list[torch.cuda.Stream]
         List of CUDA streams to use for parallel computation. Each stream will
         handle a separate cross-correlation.
+    transform_matrix : torch.Tensor | None, optional
+        Anisotropic magnification transform matrix of shape (2, 2). If None,
+        no magnification transform is applied. Default is None.
 
     Returns
     -------
@@ -71,9 +75,18 @@ def do_streamed_orientation_cross_correlate(
     # Do a batched Fourier slice extraction for all the orientations at once.
     fourier_slices = extract_central_slices_rfft_3d(
         volume_rfft=template_dft,
-        image_shape=(projection_shape_real[0],) * 3,
         rotation_matrices=rotation_matrices,
     )
+    # Apply anisotropic magnification transform if provided
+    if transform_matrix is not None:
+        rfft_shape = (template_dft.shape[1], template_dft.shape[2])
+        stack_shape = (num_orientations,)
+        fourier_slices = transform_slice_2d(
+            projection_image_dfts=fourier_slices,
+            rfft_shape=rfft_shape,
+            stack_shape=stack_shape,
+            transform_matrix=transform_matrix,
+        )
     fourier_slices = torch.fft.ifftshift(fourier_slices, dim=(-2,))
     fourier_slices[..., 0, 0] = 0 + 0j  # zero out the DC component (mean zero)
     fourier_slices *= -1  # flip contrast
@@ -148,6 +161,7 @@ def do_batched_orientation_cross_correlate(
     rotation_matrices: torch.Tensor,
     projective_filters: torch.Tensor,
     requires_grad: bool = False,
+    transform_matrix: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """Batched projection and cross-correlation with fixed (batched) filters.
 
@@ -178,6 +192,9 @@ def do_batched_orientation_cross_correlate(
         Whether the input is requires_grad. Default is False.
         If True, the input will be cloned before any in-place operations.
         If False, the input will be used as is.
+    transform_matrix : torch.Tensor | None, optional
+        Anisotropic magnification transform matrix of shape (2, 2). If None,
+        no magnification transform is applied. Default is None.
 
     Returns
     -------
@@ -207,9 +224,19 @@ def do_batched_orientation_cross_correlate(
     # Extract central slice(s) from the template volume
     fourier_slice = extract_central_slices_rfft_3d(
         volume_rfft=template_dft,
-        image_shape=(projection_shape_real[0],) * 3,  # NOTE: requires cubic template
         rotation_matrices=rotation_matrices,
     )
+    # Apply anisotropic magnification transform if provided
+    # pylint: disable=duplicate-code
+    if transform_matrix is not None:
+        rfft_shape = (template_dft.shape[1], template_dft.shape[2])
+        stack_shape = (rotation_matrices.shape[0],)
+        fourier_slice = transform_slice_2d(
+            projection_image_dfts=fourier_slice,
+            rfft_shape=rfft_shape,
+            stack_shape=stack_shape,
+            transform_matrix=transform_matrix,
+        )
     fourier_slice = torch.fft.ifftshift(fourier_slice, dim=(-2,))
     # Zero out the DC component (mean zero) - avoid in-place when requires_grad
     if requires_grad:
@@ -262,6 +289,7 @@ def do_batched_orientation_cross_correlate_cpu(
     template_dft: torch.Tensor,
     rotation_matrices: torch.Tensor,
     projective_filters: torch.Tensor,
+    transform_matrix: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """Same as `do_streamed_orientation_cross_correlate` but on the CPU.
 
@@ -285,6 +313,9 @@ def do_batched_orientation_cross_correlate_cpu(
     projective_filters : torch.Tensor
         Multiplied 'ctf_filters' with 'whitening_filter_template'. Has shape
         (defocus_batch, h, w // 2 + 1). Is RFFT and not fftshifted.
+    transform_matrix : torch.Tensor | None, optional
+        Anisotropic magnification transform matrix of shape (2, 2). If None,
+        no magnification transform is applied. Default is None.
 
     Returns
     -------
@@ -298,9 +329,19 @@ def do_batched_orientation_cross_correlate_cpu(
     # Extract central slice(s) from the template volume
     fourier_slice = extract_central_slices_rfft_3d(
         volume_rfft=template_dft,
-        image_shape=(projection_shape_real[0],) * 3,  # NOTE: requires cubic template
         rotation_matrices=rotation_matrices,
     )
+    # Apply anisotropic magnification transform if provided
+    # pylint: disable=duplicate-code
+    if transform_matrix is not None:
+        rfft_shape = (template_dft.shape[1], template_dft.shape[2])
+        stack_shape = (rotation_matrices.shape[0],)
+        fourier_slice = transform_slice_2d(
+            projection_image_dfts=fourier_slice,
+            rfft_shape=rfft_shape,
+            stack_shape=stack_shape,
+            transform_matrix=transform_matrix,
+        )
     fourier_slice = torch.fft.ifftshift(fourier_slice, dim=(-2,))
     fourier_slice[..., 0, 0] = 0 + 0j  # zero out the DC component (mean zero)
     fourier_slice *= -1  # flip contrast

@@ -1,9 +1,12 @@
 """CTF (Contrast Transfer Function) utility functions."""
 
+import ast
+import json
 from typing import TYPE_CHECKING, Any
 
+import numpy as np
 import torch
-from torch_fourier_filter.ctf import calculate_ctf_2d
+from torch_ctf import calculate_ctf_2d
 from torch_fourier_filter.envelopes import b_envelope
 
 from leopard_em.utils.search_utils import get_cs_range
@@ -44,11 +47,6 @@ def calculate_ctf_filter_stack_full_args(
     torch.Tensor
         Tensor of CTF filter values for the specified shape and parameters. Will have
         shape (num_pixel_sizes, num_defocus_offsets, h, w // 2 + 1)
-
-    # Raises
-    # ------
-    # ValueError
-    #     If not all the required parameters are passed as additional keyword arguments.
     """
     # Calculate the defocus values + offsets in terms of Angstrom
     defocus = defocus_offsets + ((defocus_u + defocus_v) / 2)
@@ -66,6 +64,21 @@ def calculate_ctf_filter_stack_full_args(
     if defocus.dim() == 0:
         defocus = defocus.unsqueeze(0)
 
+    # Convert mag_matrix from list to 2x2 tensor if provided
+    transform_matrix = kwargs.get("mag_matrix")
+    if transform_matrix is not None:
+        if isinstance(transform_matrix, list):
+            transform_matrix = torch.tensor(
+                [
+                    [transform_matrix[0], transform_matrix[1]],
+                    [transform_matrix[2], transform_matrix[3]],
+                ],
+                dtype=torch.float32,
+            )
+        elif not isinstance(transform_matrix, torch.Tensor):
+            # If it's neither a list nor a tensor, try to convert it
+            transform_matrix = torch.tensor(transform_matrix, dtype=torch.float32)
+
     # Loop over spherical aberrations one at a time and collect results
     ctf_list = []
     for cs_val in cs_values:
@@ -81,6 +94,9 @@ def calculate_ctf_filter_stack_full_args(
             image_shape=template_shape,
             rfft=True,
             fftshift=False,
+            even_zernike_coeffs=kwargs["even_zernikes"],
+            odd_zernike_coeffs=kwargs["odd_zernikes"],
+            transform_matrix=transform_matrix,
         )
         # calc B-envelope and apply
         b_envelope_tmp = b_envelope(
@@ -137,7 +153,34 @@ def calculate_ctf_filter_stack(
         ctf_B_factor=optics_group.ctf_B_factor,
         phase_shift=optics_group.phase_shift,
         pixel_size=optics_group.pixel_size,
+        even_zernikes=optics_group.even_zernikes,
+        odd_zernikes=optics_group.odd_zernikes,
+        mag_matrix=optics_group.mag_matrix_tensor,
     )
+
+
+def _parse_json_string_from_series_value(value: Any) -> Any:
+    """Parse a value that may be a JSON string, dict, None, or NaN.
+
+    Parameters
+    ----------
+    value : Any
+        The value to parse. Can be a JSON string, dict, None, or NaN
+        (from empty CSV fields).
+
+    Returns
+    -------
+    Any
+        Parsed dict if value was a JSON string, original dict if already a dict,
+        or None if value was None or NaN.
+    """
+    # Handle NaN values from empty CSV fields (pandas converts empty fields to NaN)
+    if value is None or (isinstance(value, float) and np.isnan(value)):
+        return None
+    if isinstance(value, str) and value:
+        return json.loads(value)
+    # Already a dict (backward compatibility)
+    return value
 
 
 def _setup_ctf_kwargs_from_particle_stack(
@@ -166,6 +209,51 @@ def _setup_ctf_kwargs_from_particle_stack(
     assert particle_stack["phase_shift"].nunique() == 1
     assert particle_stack["ctf_B_factor"].nunique() == 1
 
+    # Convert mag_matrix from list to 2x2 tensor if provided
+    # Handle empty/NaN values from CSV (pandas converts empty fields to NaN)
+    mag_matrix_value = particle_stack["mag_matrix"].iloc[0]
+    mag_matrix_tensor = None
+    if mag_matrix_value is not None and not (
+        isinstance(mag_matrix_value, float) and np.isnan(mag_matrix_value)
+    ):
+        # mag_matrix_value might be a list or a string representation of a list
+        if isinstance(mag_matrix_value, str):
+            mag_matrix_list = ast.literal_eval(mag_matrix_value)
+        else:
+            mag_matrix_list = mag_matrix_value
+        if isinstance(mag_matrix_list, list) and len(mag_matrix_list) == 4:
+            # Check that all elements are valid numbers (not NaN)
+            if all(
+                isinstance(x, (int, float)) and not np.isnan(x) for x in mag_matrix_list
+            ):
+                mag_matrix_tensor = torch.tensor(
+                    [
+                        [mag_matrix_list[0], mag_matrix_list[1]],
+                        [mag_matrix_list[2], mag_matrix_list[3]],
+                    ],
+                    dtype=torch.float32,
+                )
+
+    # Parse JSON strings for zernike coefficients if they're stored as strings
+    even_zernikes_dict = _parse_json_string_from_series_value(
+        particle_stack["even_zernikes"].iloc[0]
+    )
+    odd_zernikes_dict = _parse_json_string_from_series_value(
+        particle_stack["odd_zernikes"].iloc[0]
+    )
+
+    # Convert dictionary values to tensors
+    if even_zernikes_dict is not None:
+        even_zernikes_dict = {
+            key: torch.tensor(value, dtype=torch.float32)
+            for key, value in even_zernikes_dict.items()
+        }
+    if odd_zernikes_dict is not None:
+        odd_zernikes_dict = {
+            key: torch.tensor(value, dtype=torch.float32)
+            for key, value in odd_zernikes_dict.items()
+        }
+
     return {
         "voltage": particle_stack["voltage"][0].item(),
         "spherical_aberration": particle_stack["spherical_aberration"][0].item(),
@@ -176,4 +264,7 @@ def _setup_ctf_kwargs_from_particle_stack(
         "phase_shift": particle_stack["phase_shift"][0].item(),
         "pixel_size": particle_stack["refined_pixel_size"].mean().item(),
         "template_shape": template_shape,
+        "even_zernikes": even_zernikes_dict,
+        "odd_zernikes": odd_zernikes_dict,
+        "mag_matrix": mag_matrix_tensor,
     }

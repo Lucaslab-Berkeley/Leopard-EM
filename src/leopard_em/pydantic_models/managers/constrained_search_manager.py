@@ -336,7 +336,7 @@ class ConstrainedSearchManager(BaseModel2DTM):
         df_refined["refined_scaled_mip"] = refined_scaled_mip
 
         # Reorder the columns
-        df_refined = df_refined.reindex(columns=CONSTRAINED_DF_COLUMN_ORDER).fillna(0)
+        df_refined = df_refined.reindex(columns=CONSTRAINED_DF_COLUMN_ORDER)
 
         # Save the refined DataFrame to disk
         df_refined.to_csv(output_dataframe_path)
