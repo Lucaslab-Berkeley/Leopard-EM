@@ -6,7 +6,10 @@ from .match_template_peaks import (
     match_template_peaks_to_dict,
 )
 from .pvalue_metric import extract_peaks_and_statistics_p_value
-from .zscore_metric import extract_peaks_and_statistics_zscore, gaussian_noise_zscore_cutoff
+from .zscore_metric import (
+    extract_peaks_and_statistics_zscore,
+    gaussian_noise_zscore_cutoff,
+)
 
 __all__ = [
     "MatchTemplatePeaks",

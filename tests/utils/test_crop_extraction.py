@@ -296,6 +296,7 @@ def test_get_cropped_image_regions_edge_of_image_numpy():
     assert np.allclose(cropped_regions_replicate, ground_truth_replicate)
 
 
+@pytest.mark.filterwarnings("ignore::UserWarning")
 def test_get_cropped_image_regions_edge_of_image_torch():
     """Test the edge cases for the torch version of get_cropped_image_regions."""
     box_size = (5, 5)

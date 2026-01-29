@@ -20,10 +20,11 @@ from leopard_em.pydantic_models.config import (
 from leopard_em.pydantic_models.custom_types import BaseModel2DTM, ExcludedTensor
 from leopard_em.pydantic_models.data_structures import ParticleStack
 from leopard_em.pydantic_models.formats import CONSTRAINED_DF_COLUMN_ORDER
-from leopard_em.pydantic_models.utils import (
-    _setup_ctf_kwargs_from_particle_stack,
+from leopard_em.utils.backend_setup import (
+    _setup_correlation_stacks_from_micrographs,
     setup_images_filters_particle_stack,
 )
+from leopard_em.utils.ctf_utils import _setup_ctf_kwargs_from_particle_stack
 from leopard_em.utils.data_io import load_mrc_volume, load_template_tensor
 
 
@@ -174,19 +175,17 @@ class ConstrainedSearchManager(BaseModel2DTM):
             self.particle_stack_constrained["correlation_variance_path"][0],
         )
         # Get correlation statistics
-        corr_mean_stack = part_stk.construct_cropped_statistic_stack(
-            stat="correlation_average",
-            handle_bounds="pad",
-            padding_mode="constant",
-            padding_value=0.0,  # pad with zeros
+        h, w = part_stk.original_template_size
+        box_h, box_w = part_stk.extracted_box_size
+        extracted_box_size = (box_h - h + 1, box_w - w + 1)
+        corr_mean_stack, corr_std_stack = _setup_correlation_stacks_from_micrographs(
+            particle_stack=part_stk,
+            mean_stack=None,
+            std_stack=None,
+            particle_indices=None,
+            extracted_box_size=extracted_box_size,
+            device=template.device,
         )
-        corr_std_stack = part_stk.construct_cropped_statistic_stack(
-            stat="correlation_variance",
-            handle_bounds="pad",
-            padding_mode="constant",
-            padding_value=1e10,  # large to avoid out of bound pixels having inf z-score
-        )
-        corr_std_stack = corr_std_stack**0.5  # Convert variance to standard deviation
 
         return {
             "particle_stack_dft": particle_images_dft,
@@ -337,7 +336,7 @@ class ConstrainedSearchManager(BaseModel2DTM):
         df_refined["refined_scaled_mip"] = refined_scaled_mip
 
         # Reorder the columns
-        df_refined = df_refined.reindex(columns=CONSTRAINED_DF_COLUMN_ORDER).fillna(0)
+        df_refined = df_refined.reindex(columns=CONSTRAINED_DF_COLUMN_ORDER)
 
         # Save the refined DataFrame to disk
         df_refined.to_csv(output_dataframe_path)
