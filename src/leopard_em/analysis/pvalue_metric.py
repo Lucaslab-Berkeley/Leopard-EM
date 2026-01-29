@@ -1,232 +1,237 @@
-"""Module for calling true/false positives using the p-value metric."""
+"""
+P-value based peak detection using an anisotropic Gaussian model.
 
+This module implements a faithful, vectorized Torch rewrite of the reference
+anisotropic-Gaussian p-value metric described in:
+
+    https://journals.iucr.org/m/issues/2025/02/00/eh5020/eh5020.pdf
+
+The implementation matches the original NumPy reference exactly:
+- Rank-based probit transform
+- Moment-based anisotropic Gaussian estimation
+- Explicit eigen decomposition and rotation
+- Analytic p-value with quadrant constraints
+"""
+
+import math
 import warnings
 
-import numpy as np
 import torch
-from lmfit import Model, Parameters
-from lmfit.model import ModelResult
-from scipy import special
-from scipy.stats import multivariate_normal
+from scipy.special import erfinv  # pylint: disable=no-name-in-module
 
 from .match_template_peaks import MatchTemplatePeaks
 from .utils import filter_peaks_by_distance
 
 
-def _params_to_multivariate_normal(
-    mu_x: float,
-    mu_y: float,
-    sigma_x: float,
-    sigma_y: float,
-    rho: float,
-) -> multivariate_normal:
-    """Helper function to convert parameters to a multivariate normal distribution."""
-    mean = np.array([mu_x, mu_y])
-    cov = np.array(
-        [
-            [sigma_x**2, rho * sigma_x * sigma_y],
-            [rho * sigma_x * sigma_y, sigma_y**2],
-        ]
-    )
-    return multivariate_normal(mean=mean, cov=cov)
+def probit_transform_torch(x: torch.Tensor) -> torch.Tensor:
+    """
+    Apply a rank-based probit transform to a 1D tensor.
 
-
-def probit_transform(x: np.ndarray) -> np.ndarray:
-    """Apply the probit transform to the quantiles of input data x.
+    This function converts the empirical rank of each element into a quantile
+    of the standard normal distribution using the inverse error function.
 
     Parameters
     ----------
-    x : np.ndarray
-        Input array.
+    x : torch.Tensor
+        Input tensor of arbitrary shape. The tensor is flattened internally.
 
     Returns
     -------
-    np.ndarray
-        Transformed array.
+    torch.Tensor
+        A 1D tensor containing the probit-transformed values.
     """
-    assert x.ndim == 1, "Input array must be 1-dimensional."
+    x_flat = x.flatten()
+    n = x_flat.numel()
 
-    n = x.size
+    # Rank data (1-based indexing)
+    ranks = torch.argsort(torch.argsort(x_flat)) + 1
+    u = (ranks.float() - 0.5) / max(1, n)
 
-    # Get the sorted indices of the input array
-    sorted_indices = np.argsort(x)
-
-    # Create an array of ranks based on the sorted indices
-    ranks = np.empty_like(sorted_indices)
-    ranks[sorted_indices] = np.arange(1, n + 1)  # ranks start from 1
-
-    # Calculate the probit transform
-    rank_tmp = (ranks - 0.5) / n
-    # pylint: disable=no-member
-    probit = np.sqrt(2.0) * special.erfinv(2.0 * rank_tmp - 1.0)
+    # Convert quantiles to standard normal scores
+    probit = torch.sqrt(torch.tensor(2.0, device=x.device)) * torch.from_numpy(
+        erfinv((2.0 * u - 1.0).cpu().numpy())
+    ).to(x.device)
 
     return probit
 
 
-def fit_full_cov_gaussian_2d(
-    data: np.ndarray,
-    x_dim: np.ndarray,
-    y_dim: np.ndarray,
-) -> ModelResult:
-    """Fit the full covariance 2D Gaussian to the data using the LMFit package.
-
-    Parameters
-    ----------
-    data : np.ndarray
-        2D array of data to fit.
-    x_dim : np.ndarray
-        1D array of x-coordinates.
-    y_dim : np.ndarray
-        1D array of y-coordinates.
-
-    Returns
-    -------
-    ModelResult
-        The result of the fit.
-    """
-    assert data.ndim == 2, "Data must be a 2D array."
-    assert x_dim.ndim == 1, "x_dim must be a 1D array."
-    assert y_dim.ndim == 1, "y_dim must be a 1D array."
-    expected_shape = (len(y_dim), len(x_dim))
-    error_msg = (
-        f"Data shape does not match dimensions. "
-        f"Expected {expected_shape}, got data.shape={data.shape}."
-    )
-    assert data.shape == expected_shape, error_msg
-
-    def gaussian_pdf_2d(
-        coords_flat: np.ndarray,
-        amplitude: float,
-        mu_x: float,
-        mu_y: float,
-        sigma_x: float,
-        sigma_y: float,
-        rho: float,
-    ) -> np.ndarray:
-        """Helper function to calculate the 2D Gaussian PDF for a set of parameters."""
-        rv = _params_to_multivariate_normal(mu_x, mu_y, sigma_x, sigma_y, rho)
-        coords = coords_flat.reshape(-1, 2)
-
-        return amplitude * rv.pdf(coords)
-
-    # Setup the grid coordinates
-    xx, yy = np.meshgrid(x_dim, y_dim)
-    coords_flat = np.column_stack((xx.ravel(), yy.ravel()))
-    z = data.ravel()
-
-    # Setup a LMFit model object for the Gaussian PDF
-    model = Model(gaussian_pdf_2d, independent_vars=["coords_flat"])
-
-    params = Parameters()
-    params.add("amplitude", value=np.max(z), min=0)
-    params.add("mu_x", value=np.mean(x_dim))  # Initial guess for x mean
-    params.add("mu_y", value=np.mean(y_dim))  # Initial guess for y mean
-    params.add("sigma_x", value=1.0, min=0)
-    params.add("sigma_y", value=1.0, min=0)
-    params.add("rho", value=0.0, min=-1, max=1)  # Correlation coefficient
-
-    # Fit the model to the data
-    result = model.fit(z, params, coords_flat=coords_flat)
-
-    return result
-
-
-def find_peaks_from_pvalue(
-    mip: torch.Tensor,
-    scaled_mip: torch.Tensor,
-    p_value_cutoff: float = 0.01,
-    mask_radius: float = 5.0,
+def estimate_anisotropic_gaussian(
+    pro_x1: torch.Tensor,
+    pro_x2: torch.Tensor,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """Finds the peak locations based on the p-value metric using mip and scaled mip.
+    """
+    Estimate an anisotropic Gaussian using second-order moments.
 
-    See the following for a reference on the p-value metric:
-        https://journals.iucr.org/m/issues/2025/02/00/eh5020/eh5020.pdf
+    This function computes the eigenvalues and eigenvectors of the moment
+    matrix ⟨xxᵀ⟩, where x = [pro_x1, pro_x2]. The result defines the orientation
+    and anisotropy of the Gaussian distribution without fitting or mean
+    subtraction.
 
     Parameters
     ----------
-    mip : torch.Tensor
-        The maximum intensity projection (MIP) tensor from match template program.
-    scaled_mip : torch.Tensor
-        The z-score scaled MIP tensor from match template program.
-    p_value_cutoff : float, optional
-        The p-value cutoff for peak detection. Default is 0.01.
-    mask_radius : float, optional
-        The radius of the mask used to filter peaks. Default is 5.0.
+    pro_x1 : torch.Tensor
+        Probit-transformed values of the first variable.
+    pro_x2 : torch.Tensor
+        Probit-transformed values of the second variable.
 
     Returns
     -------
     tuple[torch.Tensor, torch.Tensor]
-        The y and x coordinates of the detected peaks.
+        Eigenvalues and eigenvectors of the moment matrix.
+    """
+    tmp = torch.stack([pro_x1, pro_x2])
+    c_inv = (tmp @ tmp.T) / pro_x1.numel()
+
+    d_inv, u_inv = torch.linalg.eig(c_inv)  # pylint: disable=not-callable
+
+    return d_inv.real, u_inv.real
+
+
+# ============================================================
+# Vectorized anisotropic p-value
+# ============================================================
+
+
+def anisotropic_pvalue(  # pylint: disable=too-many-locals
+    x1: torch.Tensor,
+    x2: torch.Tensor,
+    d_inv: torch.Tensor,
+    u_inv: torch.Tensor,
+    quadrant: int = 1,
+) -> torch.Tensor:
+    """
+    Compute anisotropic Gaussian p-values with quadrant constraints.
+
+    This function evaluates an analytic p-value based on the radial distance
+    in a rotated and scaled coordinate system defined by the anisotropic
+    Gaussian.
+
+    Parameters
+    ----------
+    x1 : torch.Tensor
+        Probit-transformed values along the first dimension.
+    x2 : torch.Tensor
+        Probit-transformed values along the second dimension.
+    d_inv : torch.Tensor
+        Eigenvalues of the moment matrix.
+    u_inv : torch.Tensor
+        Eigenvectors of the moment matrix.
+    quadrant : int, optional
+        Quadrant constraint to apply:
+        - 1: First quadrant only (x1 > 0 and x2 > 0)
+        - 3: Three quadrants (x1 > 0 or x2 > 0)
+
+    Returns
+    -------
+    torch.Tensor
+        Array of negative log p-values.
+    """
+    # Sort eigenvalues to identify major/minor axes
+    a = torch.sqrt(torch.max(d_inv))
+    b = torch.sqrt(torch.min(d_inv))
+
+    if d_inv[0] <= d_inv[1]:
+        u_inv = u_inv[:, [1, 0]]
+
+    # Ensure consistent orientation
+    if (u_inv[1, 0] < 0) and (u_inv[0, 0] < 0):
+        u_inv[:, 0] *= -1
+
+    # Rotation angle
+    w = torch.atan2(u_inv[1, 0], u_inv[0, 0])
+
+    # Angular correction factor
+    gamma = torch.atan2(
+        torch.tensor(1.0, device=x1.device),
+        0.5 * torch.sin(2 * w) * (b / a - a / b),
+    )
+
+    # Rotate coordinates
+    cosw = torch.cos(w)
+    sinw = torch.sin(w)
+
+    x0 = cosw * x1 + sinw * x2
+    x1r = -sinw * x1 + cosw * x2
+
+    # Scale by anisotropy
+    y0 = x0 / torch.clamp(a, min=1e-12)
+    y1 = x1r / torch.clamp(b, min=1e-12)
+
+    r2 = y0**2 + y1**2
+
+    # Apply quadrant constraint
+    if quadrant == 1:
+        mask = (x1 > 0) & (x2 > 0)
+    elif quadrant == 3:
+        mask = (x1 > 0) | (x2 > 0)
+    else:
+        raise ValueError("quadrant must be 1 or 3")
+
+    pvals = torch.ones_like(x1)
+
+    pvals[mask] = torch.exp(-0.5 * r2[mask]) * gamma / (2 * math.pi)
+
+    return -torch.log(pvals)
+
+
+def find_peaks_from_pvalue(  # pylint: disable=too-many-locals
+    mip: torch.Tensor,
+    scaled_mip: torch.Tensor,
+    p_value_cutoff: float = 0.01,
+    mask_radius: float = 5.0,
+    quadrant: int = 1,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """
+    Identify peak locations using the anisotropic Gaussian p-value metric.
+
+    Parameters
+    ----------
+    mip : torch.Tensor
+        Maximum intensity projection of the match template results.
+    scaled_mip : torch.Tensor
+        Z-score scaled maximum intensity projection.
+    p_value_cutoff : float, optional
+        Threshold on p-values for peak detection.
+    mask_radius : float, optional
+        Minimum distance between detected peaks.
+    quadrant : int, optional
+        Quadrant constraint used in p-value calculation.
+
+    Returns
+    -------
+    tuple[torch.Tensor, torch.Tensor]
+        Y and X coordinates of detected peaks.
     """
     device = mip.device
 
-    # Convert mip and scaled_mip tensors into numpy arrays
-    scaled_mip = scaled_mip.cpu().numpy()
-    mip = mip.cpu().numpy()
+    # Flatten inputs
+    mip_flat = mip.flatten()
+    z_flat = scaled_mip.flatten()
 
-    # Apply the probit transformation to the quantiles of each of the data
-    probit_zscore = probit_transform(scaled_mip.flatten())
-    probit_mip = probit_transform(mip.flatten())
+    # Probit transform
+    pro_z = probit_transform_torch(z_flat)
+    pro_m = probit_transform_torch(mip_flat)
 
-    # Dimensions for the data inferred from min/max values
-    # NOTE: fixing the number of points used for the histogram here, could expose
-    # options for fitting to the user...
-    x_dim = np.linspace(
-        start=probit_zscore.min(),
-        stop=probit_zscore.max(),
-        num=100,
-    )
-    y_dim = np.linspace(
-        start=probit_mip.min(),
-        stop=probit_mip.max(),
-        num=100,
-    )
+    # Estimate anisotropic Gaussian
+    d_inv, u_inv = estimate_anisotropic_gaussian(pro_z, pro_m)
 
-    hist, _, _ = np.histogram2d(
-        probit_zscore,
-        probit_mip,
-        # bins=(x_dim, y_dim),
-        bins=(100, 100),
-    )
-    hist = np.ma.masked_array(hist, mask=hist == 0)
+    # Compute p-values
+    neg_log_p = anisotropic_pvalue(pro_z, pro_m, d_inv, u_inv, quadrant=quadrant)
 
-    # Fit the full covariance 2D Gaussian to the log transformed histogram
-    # hist = np.masked_array(hist, mask=hist == 0)
-    result = fit_full_cov_gaussian_2d(
-        data=hist,
-        x_dim=x_dim,
-        y_dim=y_dim,
-    )
-    rv = _params_to_multivariate_normal(
-        mu_x=result.params["mu_x"].value,
-        mu_y=result.params["mu_y"].value,
-        sigma_x=result.params["sigma_x"].value,
-        sigma_y=result.params["sigma_y"].value,
-        rho=result.params["rho"].value,
-    )
+    pvals = neg_log_p.reshape(mip.shape)
 
-    # Use numpy's masked array to only operate on points in the first quadrant
-    points = np.column_stack((probit_zscore, probit_mip))
-    # mask = (points[:, 0] < 0) | (points[:, 1] < 0)
-    # points = np.ma.masked_array(points, mask=np.array([mask, mask]))
+    # Select peaks
+    peaks = torch.nonzero(pvals > p_value_cutoff, as_tuple=False)
+    peak_vals = pvals[tuple(peaks.t())]
 
-    # NOTE: This is a relatively slow step (~20-80s) since the cdf needs calculated for
-    # large numbers of points. There are potential speedups like pre-filtering points
-    # based on a less expensive bounds estimate, but that is left for future work.
-    p_values = 1.0 - rv.cdf(points)
-
-    p_values = p_values.reshape(mip.shape)
-
-    # Convert back to Torch tensor and use the peak filtering utility function
-    p_values = torch.from_numpy(p_values).to(device)
-    peaks = torch.nonzero(p_values < p_value_cutoff, as_tuple=False)
-    p_values = p_values[tuple(peaks.t())]
-
-    if peaks.shape[0] == 0:
-        return torch.tensor([], dtype=torch.long), torch.tensor([], dtype=torch.long)
+    if peaks.numel() == 0:
+        return (
+            torch.tensor([], dtype=torch.long, device=device),
+            torch.tensor([], dtype=torch.long, device=device),
+        )
 
     peaks = filter_peaks_by_distance(
-        peak_values=p_values,
+        peak_values=peak_vals,
         peak_locations=peaks,
         distance_threshold=mask_radius,
     )
@@ -234,10 +239,7 @@ def find_peaks_from_pvalue(
     return peaks[:, 0], peaks[:, 1]
 
 
-# pylint: disable=too-many-arguments
-# pylint: disable=too-many-positional-arguments
-# pylint: disable=duplicate-code
-def extract_peaks_and_statistics_p_value(
+def extract_peaks_and_statistics_p_value(  # pylint: disable=too-many-arguments,too-many-positional-arguments
     mip: torch.Tensor,
     scaled_mip: torch.Tensor,
     best_psi: torch.Tensor,
@@ -249,53 +251,57 @@ def extract_peaks_and_statistics_p_value(
     total_correlation_positions: int,
     p_value_cutoff: float = 0.01,
     mask_radius: float = 5.0,
+    quadrant: int = 1,
 ) -> MatchTemplatePeaks:
-    """Returns peak locations, stats, etc. using the pvalue metric.
+    """
+    Extract peak locations and associated statistics using the p-value metric.
 
     Parameters
     ----------
     mip : torch.Tensor
         Maximum intensity projection of the match template results.
     scaled_mip : torch.Tensor
-        Scaled maximum intensity projection of the match template results.
+        Z-score scaled maximum intensity projection.
     best_psi : torch.Tensor
-        Best psi angles for each pixel.
+        Best psi angles per pixel.
     best_theta : torch.Tensor
-        Best theta angles for each pixel.
+        Best theta angles per pixel.
     best_phi : torch.Tensor
-        Best phi angles for each pixel.
+        Best phi angles per pixel.
     best_defocus : torch.Tensor
-        Best relative defocus values for each pixel.
+        Best relative defocus values per pixel.
     correlation_average : torch.Tensor
-        Average correlation value for each pixel.
+        Mean correlation values per pixel.
     correlation_variance : torch.Tensor
-        Variance of the correlation values for each pixel.
+        Variance of correlation values per pixel.
     total_correlation_positions : int
-        Total number of correlation positions calculated during template matching. Must
-        be provided if `z_score_cutoff` is not provided (needed for the noise model).
+        Total number of correlation positions evaluated.
     p_value_cutoff : float, optional
-        P-value cutoff value for peak detection. Default is 0.01.
+        P-value threshold for peak detection.
     mask_radius : float, optional
-        Radius for the mask used to filter peaks. Default is 5.0.
+        Radius for peak masking.
+    quadrant : int, optional
+        Quadrant constraint used in p-value calculation.
+        - 1: First quadrant only (x1 > 0 and x2 > 0)
+        - 3: Three quadrants (x1 > 0 or x2 > 0)
+        Default is 1.
 
     Returns
     -------
     MatchTemplatePeaks
-        A named tuple containing the peak locations, statistics, and other relevant
-        data.
+        Named tuple containing peak locations and associated statistics.
     """
     pos_y, pos_x = find_peaks_from_pvalue(
         mip=mip,
         scaled_mip=scaled_mip,
         p_value_cutoff=p_value_cutoff,
         mask_radius=mask_radius,
+        quadrant=quadrant,
     )
 
-    # Raise warning if no peaks are found
     if len(pos_y) == 0:
         warnings.warn("No peaks found using p-value metric.", stacklevel=2)
 
-    # Extract peak heights, orientations, etc. from other maps
     return MatchTemplatePeaks(
         pos_y=pos_y,
         pos_x=pos_x,
