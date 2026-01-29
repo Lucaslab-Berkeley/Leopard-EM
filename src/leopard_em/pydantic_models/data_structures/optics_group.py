@@ -3,6 +3,7 @@
 from os import PathLike
 from typing import Annotated, Optional, Union
 
+import torch
 from pydantic import Field
 
 from leopard_em.pydantic_models.custom_types import BaseModel2DTM
@@ -54,12 +55,13 @@ class OpticsGroup(BaseModel2DTM):
         Beam tilt X in mrad.
     beam_tilt_y : float
         Beam tilt Y in mrad.
-    odd_zernike : list[float]
-        list of odd Zernike moments.
-    even_zernike : list[float]
-        list of even Zernike moments.
-    zernike_moments : list[float]
-        list of Zernike moments.
+    odd_zernike : Optional[dict[str, float]]
+        Optional dict of odd Zernike moments. Possible keys: "Z31c", "Z31s",
+        "Z33c", "Z33s".
+    even_zernike : Optional[dict[str, float]]
+        Optional dict of even Zernike moments. Possible keys: "Z44c", "Z44s", "Z60".
+    mag_matrix : Optional[list[float]]
+        Optional list of floats of length 4 representing the magnification matrix.
 
     Methods
     -------
@@ -86,6 +88,26 @@ class OpticsGroup(BaseModel2DTM):
     mtf_values: Optional[list[float]] = None
     beam_tilt_x: Optional[float] = None
     beam_tilt_y: Optional[float] = None
-    odd_zernike: Optional[list[float]] = None
-    even_zernike: Optional[list[float]] = None
-    zernike_moments: Optional[list[float]] = None
+    odd_zernikes: Optional[dict[str, float]] = None
+    even_zernikes: Optional[dict[str, float]] = None
+    mag_matrix: Optional[Annotated[list[float], Field(min_length=4, max_length=4)]] = (
+        None
+    )
+
+    @property
+    def mag_matrix_tensor(self) -> Optional[torch.Tensor]:
+        """Convert mag_matrix list to a 2x2 tensor.
+
+        Returns
+        -------
+        Optional[torch.Tensor]
+            A 2x2 tensor representation of the magnification matrix, or None if
+            mag_matrix is None. The matrix is constructed from the list as:
+            [[mag_matrix[0], mag_matrix[1]],
+             [mag_matrix[2], mag_matrix[3]]]
+        """
+        if self.mag_matrix is None:
+            return None
+        # mag_matrix is guaranteed to be list[float] of length 4 by Field validation
+        # Construct tensor from flat list and reshape
+        return torch.tensor(self.mag_matrix, dtype=torch.float32).reshape(2, 2)

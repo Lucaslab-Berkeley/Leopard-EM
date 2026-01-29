@@ -38,3 +38,10 @@ preprocessing_filters:
 computational_config:
   gpu_ids: 0
   num_cpus: 1
+apply_global_filtering: true
+movie_config:
+  enabled: false
+  movie_path: path/to/aligned_movie.mrc
+  deformation_field_path: path/to/deformation_field.csv
+  pre_exposure: 0.0
+  fluence_per_frame: 1.0
