@@ -205,6 +205,12 @@ class MatchTemplateManager(BaseModel2DTM):
 
         template_dft = volume_to_rfft_fourier_slice(template)
 
+        # Apply phase randomization to template if enabled
+        phase_rand_filter = self.preprocessing_filters.phase_randomization_filter
+        template_dft = phase_rand_filter.apply_phase_randomization_to_template(
+            template_dft
+        )
+
         return {
             "image_dft": image_preprocessed_dft,
             "template_dft": template_dft,

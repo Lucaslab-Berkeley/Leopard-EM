@@ -111,55 +111,89 @@ class WhiteningFilterConfig(BaseModel2DTM):
 class PhaseRandomizationFilterConfig(BaseModel2DTM):
     """Configuration for phase randomization filter.
 
-    NOTE: Something is not working with the underlying torch_fourier_filter code
-    for phase randomization.
+    Phase randomization is applied directly to the template volume's Fourier transform,
+    randomizing the phases above a certain frequency cutoff while preserving amplitudes.
 
     Attributes
     ----------
     enabled : bool
-        If True, apply a phase randomization filter to the input image. Default
-        is False.
-    cuton : float
-        Spatial resolution, in terms of Nyquist, above which to randomize the phase.
+        If True, apply phase randomization to the template volume. Default is False.
+    cuton : Optional[float]
+        Spatial frequency cutoff, in terms of Nyquist frequency, above which to
+        randomize the phase. Frequencies above this value will have their phases
+        randomized while amplitudes are preserved. If None, phase randomization
+        is applied to all frequencies. Default is None.
 
     Methods
     -------
-    calculate_phase_randomization_filter(ref_img_rfft)
-        Helper function for the phase randomization filter based on the input reference
-        image and held configuration parameters.
+    apply_phase_randomization_to_template(template_dft)
+        Apply phase randomization directly to a 3D template volume's Fourier transform.
     """
 
     enabled: bool = False
     cuton: Optional[Annotated[float, Field(ge=0.0)]] = None
 
-    def calculate_phase_randomization_filter(
-        self, ref_img_rfft: torch.Tensor
+    def apply_phase_randomization_to_template(
+        self, template_dft: torch.Tensor
     ) -> torch.Tensor:
-        """Helper function for phase randomization filter based on the reference image.
+        """Apply phase randomization to a 3D template volume's Fourier transform.
+
+        This method modifies the template DFT in-place (or returns a modified copy)
+        by randomizing the phases while preserving amplitudes. If cuton is provided,
+        only frequencies above the cutoff are randomized. If cuton is None, all
+        frequencies are randomized. The template DFT should be in RFFT format as
+        produced by `volume_to_rfft_fourier_slice()`.
 
         Parameters
         ----------
-        ref_img_rfft : torch.Tensor
-            The image to phase randomization.
-            This should be RFFT'd and unshifted
-            (zero-frequency component at the top-left corner).
+        template_dft : torch.Tensor
+            The 3D template volume's Fourier transform. Should have shape
+            (d, h, w // 2 + 1) and be fftshifted in dimensions (0, 1) as
+            produced by `volume_to_rfft_fourier_slice()`. This should be RFFT'd
+            and fftshifted in the first two dimensions.
+
+        Returns
+        -------
+        torch.Tensor
+            The phase-randomized template DFT. If phase randomization is disabled,
+            returns the input tensor unchanged.
         """
-        output_shape = ref_img_rfft.shape
-
-        # Handle case where phase randomization filter is disabled
+        # Handle case where phase randomization is disabled
         if not self.enabled:
-            return torch.ones(output_shape, dtype=torch.float32)
+            return template_dft
 
-        # Fix for underlying shape bug in torch_fourier_filter
-        output_shape = output_shape[:-1] + (2 * (output_shape[-1] - 1),)
+        # The template_dft is 3D with shape (d, h, w // 2 + 1)
+        # It's fftshifted in dims (0, 1) but not in dim 2
+        # We need to convert to real-space shape for phase_randomize
+        d, h, w_rfft = template_dft.shape
+        w = 2 * (w_rfft - 1)  # Convert RFFT width to real-space width
+        image_shape = (d, h, w)
 
-        return phase_randomize(
-            dft=ref_img_rfft,
-            image_shape=output_shape,
+        # Apply phase randomization
+        # phase_randomize expects the DFT to be RFFT'd and unshifted
+        # (fftshift=False). But our template_dft is fftshifted in dims (0, 1),
+        # so we need to ifftshift first
+        # pylint: disable-next=E1102
+        template_dft_unshifted = torch.fft.ifftshift(template_dft, dim=(0, 1))
+
+        # Apply phase randomization
+        # If cuton is None, set to 0 to randomize all frequencies
+        cuton_value = self.cuton if self.cuton is not None else 0.0
+        template_dft_randomized = phase_randomize(
+            dft=template_dft_unshifted,
+            image_shape=image_shape,
             rfft=True,
             fftshift=False,
-            cuton=self.cuton,
+            cuton=cuton_value,
         )
+
+        # Shift back to match the original format
+        # pylint: disable-next=E1102
+        template_dft_randomized = torch.fft.fftshift(
+            template_dft_randomized, dim=(0, 1)
+        )
+
+        return template_dft_randomized
 
 
 class BandpassFilterConfig(BaseModel2DTM):

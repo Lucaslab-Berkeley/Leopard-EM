@@ -83,6 +83,10 @@ def _process_particle_images_for_filters(
 
     template_dft = volume_to_rfft_fourier_slice(template)
 
+    # Apply phase randomization to template if enabled
+    phase_rand_filter = preprocessing_filters.phase_randomization_filter
+    template_dft = phase_rand_filter.apply_phase_randomization_to_template(template_dft)
+
     return (
         particle_images_dft,
         template_dft,
