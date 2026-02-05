@@ -64,19 +64,19 @@ def calculate_ctf_filter_stack_full_args(
         defocus = defocus.unsqueeze(0)
 
     # Convert mag_matrix from list to 2x2 tensor if provided
-    transform_matrix = kwargs.get("mag_matrix")
-    if transform_matrix is not None:
-        if isinstance(transform_matrix, list):
-            transform_matrix = torch.tensor(
+    mag_matrix = kwargs.get("mag_matrix")
+    if mag_matrix is not None:
+        if isinstance(mag_matrix, list):
+            mag_matrix = torch.tensor(
                 [
-                    [transform_matrix[0], transform_matrix[1]],
-                    [transform_matrix[2], transform_matrix[3]],
+                    [mag_matrix[0], mag_matrix[1]],
+                    [mag_matrix[2], mag_matrix[3]],
                 ],
                 dtype=torch.float32,
             )
-        elif not isinstance(transform_matrix, torch.Tensor):
+        elif not isinstance(mag_matrix, torch.Tensor):
             # If it's neither a list nor a tensor, try to convert it
-            transform_matrix = torch.tensor(transform_matrix, dtype=torch.float32)
+            mag_matrix = torch.tensor(mag_matrix, dtype=torch.float32)
 
     # Loop over spherical aberrations one at a time and collect results
     ctf_list = []
@@ -95,7 +95,7 @@ def calculate_ctf_filter_stack_full_args(
             fftshift=False,
             even_zernike_coeffs=kwargs["even_zernikes"],
             odd_zernike_coeffs=kwargs["odd_zernikes"],
-            transform_matrix=transform_matrix,
+            transform_matrix=mag_matrix,
         )
         # calc B-envelope and apply
         b_envelope_tmp = b_envelope(

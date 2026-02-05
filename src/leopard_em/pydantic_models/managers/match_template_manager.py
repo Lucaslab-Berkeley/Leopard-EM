@@ -214,7 +214,7 @@ class MatchTemplateManager(BaseModel2DTM):
             "defocus_values": defocus_values,
             "pixel_values": pixel_size_offsets,
             "device": self.computational_config.gpu_devices,
-            "transform_matrix": self.optics_group.mag_matrix_tensor,
+            "mag_matrix": self.optics_group.mag_matrix_tensor,
         }
 
     def run_match_template(

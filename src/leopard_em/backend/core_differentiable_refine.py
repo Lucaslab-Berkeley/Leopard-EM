@@ -68,7 +68,7 @@ def core_differentiable_refine(
     device: torch.device | list[torch.device],
     batch_size: int = 32,
     num_cuda_streams: int = 1,
-    transform_matrix: torch.Tensor | None = None,
+    mag_matrix: torch.Tensor | None = None,
 ) -> dict[torch.Tensor, torch.Tensor]:
     """Core function to refine orientations and defoci of a set of particles.
 
@@ -113,8 +113,8 @@ def core_differentiable_refine(
         The number of cross-correlations to process in one batch, defaults to 32.
     num_cuda_streams : int, optional
         Number of CUDA streams to use for parallel processing. Defaults to 1.
-    transform_matrix : torch.Tensor | None, optional
-        Anisotropic magnification transform matrix of shape (2, 2). If None,
+    mag_matrix : torch.Tensor | None, optional
+        Anisotropic magnification matrix of shape (2, 2). If None,
         no magnification transform is applied. Default is None.
 
     Returns
@@ -147,7 +147,7 @@ def core_differentiable_refine(
         batch_size=batch_size,
         devices=device,
         num_cuda_streams=num_cuda_streams,
-        transform_matrix=transform_matrix,
+        mag_matrix=mag_matrix,
     )
 
     results = {}
@@ -235,7 +235,7 @@ def _core_refine_template_single_gpu(
     batch_size: int,
     device: torch.device,
     num_cuda_streams: int = 1,
-    transform_matrix: torch.Tensor | None = None,
+    mag_matrix: torch.Tensor | None = None,
 ) -> None:
     """Run refine template on a subset of particles on a single GPU.
 
@@ -279,8 +279,8 @@ def _core_refine_template_single_gpu(
         Torch device to run this process on.
     num_cuda_streams : int, optional
         Number of CUDA streams to use for parallel processing. Defaults to 1.
-    transform_matrix : torch.Tensor | None, optional
-        Anisotropic magnification transform matrix of shape (2, 2). If None,
+    mag_matrix : torch.Tensor | None, optional
+        Anisotropic magnification matrix of shape (2, 2). If None,
         no magnification transform is applied. Default is None.
     """
     streams = [torch.cuda.Stream(device=device) for _ in range(num_cuda_streams)]
@@ -302,8 +302,8 @@ def _core_refine_template_single_gpu(
     corr_mean = corr_mean.to(device)
     corr_std = corr_std.to(device)
     projective_filters = projective_filters.to(device)
-    if transform_matrix is not None:
-        transform_matrix = transform_matrix.to(device)
+    if mag_matrix is not None:
+        mag_matrix = mag_matrix.to(device)
 
     ########################################
     ### Setup constants and progress bar ###
@@ -356,7 +356,7 @@ def _core_refine_template_single_gpu(
                 projective_filter=projective_filters[i],
                 batch_size=batch_size,
                 device_id=device_id,
-                transform_matrix=transform_matrix,
+                mag_matrix=mag_matrix,
             )
             refined_statistics.append(refined_stats)
 
@@ -469,7 +469,7 @@ def _core_refine_template_single_thread(
     projective_filter: torch.Tensor,
     batch_size: int = 32,
     device_id: int = 0,
-    transform_matrix: torch.Tensor | None = None,
+    mag_matrix: torch.Tensor | None = None,
 ) -> dict[str, float | int]:
     """Run the single-threaded core refine template function.
 
@@ -510,8 +510,8 @@ def _core_refine_template_single_thread(
         The number of orientations to cross-correlate at once. Default is 32.
     device_id : int, optional
         The ID of the device/process. Default is 0.
-    transform_matrix : torch.Tensor | None, optional
-        Anisotropic magnification transform matrix of shape (2, 2). If None,
+    mag_matrix : torch.Tensor | None, optional
+        Anisotropic magnification matrix of shape (2, 2). If None,
         no magnification transform is applied. Default is None.
 
     Returns
@@ -616,7 +616,7 @@ def _core_refine_template_single_thread(
                 rotation_matrices=rot_matrix_batch,
                 projective_filters=combined_projective_filter,
                 requires_grad=True,
-                transform_matrix=transform_matrix,
+                mag_matrix=mag_matrix,
             )
         else:
             cross_correlation = do_batched_orientation_cross_correlate_cpu(
@@ -624,7 +624,7 @@ def _core_refine_template_single_thread(
                 template_dft=template_dft,
                 rotation_matrices=rot_matrix_batch,
                 projective_filters=combined_projective_filter,
-                transform_matrix=transform_matrix,
+                mag_matrix=mag_matrix,
             )
 
         cross_correlation = cross_correlation[..., :crop_h, :crop_w]  # valid crop

@@ -638,5 +638,5 @@ def setup_particle_backend_kwargs(
         "ctf_kwargs": ctf_kwargs,
         "projective_filters": projective_filters,
         "device": device_list,
-        "transform_matrix": mag_matrix_tensor,
+        "mag_matrix": mag_matrix_tensor,
     }
