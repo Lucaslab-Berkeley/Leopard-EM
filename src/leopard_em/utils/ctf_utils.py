@@ -1,6 +1,5 @@
 """CTF (Contrast Transfer Function) utility functions."""
 
-import ast
 import json
 from typing import TYPE_CHECKING, Any
 
@@ -159,7 +158,7 @@ def calculate_ctf_filter_stack(
     )
 
 
-def _parse_json_string_from_series_value(value: Any) -> Any:
+def _parse_json_string_from_series_value(value: Any) -> dict | None:
     """Parse a value that may be a JSON string, dict, None, or NaN.
 
     Parameters
@@ -170,17 +169,32 @@ def _parse_json_string_from_series_value(value: Any) -> Any:
 
     Returns
     -------
-    Any
+    dict | None
         Parsed dict if value was a JSON string, original dict if already a dict,
         or None if value was None or NaN.
+
+    Raises
+    ------
+    ValueError
+        If the value cannot be parsed as a dict or is not None/NaN.
     """
     # Handle NaN values from empty CSV fields (pandas converts empty fields to NaN)
     if value is None or (isinstance(value, float) and np.isnan(value)):
         return None
     if isinstance(value, str) and value:
-        return json.loads(value)
-    # Already a dict (backward compatibility)
-    return value
+        parsed = json.loads(value)
+        if isinstance(parsed, dict):
+            return parsed
+        raise ValueError(
+            f"Expected JSON string to parse to dict, but got {type(parsed).__name__}: "
+            f"{parsed}"
+        )
+    if isinstance(value, dict):
+        return value
+    raise ValueError(
+        f"Expected dict, JSON string, None, or NaN, but got {type(value).__name__}: "
+        f"{value}"
+    )
 
 
 def _setup_ctf_kwargs_from_particle_stack(
@@ -208,6 +222,15 @@ def _setup_ctf_kwargs_from_particle_stack(
     assert particle_stack["amplitude_contrast_ratio"].nunique() == 1
     assert particle_stack["phase_shift"].nunique() == 1
     assert particle_stack["ctf_B_factor"].nunique() == 1
+    assert (
+        particle_stack["mag_matrix"].nunique() == 1
+    ), "mag_matrix must be the same across all particles"
+    assert (
+        particle_stack["even_zernikes"].nunique() == 1
+    ), "even_zernikes must be the same across all particles"
+    assert (
+        particle_stack["odd_zernikes"].nunique() == 1
+    ), "odd_zernikes must be the same across all particles"
 
     # Convert mag_matrix from list to 2x2 tensor if provided
     # Handle empty/NaN values from CSV (pandas converts empty fields to NaN)
@@ -218,7 +241,10 @@ def _setup_ctf_kwargs_from_particle_stack(
     ):
         # mag_matrix_value might be a list or a string representation of a list
         if isinstance(mag_matrix_value, str):
-            mag_matrix_list = ast.literal_eval(mag_matrix_value)
+            mag_matrix_list = [
+                float(x) for x in mag_matrix_value.strip("[]").split(",")
+            ]
+            assert len(mag_matrix_list) == 4
         else:
             mag_matrix_list = mag_matrix_value
         if isinstance(mag_matrix_list, list) and len(mag_matrix_list) == 4:
