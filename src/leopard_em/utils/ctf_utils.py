@@ -223,13 +223,13 @@ def _setup_ctf_kwargs_from_particle_stack(
     assert particle_stack["phase_shift"].nunique() == 1
     assert particle_stack["ctf_B_factor"].nunique() == 1
     assert (
-        particle_stack["mag_matrix"].nunique() == 1
+        particle_stack["mag_matrix"].nunique() <= 1
     ), "mag_matrix must be the same across all particles"
     assert (
-        particle_stack["even_zernikes"].nunique() == 1
+        particle_stack["even_zernikes"].nunique() <= 1
     ), "even_zernikes must be the same across all particles"
     assert (
-        particle_stack["odd_zernikes"].nunique() == 1
+        particle_stack["odd_zernikes"].nunique() <= 1
     ), "odd_zernikes must be the same across all particles"
 
     # Convert mag_matrix from list to 2x2 tensor if provided
