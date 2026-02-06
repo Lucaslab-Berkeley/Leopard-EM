@@ -35,6 +35,9 @@ REQUIRED_COLUMNS = [
     "amplitude_contrast_ratio",
     "phase_shift",
     "ctf_B_factor",
+    "even_zernikes",
+    "odd_zernikes",
+    "mag_matrix",
     "micrograph_path",
     "template_path",
     "mip_path",
@@ -213,17 +216,37 @@ def test_particle_stack_image_extraction():
     mip1_ground_truth = np.array([[0, 0, 0], [0, mip1, 0], [0, 0, 0]], dtype=np.float32)
     mip2_ground_truth = np.array([[0, 0, 0], [0, mip2, 0], [0, 0, 0]], dtype=np.float32)
 
+    h, w = (32, 32)
+    box_h, box_w = (34, 34)
+    extracted_box_size_mip = (box_h - h + 1, box_w - w + 1)
+
     ps = ParticleStack(
         df_path="",  # Setting data frame directly, so give empty path
-        extracted_box_size=(34, 34),  # This will give a correlation box size of 3x3
-        original_template_size=(32, 32),
+        extracted_box_size=(
+            box_h,
+            box_w,
+        ),  # This gives a correlation box size of 3x3
+        original_template_size=(h, w),
         skip_df_load=True,
     )
     ps._df = df  # Set the DataFrame directly
 
+    mip_images, mip_indices = ps.load_images_grouped_by_column(column_name="mip_path")
+    micrograph_images, micrograph_indices = ps.load_images_grouped_by_column(
+        column_name="micrograph_path"
+    )
+
     # Default is top-left reference, make sure it works itself
-    extracted_images = ps.construct_image_stack()
-    extracted_mips = ps.construct_cropped_statistic_stack(stat="mip")
+    extracted_images = ps.construct_image_stack(
+        images=micrograph_images,
+        indices=micrograph_indices,
+        extraction_size=(box_h, box_w),
+    )
+    extracted_mips = ps.construct_image_stack(
+        images=mip_images,
+        indices=mip_indices,
+        extraction_size=extracted_box_size_mip,
+    )
 
     assert extracted_images.shape == (2, 34, 34)
     assert extracted_mips.shape == (2, 3, 3)
@@ -268,26 +291,66 @@ def test_particle_stack_top_left_and_center_self_consistency():
     # Create ParticleStack instances for both references
     ps_tl = ParticleStack(
         df_path="",  # Setting data frame directly, so give empty path
-        extracted_box_size=(34, 34),  # This will give a correlation box size of 3x3
+        extracted_box_size=(34, 34),  # This gives a correlation box size of 3x3
         original_template_size=(32, 32),
         skip_df_load=True,
     )
     ps_tl._df = df_tl  # Set the DataFrame directly
 
+    h, w = (32, 32)
+    box_h, box_w = (34, 34)
+    extracted_box_size_mip = (box_h - h + 1, box_w - w + 1)
+
     ps_center = ParticleStack(
         df_path="",  # Setting data frame directly, so give empty path
-        extracted_box_size=(34, 34),  # This will give a correlation box size of 3x3
-        original_template_size=(32, 32),
+        extracted_box_size=(
+            box_h,
+            box_w,
+        ),  # This gives a correlation box size of 3x3
+        original_template_size=(h, w),
         skip_df_load=True,
     )
     ps_center._df = df_center  # Set the DataFrame directly
 
-    # Extract images and MIPs for both references
-    extracted_images_tl = ps_tl.construct_image_stack(pos_reference="top-left")
-    extracted_images_center = ps_center.construct_image_stack(pos_reference="center")
+    mip_images_tl, mip_indices_tl = ps_tl.load_images_grouped_by_column(
+        column_name="mip_path"
+    )
+    mip_images_c, mip_indices_c = ps_center.load_images_grouped_by_column(
+        column_name="mip_path"
+    )
+    micrograph_images_tl, micrograph_indices_tl = ps_tl.load_images_grouped_by_column(
+        column_name="micrograph_path"
+    )
+    micrograph_images_c, micrograph_indices_c = ps_center.load_images_grouped_by_column(
+        column_name="micrograph_path"
+    )
 
-    extracted_mips_tl = ps_tl.construct_cropped_statistic_stack(stat="mip")
-    extracted_mips_center = ps_center.construct_cropped_statistic_stack(stat="mip")
+    # Extract images and MIPs for both references
+    extracted_images_tl = ps_tl.construct_image_stack(
+        images=micrograph_images_tl,
+        indices=micrograph_indices_tl,
+        extraction_size=(box_h, box_w),
+        pos_reference="top-left",
+    )
+    extracted_images_center = ps_center.construct_image_stack(
+        images=micrograph_images_c,
+        indices=micrograph_indices_c,
+        extraction_size=(box_h, box_w),
+        pos_reference="center",
+    )
+
+    extracted_mips_tl = ps_tl.construct_image_stack(
+        images=mip_images_tl,
+        indices=mip_indices_tl,
+        extraction_size=extracted_box_size_mip,
+        pos_reference="top-left",
+    )
+    extracted_mips_center = ps_center.construct_image_stack(
+        images=mip_images_c,
+        indices=mip_indices_c,
+        extraction_size=extracted_box_size_mip,
+        pos_reference="top-left",
+    )
 
     # Check shapes
     assert extracted_images_tl.shape == (2, 34, 34)

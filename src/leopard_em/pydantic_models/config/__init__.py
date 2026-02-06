@@ -12,6 +12,7 @@ from .correlation_filters import (
     WhiteningFilterConfig,
 )
 from .defocus_search import DefocusSearchConfig
+from .movie_config import MovieConfig
 from .orientation_search import (
     ConstrainedOrientationConfig,
     MultipleOrientationConfig,
@@ -34,4 +35,5 @@ __all__ = [
     "RefineOrientationConfig",
     "WhiteningFilterConfig",
     "ConstrainedOrientationConfig",
+    "MovieConfig",
 ]
