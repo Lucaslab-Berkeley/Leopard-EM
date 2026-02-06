@@ -15,35 +15,9 @@ from leopard_em.backend.core_refine_template import (
 )
 from leopard_em.backend.cross_correlation import (
     do_batched_orientation_cross_correlate,
-    do_batched_orientation_cross_correlate_cpu,
 )
+from leopard_em.backend.utils import EULER_ANGLE_FMT, combine_euler_angles
 from leopard_em.utils.ctf_utils import calculate_ctf_filter_stack_full_args
-
-# This is assuming the Euler angles are in the ZYZ intrinsic format
-# AND that the angles are ordered in (phi, theta, psi)
-EULER_ANGLE_FMT = "ZYZ"
-
-
-def combine_euler_angles(angle_a: torch.Tensor, angle_b: torch.Tensor) -> torch.Tensor:
-    """Helper function for composing rotations defined by two sets of Euler angles."""
-    # Ensure both input angles have the same dtype
-    common_dtype = angle_a.dtype
-    if angle_b.dtype != common_dtype:
-        angle_b = angle_b.to(common_dtype)
-
-    rotmat_a = roma.euler_to_rotmat(
-        EULER_ANGLE_FMT, angle_a, degrees=True, device=angle_a.device
-    )
-    rotmat_b = roma.euler_to_rotmat(
-        EULER_ANGLE_FMT, angle_b, degrees=True, device=angle_b.device
-    )
-    # Ensure both rotation matrices have the same dtype
-    if rotmat_b.dtype != rotmat_a.dtype:
-        rotmat_b = rotmat_b.to(rotmat_a.dtype)
-    rotmat_c = roma.rotmat_composition((rotmat_a, rotmat_b))
-    euler_angles_c = roma.rotmat_to_euler(EULER_ANGLE_FMT, rotmat_c, degrees=True)
-
-    return euler_angles_c
 
 
 # NOTE: Disabling pylint for too many arguments because we are taking a data-oriented
@@ -69,7 +43,7 @@ def core_differentiable_refine(
     batch_size: int = 32,
     num_cuda_streams: int = 1,
     mag_matrix: torch.Tensor | None = None,
-) -> dict[torch.Tensor, torch.Tensor]:
+) -> dict[str, torch.Tensor]:
     """Core function to refine orientations and defoci of a set of particles.
 
     Parameters
@@ -119,12 +93,21 @@ def core_differentiable_refine(
 
     Returns
     -------
-    dict[torch.Tensor, torch.Tensor]
+    dict[str, torch.Tensor]
         Tensor containing the refined parameters for all particles.
     """
     # Convert single device to list for consistent handling
     if isinstance(device, torch.device):
         device = [device]
+
+    # Check that all devices are GPU devices (CUDA)
+    # Differentiable refinement requires GPU for gradient computation
+    for dev in device:
+        if dev.type != "cuda":
+            raise ValueError(
+                f"Differentiable refinement can only be run on GPU devices. "
+                f"Got device type: {dev.type}. Please use a CUDA device."
+            )
 
     ###########################################
     ### Split particle stack across devices ###
@@ -607,25 +590,14 @@ def _core_refine_template_single_thread(
         )
 
         # Calculate the cross-correlation
-        if particle_image_dft.device.type == "cuda":
-            # NOTE: Here we are setting to only a single stream, but this can easily
-            # be extended to multiple streams if needed.
-            cross_correlation = do_batched_orientation_cross_correlate(
-                image_dft=particle_image_dft,
-                template_dft=template_dft,
-                rotation_matrices=rot_matrix_batch,
-                projective_filters=combined_projective_filter,
-                requires_grad=True,
-                mag_matrix=mag_matrix,
-            )
-        else:
-            cross_correlation = do_batched_orientation_cross_correlate_cpu(
-                image_dft=particle_image_dft,
-                template_dft=template_dft,
-                rotation_matrices=rot_matrix_batch,
-                projective_filters=combined_projective_filter,
-                mag_matrix=mag_matrix,
-            )
+        cross_correlation = do_batched_orientation_cross_correlate(
+            image_dft=particle_image_dft,
+            template_dft=template_dft,
+            rotation_matrices=rot_matrix_batch,
+            projective_filters=combined_projective_filter,
+            requires_grad=True,
+            mag_matrix=mag_matrix,
+        )
 
         cross_correlation = cross_correlation[..., :crop_h, :crop_w]  # valid crop
         # Scale cross_correlation to be "z-score"-like

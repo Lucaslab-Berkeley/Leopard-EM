@@ -16,27 +16,13 @@ from leopard_em.backend.cross_correlation import (
     do_batched_orientation_cross_correlate_cpu,
 )
 from leopard_em.backend.distributed import run_multiprocess_jobs
-from leopard_em.backend.utils import normalize_template_projection
+from leopard_em.backend.utils import (
+    EULER_ANGLE_FMT,
+    combine_euler_angles,
+    normalize_template_projection,
+)
 from leopard_em.utils.cross_correlation import handle_correlation_mode
 from leopard_em.utils.ctf_utils import calculate_ctf_filter_stack_full_args
-
-# This is assuming the Euler angles are in the ZYZ intrinsic format
-# AND that the angles are ordered in (phi, theta, psi)
-EULER_ANGLE_FMT = "ZYZ"
-
-
-def combine_euler_angles(angle_a: torch.Tensor, angle_b: torch.Tensor) -> torch.Tensor:
-    """Helper function for composing rotations defined by two sets of Euler angles."""
-    rotmat_a = roma.euler_to_rotmat(
-        EULER_ANGLE_FMT, angle_a, degrees=True, device=angle_a.device
-    )
-    rotmat_b = roma.euler_to_rotmat(
-        EULER_ANGLE_FMT, angle_b, degrees=True, device=angle_b.device
-    )
-    rotmat_c = roma.rotmat_composition((rotmat_a, rotmat_b))
-    euler_angles_c = roma.rotmat_to_euler(EULER_ANGLE_FMT, rotmat_c, degrees=True)
-
-    return euler_angles_c
 
 
 # NOTE: Disabling pylint for too many arguments because we are taking a data-oriented
@@ -427,6 +413,7 @@ def _core_refine_template_single_gpu(
     corr_mean = corr_mean.to(device)
     corr_std = corr_std.to(device)
     projective_filters = projective_filters.to(device)
+    mag_matrix = mag_matrix.to(device) if mag_matrix is not None else None
 
     ########################################
     ### Setup constants and progress bar ###
