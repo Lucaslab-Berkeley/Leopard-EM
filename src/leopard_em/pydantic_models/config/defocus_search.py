@@ -6,7 +6,7 @@ import torch
 from pydantic import Field
 
 from leopard_em.pydantic_models.custom_types import BaseModel2DTM
-from leopard_em.pydantic_models.utils import get_search_tensors
+from leopard_em.utils.search_utils import get_search_tensors
 
 
 class DefocusSearchConfig(BaseModel2DTM):

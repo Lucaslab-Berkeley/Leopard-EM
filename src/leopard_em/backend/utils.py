@@ -5,6 +5,7 @@ import re
 import warnings
 from typing import Any, Callable, TypeVar
 
+import roma
 import torch
 
 # Suppress the specific deprecation warnings from PyTorch internals
@@ -15,6 +16,42 @@ warnings.filterwarnings(
 )
 
 F = TypeVar("F", bound=Callable[..., Any])
+
+# This is assuming the Euler angles are in the ZYZ intrinsic format
+# AND that the angles are ordered in (phi, theta, psi)
+EULER_ANGLE_FMT = "ZYZ"
+
+
+def combine_euler_angles(angle_a: torch.Tensor, angle_b: torch.Tensor) -> torch.Tensor:
+    """Helper function for composing rotations defined by two sets of Euler angles.
+
+    Parameters
+    ----------
+    angle_a : torch.Tensor
+        First set of Euler angles in ZYZ convention.
+    angle_b : torch.Tensor
+        Second set of Euler angles in ZYZ convention.
+
+    Returns
+    -------
+    torch.Tensor
+        Composed Euler angles representing the combined rotation.
+    """
+    # Ensure both input angles have the same dtype
+    common_dtype = angle_a.dtype
+    if angle_b.dtype != common_dtype:
+        angle_b = angle_b.to(common_dtype)
+
+    rotmat_a = roma.euler_to_rotmat(
+        EULER_ANGLE_FMT, angle_a, degrees=True, device=angle_a.device
+    )
+    rotmat_b = roma.euler_to_rotmat(
+        EULER_ANGLE_FMT, angle_b, degrees=True, device=angle_b.device
+    )
+    rotmat_c = roma.rotmat_composition((rotmat_a, rotmat_b))
+    euler_angles_c = roma.rotmat_to_euler(EULER_ANGLE_FMT, rotmat_c, degrees=True)
+
+    return euler_angles_c
 
 
 def attempt_torch_compilation(
