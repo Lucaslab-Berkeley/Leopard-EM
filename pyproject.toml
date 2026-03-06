@@ -160,7 +160,7 @@ testpaths = ["tests"]
 filterwarnings = [
     "error",
     "ignore::FutureWarning",
-    "ignore::DeprecationWarning:torch.jit.script_method",
+    "ignore::DeprecationWarning:torch.jit",
 ]
 addopts = "-m 'not slow'" # Skip slow tests on default
 markers = ["slow: marks test as slow"]
