@@ -57,7 +57,7 @@ dependencies = [
     "torch-fourier-shift",
     "torch-motion-correction>=0.0.4",
     "torch-grid-utils>=v0.0.9",
-    "torch-ctf"
+    "torch-ctf",
 ]
 
 [tool.hatch.metadata]
@@ -160,8 +160,9 @@ testpaths = ["tests"]
 filterwarnings = [
     "error",
     "ignore::FutureWarning",
+    "ignore::DeprecationWarning:torch.jit.script_method",
 ]
-addopts = "-m 'not slow'"               # Skip slow tests on default
+addopts = "-m 'not slow'" # Skip slow tests on default
 markers = ["slow: marks test as slow"]
 
 # https://coverage.readthedocs.io/
