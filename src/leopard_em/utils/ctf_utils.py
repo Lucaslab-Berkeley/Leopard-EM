@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import torch
-from torch_ctf import calculate_ctf_2d
+from torch_ctf import calc_LPP_ctf_2D, calculate_ctf_2d
 from torch_fourier_filter.envelopes import b_envelope
 
 from leopard_em.utils.search_utils import get_cs_range
@@ -78,25 +78,56 @@ def calculate_ctf_filter_stack_full_args(
             # If it's neither a list nor a tensor, try to convert it
             mag_matrix = torch.tensor(mag_matrix, dtype=torch.float32)
 
+    # When laser phase plate params are provided, use LPP CTF; otherwise standard CTF
+    laser_params = kwargs.pop("laser_params", None)
+
     # Loop over spherical aberrations one at a time and collect results
     ctf_list = []
     for cs_val in cs_values:
-        tmp = calculate_ctf_2d(
-            defocus=defocus * 1e-4,  # Convert to um from Angstrom
-            astigmatism=astigmatism * 1e-4,  # Convert to um from Angstrom
-            astigmatism_angle=kwargs["astigmatism_angle"],
-            voltage=kwargs["voltage"],
-            spherical_aberration=cs_val,
-            amplitude_contrast=kwargs["amplitude_contrast_ratio"],
-            phase_shift=kwargs["phase_shift"],
-            pixel_size=kwargs["pixel_size"],
-            image_shape=template_shape,
-            rfft=True,
-            fftshift=False,
-            even_zernike_coeffs=kwargs["even_zernikes"],
-            odd_zernike_coeffs=kwargs["odd_zernikes"],
-            transform_matrix=mag_matrix,
-        )
+        if laser_params is not None:
+            tmp = calc_LPP_ctf_2D(
+                defocus=defocus * 1e-4,  # Convert to um from Angstrom
+                astigmatism=astigmatism * 1e-4,  # Convert to um from Angstrom
+                astigmatism_angle=kwargs["astigmatism_angle"],
+                voltage=kwargs["voltage"],
+                spherical_aberration=cs_val,
+                amplitude_contrast=kwargs["amplitude_contrast_ratio"],
+                pixel_size=kwargs["pixel_size"],
+                image_shape=template_shape,
+                rfft=True,
+                fftshift=False,
+                NA=laser_params.NA,
+                laser_wavelength_angstrom=laser_params.laser_wavelength_angstrom,
+                focal_length_angstrom=laser_params.focal_length_angstrom,
+                laser_xy_angle_deg=laser_params.laser_xy_angle_deg,
+                laser_xz_angle_deg=laser_params.laser_xz_angle_deg,
+                laser_long_offset_angstrom=laser_params.laser_long_offset_angstrom,
+                laser_trans_offset_angstrom=laser_params.laser_trans_offset_angstrom,
+                laser_polarization_angle_deg=laser_params.laser_polarization_angle_deg,
+                peak_phase_deg=laser_params.peak_phase_deg,
+                dual_laser=laser_params.dual_laser,
+                beam_tilt_mrad=None,
+                even_zernike_coeffs=kwargs.get("even_zernikes"),
+                odd_zernike_coeffs=kwargs.get("odd_zernikes"),
+                transform_matrix=mag_matrix,
+            )
+        else:
+            tmp = calculate_ctf_2d(
+                defocus=defocus * 1e-4,  # Convert to um from Angstrom
+                astigmatism=astigmatism * 1e-4,  # Convert to um from Angstrom
+                astigmatism_angle=kwargs["astigmatism_angle"],
+                voltage=kwargs["voltage"],
+                spherical_aberration=cs_val,
+                amplitude_contrast=kwargs["amplitude_contrast_ratio"],
+                phase_shift=kwargs["phase_shift"],
+                pixel_size=kwargs["pixel_size"],
+                image_shape=template_shape,
+                rfft=True,
+                fftshift=False,
+                even_zernike_coeffs=kwargs["even_zernikes"],
+                odd_zernike_coeffs=kwargs["odd_zernikes"],
+                transform_matrix=mag_matrix,
+            )
         # calc B-envelope and apply
         b_envelope_tmp = b_envelope(
             B=kwargs["ctf_B_factor"],
@@ -139,22 +170,27 @@ def calculate_ctf_filter_stack(
         Tensor of CTF filter values for the specified shape and optics group. Will have
         shape (num_pixel_sizes, num_defocus_offsets, h, w // 2 + 1)
     """
+    kwargs: dict[str, Any] = {
+        "astigmatism_angle": optics_group.astigmatism_angle,
+        "voltage": optics_group.voltage,
+        "spherical_aberration": optics_group.spherical_aberration,
+        "amplitude_contrast_ratio": optics_group.amplitude_contrast_ratio,
+        "ctf_B_factor": optics_group.ctf_B_factor,
+        "phase_shift": optics_group.phase_shift,
+        "pixel_size": optics_group.pixel_size,
+        "even_zernikes": optics_group.even_zernikes,
+        "odd_zernikes": optics_group.odd_zernikes,
+        "mag_matrix": optics_group.mag_matrix_tensor,
+    }
+    if optics_group.laser_params is not None:
+        kwargs["laser_params"] = optics_group.laser_params
     return calculate_ctf_filter_stack_full_args(
         template_shape,
         optics_group.defocus_u,
         optics_group.defocus_v,
         defocus_offsets,
         pixel_size_offsets,
-        astigmatism_angle=optics_group.astigmatism_angle,
-        voltage=optics_group.voltage,
-        spherical_aberration=optics_group.spherical_aberration,
-        amplitude_contrast_ratio=optics_group.amplitude_contrast_ratio,
-        ctf_B_factor=optics_group.ctf_B_factor,
-        phase_shift=optics_group.phase_shift,
-        pixel_size=optics_group.pixel_size,
-        even_zernikes=optics_group.even_zernikes,
-        odd_zernikes=optics_group.odd_zernikes,
-        mag_matrix=optics_group.mag_matrix_tensor,
+        **kwargs,
     )
 
 

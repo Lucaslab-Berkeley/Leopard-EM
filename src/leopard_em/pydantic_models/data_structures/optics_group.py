@@ -9,6 +9,48 @@ from pydantic import Field
 from leopard_em.pydantic_models.custom_types import BaseModel2DTM
 
 
+class LaserParams(BaseModel2DTM):
+    """Laser phase plate parameters for optics groups using a laser phase plate.
+
+    Default enabled is False (omit or set laser_params to null when not used).
+    Include this block only when the optics group uses a laser phase plate.
+
+    Attributes
+    ----------
+    NA : float
+        Numerical aperture.
+    laser_wavelength_angstrom : float
+        Laser wavelength in Angstrom.
+    focal_length_angstrom : float
+        Focal length in Angstrom.
+    laser_xy_angle_deg : float
+        Laser angle in the XY plane in degrees.
+    laser_xz_angle_deg : float
+        Laser angle in the XZ plane in degrees.
+    laser_long_offset_angstrom : float
+        Longitudinal offset in Angstrom.
+    laser_trans_offset_angstrom : float
+        Transverse offset in Angstrom.
+    laser_polarization_angle_deg : float
+        Laser polarization angle in degrees.
+    peak_phase_deg : float
+        Peak phase in degrees.
+    dual_laser : bool
+        Whether a dual-laser setup is used. Default is False.
+    """
+
+    NA: float = 0.055
+    laser_wavelength_angstrom: float = 10640
+    focal_length_angstrom: float = 7.1e7
+    laser_xy_angle_deg: float = 0.0
+    laser_xz_angle_deg: float = 0.0
+    laser_long_offset_angstrom: float = 0.0
+    laser_trans_offset_angstrom: float = 0.0
+    laser_polarization_angle_deg: float = 90.0
+    peak_phase_deg: float = 45.0
+    dual_laser: bool = True
+
+
 class OpticsGroup(BaseModel2DTM):
     """Stores optics group parameters for the imaging system on a microscope.
 
@@ -62,6 +104,10 @@ class OpticsGroup(BaseModel2DTM):
         Optional dict of even Zernike moments. Possible keys: "Z44c", "Z44s", "Z60".
     mag_matrix : Optional[list[float]]
         Optional list of floats of length 4 representing the magnification matrix.
+    laser_params : Optional[LaserParams]
+        Optional laser phase plate parameters. Omit or set to null when not using
+        a laser phase plate. When present, the optics group uses a laser phase
+        plate with the given parameters.
 
     Methods
     -------
@@ -93,6 +139,7 @@ class OpticsGroup(BaseModel2DTM):
     mag_matrix: Optional[Annotated[list[float], Field(min_length=4, max_length=4)]] = (
         None
     )
+    laser_params: Optional[LaserParams] = None
 
     @property
     def mag_matrix_tensor(self) -> Optional[torch.Tensor]:
