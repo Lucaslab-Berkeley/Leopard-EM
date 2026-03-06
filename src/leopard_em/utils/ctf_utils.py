@@ -215,12 +215,11 @@ def _setup_ctf_kwargs_from_particle_stack(
         A dictionary of CTF parameters to pass to the CTF calculation function.
     """
     # Keyword arguments for the CTF filter calculation call
-    # NOTE: We currently enforce the parameters (other than the defocus values) are
-    # all the same. This could be updated in the future...
+    # NOTE: We currently enforce the parameters (other than the defocus values and
+    # phase_shift) are all the same. This could be updated in the future...
     assert particle_stack["voltage"].nunique() == 1
     assert particle_stack["spherical_aberration"].nunique() == 1
     assert particle_stack["amplitude_contrast_ratio"].nunique() == 1
-    assert particle_stack["phase_shift"].nunique() == 1
     assert particle_stack["ctf_B_factor"].nunique() == 1
     assert (
         particle_stack["mag_matrix"].nunique() <= 1
@@ -287,7 +286,9 @@ def _setup_ctf_kwargs_from_particle_stack(
             0
         ].item(),
         "ctf_B_factor": particle_stack["ctf_B_factor"][0].item(),
-        "phase_shift": particle_stack["phase_shift"][0].item(),
+        "phase_shift": torch.tensor(
+            particle_stack["phase_shift"].values, dtype=torch.float32
+        ),
         "pixel_size": particle_stack["refined_pixel_size"].mean().item(),
         "template_shape": template_shape,
         "even_zernikes": even_zernikes_dict,

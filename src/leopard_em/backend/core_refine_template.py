@@ -449,6 +449,11 @@ def _core_refine_template_single_gpu(
         # Distribute different particles across streams
         stream = streams[i % num_cuda_streams]
         with torch.cuda.stream(stream):
+            # Use per-particle phase_shift when stored as tensor
+            phase_shift = ctf_kwargs["phase_shift"]
+            if isinstance(phase_shift, torch.Tensor):
+                phase_shift = phase_shift[particle_index].item()
+            ctf_kwargs_particle = {**ctf_kwargs, "phase_shift": phase_shift}
             refined_stats = _core_refine_template_single_thread(
                 particle_image_dft=particle_image_dft,
                 particle_index=particle_index,
@@ -460,7 +465,7 @@ def _core_refine_template_single_gpu(
                 defocus_angle=defocus_angle[i],
                 defocus_offsets=defocus_offsets,
                 pixel_size_offsets=pixel_size_offsets,
-                ctf_kwargs=ctf_kwargs,
+                ctf_kwargs=ctf_kwargs_particle,
                 corr_mean=corr_mean[i],
                 corr_std=corr_std[i],
                 projective_filter=projective_filters[i],
