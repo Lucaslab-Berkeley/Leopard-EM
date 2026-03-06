@@ -564,8 +564,8 @@ class ParticleStack(BaseModel2DTM):
             # box to be centered around the particle. Therefore, need to shift the
             # position half the difference between the original template size and
             # the extraction size.
-            pos_y -= (box_h - h) // 2
-            pos_x -= (box_w - w) // 2
+            pos_y = pos_y - (box_h - h) // 2
+            pos_x = pos_x - (box_w - w) // 2
 
             pos_y = torch.tensor(pos_y, device=img.device)
             pos_x = torch.tensor(pos_x, device=img.device)
