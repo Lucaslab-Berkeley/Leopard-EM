@@ -177,7 +177,7 @@ def anisotropic_pvalue(  # pylint: disable=too-many-locals
 def find_peaks_from_pvalue(  # pylint: disable=too-many-locals
     mip: torch.Tensor,
     scaled_mip: torch.Tensor,
-    p_value_cutoff: float = 0.01,
+    p_value_cutoff: float = 8.0,
     mask_radius: float = 5.0,
     quadrant: int = 1,
 ) -> tuple[torch.Tensor, torch.Tensor]:
@@ -191,7 +191,11 @@ def find_peaks_from_pvalue(  # pylint: disable=too-many-locals
     scaled_mip : torch.Tensor
         Z-score scaled maximum intensity projection.
     p_value_cutoff : float, optional
-        Threshold on p-values for peak detection.
+        Minimum value of ``-ln(p)`` (negative natural log of the analytic
+        quadrant p-value) to count as a peak. This matches the ``pval`` scale
+        from ``calculate_2dtm_pval`` in the 2DTM postprocess tool, and
+        ``metric_cutoff`` when ``metric="pval"`` there (often ~8, comparable to
+        a z-score threshold of similar magnitude). Not a raw probability.
     mask_radius : float, optional
         Minimum distance between detected peaks.
     quadrant : int, optional
@@ -218,11 +222,11 @@ def find_peaks_from_pvalue(  # pylint: disable=too-many-locals
     # Compute p-values
     neg_log_p = anisotropic_pvalue(pro_z, pro_m, d_inv, u_inv, quadrant=quadrant)
 
-    pvals = neg_log_p.reshape(mip.shape)
+    neg_log_p_map = neg_log_p.reshape(mip.shape)
 
-    # Select peaks
-    peaks = torch.nonzero(pvals > p_value_cutoff, as_tuple=False)
-    peak_vals = pvals[tuple(peaks.t())]
+    # Select peaks (threshold is -ln(p), same convention as 2DTM postprocess pval)
+    peaks = torch.nonzero(neg_log_p_map > p_value_cutoff, as_tuple=False)
+    peak_vals = neg_log_p_map[tuple(peaks.t())]
 
     if peaks.numel() == 0:
         return (
@@ -249,7 +253,7 @@ def extract_peaks_and_statistics_p_value(  # pylint: disable=too-many-arguments,
     correlation_average: torch.Tensor,
     correlation_variance: torch.Tensor,
     total_correlation_positions: int,
-    p_value_cutoff: float = 0.01,
+    p_value_cutoff: float = 8.0,
     mask_radius: float = 5.0,
     quadrant: int = 1,
 ) -> MatchTemplatePeaks:
@@ -277,7 +281,9 @@ def extract_peaks_and_statistics_p_value(  # pylint: disable=too-many-arguments,
     total_correlation_positions : int
         Total number of correlation positions evaluated.
     p_value_cutoff : float, optional
-        P-value threshold for peak detection.
+        Minimum ``-ln(p)`` for peak detection; same scale as 2DTM postprocess
+        ``pval`` / ``metric_cutoff`` (default 8.0, ballpark comparable to a
+        z-score cutoff of 8).
     mask_radius : float, optional
         Radius for peak masking.
     quadrant : int, optional

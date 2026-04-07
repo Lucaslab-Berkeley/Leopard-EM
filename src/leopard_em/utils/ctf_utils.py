@@ -78,6 +78,8 @@ def calculate_ctf_filter_stack_full_args(
             # If it's neither a list nor a tensor, try to convert it
             mag_matrix = torch.tensor(mag_matrix, dtype=torch.float32)
 
+        # Ensure mag_matrix is on the same device and has the correct dtype
+        mag_matrix = mag_matrix.to(device=defocus.device, dtype=torch.float32)
     # Loop over spherical aberrations one at a time and collect results
     ctf_list = []
     for cs_val in cs_values:

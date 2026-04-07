@@ -59,7 +59,7 @@ def get_search_tensors(
     max_val: float,
     step_size: float,
     skip_enforce_zero: bool = False,
-) -> torch.tensor:
+) -> torch.Tensor:
     """Get the search tensors (pixel or defocus) for a given range and step size.
 
     Parameters
@@ -75,7 +75,7 @@ def get_search_tensors(
 
     Returns
     -------
-    torch.tensor
+    torch.Tensor
         The search tensors.
     """
     vals = torch.arange(
