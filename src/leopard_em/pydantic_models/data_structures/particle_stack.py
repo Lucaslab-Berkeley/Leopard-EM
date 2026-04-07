@@ -546,6 +546,10 @@ class ParticleStack(BaseModel2DTM):
                 f"indices ({len(indices)})."
             )
 
+        # Loop over each image and its corresponding indexes
+        for i, indexes in enumerate(indices):
+            img = images[i]
+            # Get the positions as numpy arrays for indexing
             pos_y = self._df.loc[indexes, y_col].to_numpy().copy()
             pos_x = self._df.loc[indexes, x_col].to_numpy().copy()
 
