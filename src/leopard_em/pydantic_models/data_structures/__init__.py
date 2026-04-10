@@ -4,6 +4,6 @@ from .optics_group import OpticsGroup
 from .particle_stack import ParticleStack
 
 __all__ = [
-    "ParticleStack",
     "OpticsGroup",
+    "ParticleStack",
 ]

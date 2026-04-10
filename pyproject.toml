@@ -49,11 +49,15 @@ dependencies = [
     "roma",
     "tqdm",
     "torch-fourier-slice>=v0.4.0",
-    "torch-fourier-filter>=v0.2.6",
+    "torch-fourier-filter>=v0.3.4",
     "torch-so3>=v0.2.0",
     "ttsim3d>=v0.4.0",
     "lmfit",
     "zenodo-get",
+    "torch-fourier-shift",
+    "torch-motion-correction>=0.0.4",
+    "torch-grid-utils>=v0.0.9",
+    "torch-ctf",
 ]
 
 [tool.hatch.metadata]
@@ -156,9 +160,9 @@ testpaths = ["tests"]
 filterwarnings = [
     "error",
     "ignore::FutureWarning",
-    "ignore:.*torch.*:DeprecationWarning",
+    "ignore::DeprecationWarning:torch.jit",
 ]
-addopts = "-m 'not slow'"               # Skip slow tests on default
+addopts = "-m 'not slow'" # Skip slow tests on default
 markers = ["slow: marks test as slow"]
 
 # https://coverage.readthedocs.io/

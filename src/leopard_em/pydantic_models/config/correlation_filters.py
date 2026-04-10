@@ -427,7 +427,8 @@ class PreprocessingFilters(BaseModel2DTM):
         Returns
         -------
         torch.Tensor
-            The combined filter for the desired output shape.
+            The combined filter for the desired output shape. The tensor will be on
+            the same device as the reference image (`ref_img_rfft`).
         """
         # NOTE: Phase randomization filter is not currently enabled
         # pr_config = self.phase_randomization_filter
@@ -436,18 +437,19 @@ class PreprocessingFilters(BaseModel2DTM):
         ac_config = self.arbitrary_curve_filter
 
         # Calculate each of the filters in turn
+        device = ref_img_rfft.device
         whitening_filter_tensor = wf_config.calculate_whitening_filter(
             ref_img_rfft=ref_img_rfft, output_shape=output_shape
-        )
+        ).to(device)
         bandpass_filter_tensor = bf_config.calculate_bandpass_filter(
             output_shape=output_shape
-        )
+        ).to(device)
         arbitrary_curve_filter_tensor = ac_config.calculate_arbitrary_curve_filter(
             output_shape=output_shape
-        )
+        ).to(device)
         random_dropout_mask = self.random_fourier_dropout.calculate_dropout_mask(
             output_shape=output_shape
-        )
+        ).to(device)
 
         combined_filter = (
             whitening_filter_tensor
