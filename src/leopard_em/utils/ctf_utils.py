@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from leopard_em.pydantic_models.data_structures.particle_stack import ParticleStack
 
 
-def calculate_ctf_filter_stack_full_args(
+def calculate_ctf_filter_stack_full_args(  # pylint: disable=too-many-locals
     template_shape: tuple[int, int],
     defocus_u: float,  # in Angstrom
     defocus_v: float,  # in Angstrom

@@ -75,6 +75,9 @@ class MatchTemplateManager(BaseModel2DTM):
         Generates the keyword arguments for backend 'core_match_template' call from
         held parameters. Does the necessary pre-processing steps to filter the image
         and template.
+    make_backend_core_function_kwargs_with_image(image, *, defocus_values=None)
+        Same as ``make_backend_core_function_kwargs`` but uses a provided real-space
+        image tensor instead of ``self.micrograph``.
     run_match_template(orientation_batch_size: int = 1, do_result_export: bool = True)
         Runs the base match template program in PyTorch.
     results_to_dataframe(
@@ -100,6 +103,7 @@ class MatchTemplateManager(BaseModel2DTM):
     preprocessing_filters: PreprocessingFilters
     match_template_result: MatchTemplateResult
     computational_config: ComputationalConfigMatch
+    ctf_premultiplied: bool = False
 
     # Non-serialized large array-like attributes
     micrograph: ExcludedTensor
@@ -137,24 +141,23 @@ class MatchTemplateManager(BaseModel2DTM):
     ### Functional (data processing) methods ###
     ############################################
 
-    def make_backend_core_function_kwargs(self) -> dict[str, Any]:
-        """Generates the keyword arguments for backend call from held parameters."""
-        # Ensure the micrograph and template are loaded and in the correct format
-        if self.micrograph is None:
-            self.micrograph = load_mrc_image(self.micrograph_path)
+    def _make_backend_core_kwargs_from_image_tensor(
+        self,
+        image: torch.Tensor,
+        *,
+        defocus_values: torch.Tensor,
+    ) -> dict[str, Any]:
+        """Shared ``core_match_template`` kwargs from a real-space image tensor."""
+        # Ensure the micrograph and template are both Tensors before proceeding
+        if not isinstance(image, torch.Tensor):
+            image = torch.from_numpy(image)
+        image = image.to(dtype=torch.float32)
+
         if self.template_volume is None:
             self.template_volume = load_mrc_volume(self.template_volume_path)
-
-        # Ensure the micrograph and template are both Tensors before proceeding
-        if not isinstance(self.micrograph, torch.Tensor):
-            image = torch.from_numpy(self.micrograph)
-        else:
-            image = self.micrograph
-
-        if not isinstance(self.template_volume, torch.Tensor):
-            template = torch.from_numpy(self.template_volume)
-        else:
-            template = self.template_volume
+        template = self.template_volume
+        if not isinstance(template, torch.Tensor):
+            template = torch.from_numpy(template)
 
         # Fourier transform the image (RFFT, unshifted)
         image_dft = torch.fft.rfftn(image)  # pylint: disable=E1102
@@ -186,8 +189,6 @@ class MatchTemplateManager(BaseModel2DTM):
         )
 
         # Calculate the CTF filters at each defocus value
-        defocus_values = self.defocus_search_config.defocus_values
-
         # set pixel search to 0.0 for match template
         pixel_size_offsets = torch.tensor([0.0], dtype=torch.float32)
 
@@ -198,11 +199,13 @@ class MatchTemplateManager(BaseModel2DTM):
             pixel_size_offsets=pixel_size_offsets,
         )
 
+        # set ctf to 1 if pre-multiplied
+        if self.ctf_premultiplied:
+            ctf_filters = torch.ones_like(ctf_filters)
+
         # Grab the Euler angles from the orientation search configuration
         # (phi, theta, psi) for ZYZ convention
-        euler_angles = self.orientation_search_config.euler_angles
-        euler_angles = euler_angles.to(torch.float32)
-
+        euler_angles = self.orientation_search_config.euler_angles.to(torch.float32)
         template_dft = volume_to_rfft_fourier_slice(template)
 
         return {
@@ -216,6 +219,84 @@ class MatchTemplateManager(BaseModel2DTM):
             "device": self.computational_config.gpu_devices,
             "mag_matrix": self.optics_group.mag_matrix_tensor,
         }
+
+    def make_backend_core_function_kwargs(self) -> dict[str, Any]:
+        """Generates the keyword arguments for backend call from held parameters."""
+        # Ensure the micrograph is loaded and in the correct format
+        if self.micrograph is None:
+            self.micrograph = load_mrc_image(self.micrograph_path)
+
+        if not isinstance(self.micrograph, torch.Tensor):
+            image = torch.from_numpy(self.micrograph)
+        else:
+            image = self.micrograph
+
+        return self._make_backend_core_kwargs_from_image_tensor(
+            image,
+            defocus_values=self.defocus_search_config.defocus_values,
+        )
+
+    def make_backend_core_function_kwargs_with_image(
+        self,
+        image: torch.Tensor,
+        *,
+        defocus_values: torch.Tensor | None = None,
+    ) -> dict[str, Any]:
+        """Like :meth:`make_backend_core_function_kwargs` but using ``image``.
+
+        Parameters
+        ----------
+        image
+            Real-space micrograph tensor (e.g. CTF-corrected).
+        defocus_values
+            Defocus offsets for the CTF filter stack and backend. Defaults to
+            ``defocus_search_config.defocus_values``.
+        """
+        dv = (
+            defocus_values
+            if defocus_values is not None
+            else self.defocus_search_config.defocus_values
+        )
+        return self._make_backend_core_kwargs_from_image_tensor(
+            image,
+            defocus_values=dv,
+        )
+
+    def _invoke_core_match_template(
+        self,
+        core_kwargs: dict[str, Any],
+        orientation_batch_size: int,
+    ) -> dict[str, Any]:
+        """Run :func:`core_match_template` with this manager's compute settings."""
+        return core_match_template(
+            **core_kwargs,
+            orientation_batch_size=orientation_batch_size,
+            num_cuda_streams=self.computational_config.num_cpus,
+            backend=self.computational_config.backend,
+        )
+
+    def _invoke_core_match_template_distributed(
+        self,
+        world_size: int,
+        rank: int,
+        local_rank: int,
+        device: torch.device,
+        core_kwargs: dict[str, Any],
+        orientation_batch_size: int,
+    ) -> dict[str, Any]:
+        """Run distributed core match; strips ``device`` from kwargs if present."""
+        kwargs = dict(core_kwargs)
+        _ = kwargs.pop("device", None)
+        return core_match_template_distributed(
+            world_size,
+            rank,
+            local_rank,
+            device,
+            orientation_batch_size,
+            self.computational_config.num_cpus,
+            self.computational_config.backend,
+            **kwargs,
+        )
 
     def run_match_template(
         self,
@@ -240,12 +321,7 @@ class MatchTemplateManager(BaseModel2DTM):
         None
         """
         core_kwargs = self.make_backend_core_function_kwargs()
-        results = core_match_template(
-            **core_kwargs,
-            orientation_batch_size=orientation_batch_size,
-            num_cuda_streams=self.computational_config.num_cpus,
-            backend=self.computational_config.backend,
-        )
+        results = self._invoke_core_match_template(core_kwargs, orientation_batch_size)
 
         # Populate the MatchTemplateResult via a private helper
         self._populate_match_template_result(
@@ -298,23 +374,22 @@ class MatchTemplateManager(BaseModel2DTM):
 
         device = torch.device(f"cuda:{local_rank}")
 
+        # Same distributed rank-0 / empty-kwargs pattern as spatial match (R0801).
+        # pylint: disable=duplicate-code
         if rank == 0:
             core_kwargs = self.make_backend_core_function_kwargs()
         else:
             core_kwargs = {}
 
-        _ = core_kwargs.pop("device", None)
-
-        results = core_match_template_distributed(
+        results = self._invoke_core_match_template_distributed(
             world_size,
             rank,
             local_rank,
             device,
+            core_kwargs,
             orientation_batch_size,
-            self.computational_config.num_cpus,
-            self.computational_config.backend,
-            **core_kwargs,
         )
+        # pylint: enable=duplicate-code
 
         # Only populate the results on the first rank
         if torch.distributed.get_rank() == 0:

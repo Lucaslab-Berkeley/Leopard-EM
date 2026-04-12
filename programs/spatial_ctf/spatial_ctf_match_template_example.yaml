@@ -1,0 +1,82 @@
+##############################################################
+### SpatialCtfMatchTemplateManager configuration example ###
+##############################################################
+# An example YAML configuration to modify.
+# Call `SpatialCtfMatchTemplateManager.from_yaml(path)` to load this configuration.
+#
+# Runs 2D template matching with per-defocus-plane spatial PSF pre-multiplication
+# (real-space CTF correction from a vertex grid). See also `match_template_base_config.yaml`.
+
+template_volume_path: /some/path/to/template.mrc
+micrograph_path:      /some/path/to/micrograph.mrc
+
+# Must be true for this manager (spatial PSF pre-multiply path).
+ctf_premultiplied: true
+
+match_template_result:
+  allow_file_overwrite: true
+  mip_path:                   /some/path/to/output_mip.mrc
+  scaled_mip_path:            /some/path/to/output_scaled_mip.mrc
+  orientation_psi_path:       /some/path/to/output_orientation_psi.mrc
+  orientation_theta_path:     /some/path/to/output_orientation_theta.mrc
+  orientation_phi_path:       /some/path/to/output_orientation_phi.mrc
+  relative_defocus_path:      /some/path/to/output_relative_defocus.mrc
+  correlation_average_path:   /some/path/to/output_correlation_average.mrc
+  correlation_variance_path:  /some/path/to/output_correlation_variance.mrc
+
+optics_group:
+  label: some_label
+  voltage: 300.0
+  pixel_size: 1.06   # in Angstroms
+  defocus_u: 5200.0  # in Angstroms
+  defocus_v: 4950.0  # in Angstroms
+  astigmatism_angle: 25.0  # in degrees
+  spherical_aberration: 2.7  # in millimeters
+  amplitude_contrast_ratio: 0.07
+  phase_shift: 0.0
+  ctf_B_factor: 60.0  # in Angstroms^2
+
+defocus_search_config:
+  defocus_max:  1200.0  # in Angstroms, relative to defocus_u / defocus_v
+  defocus_min: -1200.0  # in Angstroms
+  defocus_step: 200.0   # in Angstroms
+  enabled: true
+
+orientation_search_config:
+  base_grid_method: uniform
+  psi_step: 1.5      # in degrees
+  theta_step: 2.5    # in degrees
+
+preprocessing_filters:
+  whitening_filter:
+    enabled: true
+    do_power_spectrum: true
+    max_freq: 0.5  # In terms of Nyquist frequency
+    num_freq_bins: null
+  bandpass_filter:
+    enabled: false
+    falloff: null
+    high_freq_cutoff: null  # Both in terms of Nyquist frequency
+    low_freq_cutoff: null
+
+computational_config:
+  gpu_ids:
+    - 0
+  num_cpus: 1
+  backend: streamed  # "streamed" or "batched"
+
+# Linear defocus gradient across the micrograph (normalized coordinates).
+spatial_model:
+  kind: linear_defocus
+  grad_mag_angstrom: 500.0   # magnitude of spatial defocus variation (Å)
+  grad_angle_deg: 45.0       # direction of the gradient in the image (degrees)
+
+# PSF bank: odd kernel on an nx×ny vertex grid (see spatial_ctf_realspace utilities).
+spatial_psf:
+  kernel_size: 129   # odd, >= 101
+  grid_nx: 8
+  grid_ny: 8
+
+# Optional: only used by `run_premultiply_only()` — write per-defocus premultiplied MRCs.
+# premultiplied_output_dir: /some/path/to/premultiply_stack
+# premultiplied_output_base_name: premul

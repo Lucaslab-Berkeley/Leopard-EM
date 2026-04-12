@@ -4,10 +4,12 @@ from .constrained_search_manager import ConstrainedSearchManager
 from .match_template_manager import MatchTemplateManager
 from .optimize_template_manager import OptimizeTemplateManager
 from .refine_template_manager import RefineTemplateManager
+from .spatial_ctf_match_template_manager import SpatialCtfMatchTemplateManager
 
 __all__ = [
     "MatchTemplateManager",
     "RefineTemplateManager",
     "OptimizeTemplateManager",
     "ConstrainedSearchManager",
+    "SpatialCtfMatchTemplateManager",
 ]
