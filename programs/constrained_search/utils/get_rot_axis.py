@@ -1,7 +1,20 @@
-"""Calculate the rotation axis for a pair of PDB structures."""
+"""Calculate the rotation axis for a pair of PDB structures.
 
+This script calculates the rotation axis between two PDB structures using rigid
+point registration. Important note:
+
+This script only works for PDB structures which match (same atoms, otherwise
+   registration may be non-sensical). This requires
+   the same number of atoms in both structures.
+
+The script can filter for only CA atoms in case not all sidechains are modeled
+   and/or additional ligands are in one model. Use the --filter-ca-only flag to
+   enable this filtering.
+"""
+
+import argparse
 import math
-import sys
+import warnings
 
 import mmdf
 import roma
@@ -98,17 +111,75 @@ def calculate_axis_euler_angles(axis: torch.Tensor) -> tuple[float, float]:
 
 def main() -> None:
     """Calculate rotation axis for a pair of PDB structures."""
-    if len(sys.argv) != 4:
-        print(f"Usage: {sys.argv[0]} <pdb_file1> <pdb_file2> <output_file>")
-        sys.exit(1)
+    parser = argparse.ArgumentParser(
+        description="Calculate the rotation axis for a pair of PDB structures."
+    )
+    parser.add_argument("pdb_file1", help="First PDB file")
+    parser.add_argument("pdb_file2", help="Second PDB file")
+    parser.add_argument("output_file", help="Output file for rotation analysis")
+    parser.add_argument(
+        "--filter-ca-only",
+        action="store_true",
+        help="Filter to only CA (alpha carbon) atoms if atom counts don't match",
+    )
+    args = parser.parse_args()
 
-    pdb_file1 = sys.argv[1]
-    pdb_file2 = sys.argv[2]
-    output_file = sys.argv[3]
+    pdb_file1 = args.pdb_file1
+    pdb_file2 = args.pdb_file2
+    output_file = args.output_file
+    filter_ca_only = args.filter_ca_only
 
     # Parse PDB files
     df1 = mmdf.read(pdb_file1)
     df2 = mmdf.read(pdb_file2)
+
+    # Check if atom counts match
+    if len(df1) != len(df2):
+        error_msg = (
+            f"PDB files have different numbers of atoms:\n"
+            f"  {pdb_file1}: {len(df1)} atoms\n"
+            f"  {pdb_file2}: {len(df2)} atoms\n\n"
+            "Rigid registration requires matching atom counts. "
+            "If not all sidechains are modeled and/or additional ligands are "
+            "present in one model, try rerunning with --filter-ca-only to "
+            "filter to only CA (alpha carbon) atoms."
+        )
+
+        if not filter_ca_only:
+            raise ValueError(error_msg)
+
+        # Filter to CA atoms if flag is set
+        warnings.warn(
+            f"PDB files have different numbers of atoms: "
+            f"{pdb_file1} has {len(df1)} atoms, "
+            f"{pdb_file2} has {len(df2)} atoms. "
+            "Filtering to CA (alpha carbon) atoms for alignment.",
+            UserWarning,
+            stacklevel=2,
+        )
+
+        if "atom_name" not in df1.columns or "atom_name" not in df2.columns:
+            raise ValueError(
+                "Cannot filter atoms - 'atom_name' column not found in PDB data."
+            )
+
+        df1_ca = df1[df1["atom_name"] == "CA"].copy()
+        df2_ca = df2[df2["atom_name"] == "CA"].copy()
+
+        if len(df1_ca) == 0 or len(df2_ca) == 0:
+            raise ValueError("No CA atoms found in one or both PDB files.")
+
+        if len(df1_ca) != len(df2_ca):
+            raise ValueError(
+                f"Even after filtering to CA atoms, counts don't match:\n"
+                f"  {pdb_file1}: {len(df1_ca)} CA atoms\n"
+                f"  {pdb_file2}: {len(df2_ca)} CA atoms\n\n"
+                "Cannot perform rigid registration with mismatched atom counts."
+            )
+
+        print(f"Using {len(df1_ca)} CA atoms for alignment.")
+        df1 = df1_ca
+        df2 = df2_ca
 
     # Extract coordinates
     coords1 = torch.tensor(df1[["x", "y", "z"]].values, dtype=torch.float32)

@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from leopard_em.pydantic_models.data_structures.particle_stack import ParticleStack
 
 
-def calculate_ctf_filter_stack_full_args(  # pylint: disable=too-many-locals
+def calculate_ctf_filter_stack_full_args(
     template_shape: tuple[int, int],
     defocus_u: float,  # in Angstrom
     defocus_v: float,  # in Angstrom
@@ -77,6 +77,8 @@ def calculate_ctf_filter_stack_full_args(  # pylint: disable=too-many-locals
         elif not isinstance(mag_matrix, torch.Tensor):
             # If it's neither a list nor a tensor, try to convert it
             mag_matrix = torch.tensor(mag_matrix, dtype=torch.float32)
+        # Ensure mag_matrix is on the same device and has the correct dtype
+        mag_matrix = mag_matrix.to(device=defocus.device, dtype=torch.float32)
 
     # When laser phase plate params are provided, use LPP CTF; otherwise standard CTF
     laser_params = kwargs.pop("laser_params", None)

@@ -36,15 +36,18 @@ class MovieConfig(BaseModel2DTM):
     fluence_per_frame: float = 1.0
 
     @property
-    def movie(self) -> torch.Tensor:
-        """Get the movie tensor."""
+    def movie(self) -> torch.Tensor | None:
+        """Movie volume tensor, or None when ``enabled`` is False."""
         if not self.enabled:
             return None
         return load_mrc_volume(self.movie_path)
 
     @property
-    def deformation_field(self) -> torch.Tensor:
-        """Get the deformation field tensor."""
+    def deformation_field(self) -> torch.Tensor | None:
+        """Deformation field tensor, or None when ``enabled`` is False.
+
+        or when ``particle_shifts_path`` is set (shifts take precedence).
+        """
         if not self.enabled:
             return None
         if self.particle_shifts_path:

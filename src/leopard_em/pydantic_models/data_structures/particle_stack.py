@@ -550,8 +550,8 @@ class ParticleStack(BaseModel2DTM):
         for i, indexes in enumerate(indices):
             img = images[i]
             # Get the positions as numpy arrays for indexing
-            pos_y = self._df.loc[indexes, y_col].to_numpy()
-            pos_x = self._df.loc[indexes, x_col].to_numpy()
+            pos_y = self._df.loc[indexes, y_col].to_numpy().copy()
+            pos_x = self._df.loc[indexes, x_col].to_numpy().copy()
 
             # If the position reference is "center", shift (x, y) by half the original
             # template width/height so reference is now the top-left corner
@@ -564,8 +564,8 @@ class ParticleStack(BaseModel2DTM):
             # box to be centered around the particle. Therefore, need to shift the
             # position half the difference between the original template size and
             # the extraction size.
-            pos_y -= (box_h - h) // 2
-            pos_x -= (box_w - w) // 2
+            pos_y = pos_y - (box_h - h) // 2
+            pos_x = pos_x - (box_w - w) // 2
 
             pos_y = torch.tensor(pos_y, device=img.device)
             pos_x = torch.tensor(pos_x, device=img.device)
@@ -739,7 +739,7 @@ class ParticleStack(BaseModel2DTM):
             else:
                 rel_defocus_col = "refined_relative_defocus"
 
-        return torch.tensor(self._df[rel_defocus_col].to_numpy())
+        return torch.tensor(self._df[rel_defocus_col].to_numpy().copy())
 
     def get_absolute_defocus(
         self, prefer_refined_defocus: bool = True
@@ -764,8 +764,10 @@ class ParticleStack(BaseModel2DTM):
             Angstroms.
         """
         particle_defocus = self.get_relative_defocus(prefer_refined_defocus)
-        defocus_u = torch.tensor(self._df["defocus_u"].to_numpy()) + particle_defocus
-        defocus_v = torch.tensor(self._df["defocus_v"].to_numpy()) + particle_defocus
+        defocus_u = torch.tensor(self._df["defocus_u"].to_numpy().copy())
+        defocus_v = torch.tensor(self._df["defocus_v"].to_numpy().copy())
+        defocus_u = defocus_u + particle_defocus
+        defocus_v = defocus_v + particle_defocus
 
         return defocus_u, defocus_v
 
@@ -808,7 +810,7 @@ class ParticleStack(BaseModel2DTM):
             else:
                 pixel_size_col = "refined_pixel_size"
 
-        return torch.tensor(self._df[pixel_size_col].to_numpy())
+        return torch.tensor(self._df[pixel_size_col].to_numpy().copy())
 
     def get_euler_angles(self, prefer_refined_angles: bool = True) -> torch.Tensor:
         """Return the Euler angles (phi, theta, psi) of all particles as a tensor.
@@ -844,9 +846,9 @@ class ParticleStack(BaseModel2DTM):
                 psi_col = "refined_psi"
 
         # Get the angles from the DataFrame
-        phi = torch.tensor(self._df[phi_col].to_numpy())
-        theta = torch.tensor(self._df[theta_col].to_numpy())
-        psi = torch.tensor(self._df[psi_col].to_numpy())
+        phi = torch.tensor(self._df[phi_col].to_numpy().copy())
+        theta = torch.tensor(self._df[theta_col].to_numpy().copy())
+        psi = torch.tensor(self._df[psi_col].to_numpy().copy())
 
         return torch.stack((phi, theta, psi), dim=-1)
 
