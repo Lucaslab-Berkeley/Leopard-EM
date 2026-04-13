@@ -9,7 +9,11 @@ import pandas as pd
 import torch
 from pydantic import ConfigDict, field_validator
 
-from leopard_em.backend.core_match_template import core_match_template
+from leopard_em.backend.core_match_template import (
+    core_match_template,
+    resolve_match_template_backend,
+    validate_orientation_eligible_for_match_template,
+)
 from leopard_em.backend.core_match_template_distributed import (
     core_match_template_distributed,
 )
@@ -60,6 +64,11 @@ class MatchTemplateManager(BaseModel2DTM):
         `MatchTemplateResult` class.
     computational_config : ComputationalConfigMatch
         Parameters for controlling computational resources.
+    orientation_eligible_for_mip : ExcludedTensor, optional
+        Per-orientation mask for MIP / best-angle selection when
+        ``computational_config`` uses ``streamed_masked_mip`` or
+        ``batched_masked_mip``. Must be ``None`` for
+        other backends. Not serialized.
 
     Methods
     -------
@@ -104,6 +113,7 @@ class MatchTemplateManager(BaseModel2DTM):
     match_template_result: MatchTemplateResult
     computational_config: ComputationalConfigMatch
     ctf_premultiplied: bool = False
+    orientation_eligible_for_mip: ExcludedTensor | None = None
 
     # Non-serialized large array-like attributes
     micrograph: ExcludedTensor
@@ -208,7 +218,13 @@ class MatchTemplateManager(BaseModel2DTM):
         euler_angles = self.orientation_search_config.euler_angles.to(torch.float32)
         template_dft = volume_to_rfft_fourier_slice(template)
 
-        return {
+        validate_orientation_eligible_for_match_template(
+            backend=self.computational_config.backend,
+            orientation_eligible=self.orientation_eligible_for_mip,
+            num_orientations=int(euler_angles.shape[0]),
+        )
+
+        out: dict[str, Any] = {
             "image_dft": image_preprocessed_dft,
             "template_dft": template_dft,
             "ctf_filters": ctf_filters,
@@ -219,6 +235,10 @@ class MatchTemplateManager(BaseModel2DTM):
             "device": self.computational_config.gpu_devices,
             "mag_matrix": self.optics_group.mag_matrix_tensor,
         }
+        if resolve_match_template_backend(self.computational_config.backend)[1]:
+            assert self.orientation_eligible_for_mip is not None
+            out["orientation_eligible"] = self.orientation_eligible_for_mip
+        return out
 
     def make_backend_core_function_kwargs(self) -> dict[str, Any]:
         """Generates the keyword arguments for backend call from held parameters."""
@@ -420,6 +440,9 @@ class MatchTemplateManager(BaseModel2DTM):
         self.match_template_result.relative_defocus = results["best_defocus"]
 
         self.match_template_result.total_projections = results["total_projections"]
+        self.match_template_result.total_mip_eligible_projections = results.get(
+            "total_mip_eligible_projections", 0
+        )
         self.match_template_result.total_orientations = results["total_orientations"]
         self.match_template_result.total_defocus = results["total_defocus"]
 

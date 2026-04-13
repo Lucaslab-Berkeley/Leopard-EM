@@ -147,6 +147,7 @@ class MatchTemplateResult(BaseModel2DTM):
 
     # Scalar (non-tensor) attributes
     total_projections: int = 0
+    total_mip_eligible_projections: int = 0
     total_orientations: int = 0
     total_defocus: int = 0
 
@@ -272,6 +273,15 @@ class MatchTemplateResult(BaseModel2DTM):
             Named tuple object containing the peak locations, heights, and pose
             statistics.
         """
+        # Use eligible-only count as the multiplicity denominator when available.
+        # This correctly reflects the number of independent MIP candidates when a
+        # masked backend was used (ineligible orientations never won the MIP).
+        # Fall back to total_projections for old results that lack this field.
+        total_corr = (
+            self.total_mip_eligible_projections
+            if self.total_mip_eligible_projections > 0
+            else self.total_projections
+        )
         self.match_template_peaks = extract_peaks_and_statistics_zscore(
             mip=self.mip,
             scaled_mip=self.scaled_mip,
@@ -281,7 +291,7 @@ class MatchTemplateResult(BaseModel2DTM):
             best_defocus=self.relative_defocus,
             correlation_average=self.correlation_average,
             correlation_variance=self.correlation_variance,
-            total_correlation_positions=self.total_projections,
+            total_correlation_positions=total_corr,
             **kwargs,
         )
 

@@ -74,9 +74,10 @@ class ComputationalConfigMatch(BaseComputationalConfig):
     num_cpus : int
         Total number of CPUs to use, defaults to 1.
     backend : Optional[str]
-        The backend to use for match template.
-        Must be "streamed" or "batched".
-        Defaults to "streamed".
+        Match-template backend: ``streamed``, ``batched``, ``streamed_masked_mip``, or
+        ``batched_masked_mip``. Masked variants require ``orientation_eligible`` when
+        calling the core (see ``MatchTemplateManager.orientation_eligible_for_mip``).
+        Defaults to ``streamed``.
     """
 
     # Type-hinting here is ensuring non-negative integers, and list of at least one
@@ -89,7 +90,12 @@ class ComputationalConfigMatch(BaseComputationalConfig):
         ]
     ] = [0]
     num_cpus: Annotated[int, Field(ge=1)] = 1
-    backend: Literal["streamed", "batched"] = "streamed"
+    backend: Literal[
+        "streamed",
+        "batched",
+        "streamed_masked_mip",
+        "batched_masked_mip",
+    ] = "streamed"
 
 
 class ComputationalConfigRefine(BaseComputationalConfig):

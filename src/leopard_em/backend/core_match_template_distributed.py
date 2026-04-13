@@ -11,6 +11,8 @@ import torch.distributed as dist
 
 from leopard_em.backend.core_match_template import (
     _core_match_template_single_gpu,
+    resolve_match_template_backend,
+    validate_orientation_eligible_for_match_template,
 )
 from leopard_em.backend.distributed import (
     DistributedTCPIndexQueue,
@@ -65,8 +67,13 @@ def _check_distributed_and_device(rank: int, device: torch.device) -> None:
         )
 
 
+# pylint: disable=too-many-locals,too-many-branches,too-many-statements
 def _extract_and_broadcast_tensors(
-    device: torch.device, rank: int, kwargs: dict[str, torch.Tensor]
+    device: torch.device,
+    rank: int,
+    kwargs: dict[str, torch.Tensor],
+    *,
+    backend: str,
 ) -> tuple[
     torch.Tensor,
     torch.Tensor,
@@ -75,6 +82,7 @@ def _extract_and_broadcast_tensors(
     torch.Tensor,
     torch.Tensor,
     torch.Tensor,
+    torch.Tensor | None,
 ]:
     """Helper fn to extract and broadcast tensor data from rank zero to all ranks.
 
@@ -87,7 +95,10 @@ def _extract_and_broadcast_tensors(
     kwargs : dict[str, torch.Tensor]
         Additional keyword arguments passed to the single-GPU core function. For the
         zeroth rank this should be a dictionary of Tensor objects (all other ranks can
-        pass an empty dictionary):
+        pass an empty dictionary).
+    backend : str
+        Match-template backend (used to decide whether ``orientation_eligible`` is
+        required on rank 0).
     """
     # Only do extraction on rank zero
     if rank == 0:
@@ -118,6 +129,25 @@ def _extract_and_broadcast_tensors(
         ctf_filters = kwargs["ctf_filters"].to(device)
         image_dft = kwargs["image_dft"].to(device)
 
+        _use_mip_mask = resolve_match_template_backend(backend)[1]
+        orientation_eligible: torch.Tensor | None = None
+        if _use_mip_mask:
+            if "orientation_eligible" not in kwargs:
+                raise ValueError(
+                    "Rank 0 missing tensor 'orientation_eligible' for masked MIP "
+                    "backend."
+                )
+            if not isinstance(kwargs["orientation_eligible"], torch.Tensor):
+                raise ValueError(
+                    "Rank 0 received non-tensor 'orientation_eligible' argument."
+                )
+            orientation_eligible = kwargs["orientation_eligible"].to(device)
+            validate_orientation_eligible_for_match_template(
+                backend=backend,
+                orientation_eligible=orientation_eligible,
+                num_orientations=int(euler_angles.shape[0]),
+            )
+
     #############################################################
     ### Logic for loading / broadcasting tensors to all ranks ###
     #############################################################
@@ -127,6 +157,11 @@ def _extract_and_broadcast_tensors(
     broadcast_list: list[Optional[TensorShapeDataclass]] = [None]
     if rank == 0:
         # Create a dataclass with the expected tensor shapes
+        use_mip_mask = resolve_match_template_backend(backend)[1]
+        oe_shape: tuple[int, ...] | None = None
+        if use_mip_mask:
+            assert orientation_eligible is not None
+            oe_shape = tuple(orientation_eligible.shape)
         expected_shapes = TensorShapeDataclass(
             image_dft_shape=tuple(image_dft.shape),
             template_dft_shape=tuple(template_dft.shape),
@@ -135,6 +170,7 @@ def _extract_and_broadcast_tensors(
             euler_angles_shape=tuple(euler_angles.shape),
             defocus_values_shape=tuple(defocus_values.shape),
             pixel_values_shape=tuple(pixel_values.shape),
+            orientation_eligible_shape=oe_shape,
         )
 
         broadcast_list = [expected_shapes]
@@ -160,6 +196,12 @@ def _extract_and_broadcast_tensors(
         pixel_values                = torch.empty(expected_shapes.pixel_values_shape,               dtype=torch.float32,   device=device)  # noqa: E501
         # pylint: enable=line-too-long
         # fmt: on
+        if expected_shapes.orientation_eligible_shape is not None:
+            orientation_eligible = torch.empty(
+                expected_shapes.orientation_eligible_shape,
+                dtype=torch.float32,
+                device=device,
+            )
 
     # Now broadcast all the tensors from rank 0 to all other ranks.
     # Default is not to use async operations, so these are blocking calls.
@@ -170,6 +212,11 @@ def _extract_and_broadcast_tensors(
     dist.broadcast(euler_angles, src=0)
     dist.broadcast(defocus_values, src=0)
     dist.broadcast(pixel_values, src=0)
+    if expected_shapes.orientation_eligible_shape is not None:
+        assert orientation_eligible is not None
+        dist.broadcast(orientation_eligible, src=0)
+    else:
+        orientation_eligible = None
 
     return (
         image_dft,
@@ -179,6 +226,7 @@ def _extract_and_broadcast_tensors(
         euler_angles,
         defocus_values,
         pixel_values,
+        orientation_eligible,
     )
 
 
@@ -379,8 +427,8 @@ def core_match_template_distributed(
         Number of CUDA streams to use for overlapping data transfers and
         computation, by default 1.
     backend : str, optional
-        The backend to use for computation. Defaults to 'streamed'.
-        Must be 'streamed' or 'batched'.
+        ``streamed``, ``batched``, ``streamed_masked_mip``, or ``batched_masked_mip``.
+        Masked backends require ``orientation_eligible`` in ``kwargs`` on rank 0.
     **kwargs : dict[str, torch.Tensor]
         Additional keyword arguments passed to the single-GPU core function. For the
         zeroth rank this should be a dictionary of Tensor objects with the following
@@ -411,6 +459,8 @@ def core_match_template_distributed(
         - pixel_values: 1D tensor of pixel values to search.
             What pixel size values correspond with the CTF filters, in units of
             Angstroms. Has shape (num_Cs,).
+        - orientation_eligible: Required for ``streamed_masked_mip`` /
+            ``batched_masked_mip``; 1D tensor, length ``num_orientations``.
     """
     # Check proper distributed initialization and CUDA device
     _check_distributed_and_device(rank, device)
@@ -427,7 +477,8 @@ def core_match_template_distributed(
         euler_angles,
         defocus_values,
         pixel_values,
-    ) = _extract_and_broadcast_tensors(device, rank, kwargs)
+        orientation_eligible,
+    ) = _extract_and_broadcast_tensors(device, rank, kwargs, backend=backend)
 
     ##############################################################
     ### Pre-multiply the whitening filter with the CTF filters ###
@@ -468,6 +519,7 @@ def core_match_template_distributed(
             num_cuda_streams=num_cuda_streams,
             backend=backend,
             device=device,
+            orientation_eligible=orientation_eligible,
         )
     )
     dist.barrier()
