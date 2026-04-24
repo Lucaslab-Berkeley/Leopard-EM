@@ -18,7 +18,6 @@ def do_streamed_orientation_cross_correlate(
     streams: list[torch.cuda.Stream],
     apply_normalization: bool = True,
     mag_matrix: torch.Tensor | None = None,
-    apply_normalization: bool = True,
 ) -> torch.Tensor:
     """Calculates a grid of 2D cross-correlations over multiple CUDA streams.
 
@@ -54,8 +53,6 @@ def do_streamed_orientation_cross_correlate(
     mag_matrix : torch.Tensor | None, optional
         Anisotropic magnification matrix of shape (2, 2). If None,
         no magnification transform is applied. Default is None.
-    apply_normalization : bool, optional
-        Whether to apply normalization to the template projections, by default True
 
     Returns
     -------
@@ -171,7 +168,6 @@ def do_batched_orientation_cross_correlate(
     apply_normalization: bool = True,
     requires_grad: bool = False,
     mag_matrix: torch.Tensor | None = None,
-    apply_normalization: bool = True,
 ) -> torch.Tensor:
     """Batched projection and cross-correlation with fixed (batched) filters.
 
@@ -207,8 +203,6 @@ def do_batched_orientation_cross_correlate(
     mag_matrix : torch.Tensor | None, optional
         Anisotropic magnification matrix of shape (2, 2). If None,
         no magnification transform is applied. Default is None.
-    apply_normalization : bool, optional
-        Whether to apply normalization to the template projections, by default True
 
     Returns
     -------
@@ -307,7 +301,6 @@ def do_batched_orientation_cross_correlate_cpu(
     projective_filters: torch.Tensor,
     apply_normalization: bool = True,
     mag_matrix: torch.Tensor | None = None,
-    apply_normalization: bool = True,
 ) -> torch.Tensor:
     """Same as `do_streamed_orientation_cross_correlate` but on the CPU.
 
@@ -336,8 +329,6 @@ def do_batched_orientation_cross_correlate_cpu(
     mag_matrix : torch.Tensor | None, optional
         Anisotropic magnification matrix of shape (2, 2). If None,
         no magnification transform is applied. Default is None.
-    apply_normalization : bool, optional
-        Whether to apply normalization to the template projections, by default True
 
     Returns
     -------
