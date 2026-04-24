@@ -133,6 +133,13 @@ def do_streamed_orientation_cross_correlate(
                         temp_fft, n=image_shape_real[0], dim=-2
                     )
 
+                    # NOTE: Decomposing 2D FFT into component 1D FFTs. Saves on first
+                    # pass where many lines are zeros. Approx 6-8% speedup.
+                    temp_fft = torch.fft.rfft(projection, n=image_shape_real[1], dim=-1)
+                    projection_dft = torch.fft.fft(
+                        temp_fft, n=image_shape_real[0], dim=-2
+                    )
+
                     # # Padded forward Fourier transform for cross-correlation
                     # projection_dft = torch.fft.rfft2(projection, s=image_shape_real)
 

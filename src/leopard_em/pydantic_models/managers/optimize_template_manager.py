@@ -157,7 +157,7 @@ class OptimizeTemplateManager(BaseModel2DTM):
             with open(output_text_path, "w", encoding="utf-8") as f:
                 f.write(f"Optimal template px: {optimal_template_px:.3f} Å")
 
-    def optimize_pixel_size(
+    def optimize_pixel_size(  # pylint: disable=too-many-locals
         self,
         all_results_path: str,
         output_text_path: str | None = None,
@@ -440,7 +440,7 @@ class OptimizeTemplateManager(BaseModel2DTM):
         base, _ = os.path.splitext(output_text_path)
         return f"{base}_all.csv"
 
-    def refine_result_to_dataframe(
+    def refine_result_to_dataframe(  # pylint: disable=too-many-locals
         self,
         output_dataframe_path: str,
         result: dict[str, np.ndarray],
@@ -468,7 +468,7 @@ class OptimizeTemplateManager(BaseModel2DTM):
 
         if (
             prefer_refined_angles
-            and self.particle_stack._get_position_reference_columns()
+            and self.particle_stack._get_position_reference_columns()  # pylint: disable=protected-access
             == ("refined_pos_y", "refined_pos_x")
         ):
             pos_y_col = "refined_pos_y"
