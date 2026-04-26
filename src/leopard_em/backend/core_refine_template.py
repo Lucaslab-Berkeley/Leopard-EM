@@ -297,6 +297,8 @@ def construct_multi_gpu_refine_template_kwargs(
         device_defocus_v = defocus_v[start_idx:end_idx]
         device_defocus_angle = defocus_angle[start_idx:end_idx]
         device_projective_filters = projective_filters[start_idx:end_idx]
+        device_corr_mean = corr_mean[start_idx:end_idx]
+        device_corr_std = corr_std[start_idx:end_idx]
 
         kwargs = {
             "particle_stack_dft": device_particle_stack_dft,
@@ -309,8 +311,8 @@ def construct_multi_gpu_refine_template_kwargs(
             "defocus_angle": device_defocus_angle,
             "defocus_offsets": defocus_offsets,
             "pixel_size_offsets": pixel_size_offsets,
-            "corr_mean": corr_mean,
-            "corr_std": corr_std,
+            "corr_mean": device_corr_mean,
+            "corr_std": device_corr_std,
             "projective_filters": device_projective_filters,
             "ctf_kwargs": ctf_kwargs,
             "batch_size": batch_size,
