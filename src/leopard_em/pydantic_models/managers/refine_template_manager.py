@@ -91,7 +91,9 @@ class RefineTemplateManager(BaseModel2DTM):
             self.template_volume = load_mrc_volume(self.template_volume_path)
 
     def make_backend_core_function_kwargs(
-        self, prefer_refined_angles: bool = True
+        self,
+        prefer_refined_angles: bool = True,
+        template_tensor: torch.Tensor | None = None,
     ) -> dict[str, Any]:
         """Create the kwargs for the backend refine_template core function.
 
@@ -100,12 +102,18 @@ class RefineTemplateManager(BaseModel2DTM):
         prefer_refined_angles : bool
             Whether to use the refined angles from the particle stack. Defaults to
             True.
+        template_tensor : torch.Tensor | None
+            Optional template volume override. If None, the configured template
+            volume/path is used.
         """
         # Ensure the template is loaded in as a Tensor object
-        template = load_template_tensor(
-            template_volume=self.template_volume,
-            template_volume_path=self.template_volume_path,
-        )
+        if template_tensor is None:
+            template = load_template_tensor(
+                template_volume=self.template_volume,
+                template_volume_path=self.template_volume_path,
+            )
+        else:
+            template = load_template_tensor(template_volume=template_tensor)
 
         # The set of "best" euler angles from match template search
         # Check if refined angles exist, otherwise use the original angles

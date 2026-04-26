@@ -3,6 +3,7 @@
 from .constrained_search_manager import ConstrainedSearchManager
 from .match_template_manager import MatchTemplateManager
 from .optimize_template_manager import OptimizeTemplateManager
+from .peak_inspection_manager import PeakInspectionManager
 from .refine_template_manager import RefineTemplateManager
 
 __all__ = [
@@ -10,4 +11,5 @@ __all__ = [
     "RefineTemplateManager",
     "OptimizeTemplateManager",
     "ConstrainedSearchManager",
+    "PeakInspectionManager",
 ]
