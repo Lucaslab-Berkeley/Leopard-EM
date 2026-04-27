@@ -5,8 +5,8 @@
 
 import math
 from collections.abc import Iterator
-from contextlib import nullcontext
-from typing import Literal, NamedTuple
+from contextlib import AbstractContextManager, nullcontext
+from typing import Literal, NamedTuple, cast
 
 import roma
 import torch
@@ -36,11 +36,13 @@ def _make_device_streams(
     return [None]
 
 
-def _device_stream_context(stream: torch.cuda.Stream | None):
+def _device_stream_context(
+    stream: torch.cuda.Stream | None,
+) -> AbstractContextManager[None]:
     """Return the appropriate stream context for CUDA or CPU execution."""
     if stream is None:
         return nullcontext()
-    return torch.cuda.stream(stream)
+    return cast(AbstractContextManager[None], torch.cuda.stream(stream))
 
 
 def _synchronize_device_streams(streams: list[torch.cuda.Stream | None]) -> None:
@@ -300,6 +302,7 @@ def core_refine_template(
         "refined_pos_x": refined_pos_x,
         "angle_idx": angle_idx,
     }
+
 
 # pylint: disable=too-many-locals
 def construct_multi_gpu_refine_template_kwargs(
@@ -631,6 +634,7 @@ def _core_refine_template_single_gpu(
 
     result_dict[device_id] = result
 
+
 def _iter_refine_particle_correlation_batches(
     particle_image_dft: torch.Tensor,
     particle_index: int,
@@ -801,6 +805,7 @@ def _reduce_refine_best(
         "angle_idx": full_angle_idx,
     }
 
+
 # pylint: disable=too-many-locals, too-many-statements
 def _core_refine_template_single_thread(
     particle_image_dft: torch.Tensor,
@@ -895,6 +900,7 @@ def _core_refine_template_single_thread(
         defocus_offsets=defocus_offsets,
         pixel_size_offsets=pixel_size_offsets,
     )
+
 
 # pylint: disable=too-many-locals
 def cross_correlate_particle_stack(
