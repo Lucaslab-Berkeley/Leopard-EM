@@ -6,9 +6,14 @@ out of the batch generator and into the reducer) provably do not change the
 refined statistics. Runs on CPU; no GPU or downloaded data required.
 """
 
+from unittest.mock import patch
+
 import torch
 
-from leopard_em.backend.core_refine_template import _reduce_refine_best_zscore
+from leopard_em.backend.core_refine_template import (
+    _reduce_refine_best_zscore,
+    core_refine_template,
+)
 
 # Shapes for the synthetic search space.
 N_PX, N_DEF, CROP_H, CROP_W = 2, 3, 4, 5
@@ -79,5 +84,96 @@ def test_reduce_refine_best_zscore_matches_snapshot():
     assert _val("angle_idx") == 2
 
 
+def _minimal_refine_kwargs(num_particles: int = 2) -> dict:
+    """Build minimal CPU tensors accepted by ``core_refine_template``."""
+    img_h, img_w = 8, 5  # RFFT width
+    tmpl_h, tmpl_w = 4, 3
+    crop_h = img_h - tmpl_h + 1
+    crop_w = (2 * (img_w - 1)) - (2 * (tmpl_w - 1)) + 1
+    return {
+        "particle_stack_dft": torch.randn(num_particles, img_h, img_w),
+        "template_dft": torch.randn(4, tmpl_h, tmpl_w),
+        "euler_angles": torch.zeros(num_particles, 3),
+        "euler_angle_offsets": torch.zeros(1, 3),
+        "defocus_offsets": torch.zeros(1),
+        "defocus_u": torch.zeros(num_particles),
+        "defocus_v": torch.zeros(num_particles),
+        "defocus_angle": torch.zeros(num_particles),
+        "pixel_size_offsets": torch.zeros(1),
+        "corr_mean": torch.zeros(num_particles, crop_h, crop_w),
+        "corr_std": torch.ones(num_particles, crop_h, crop_w),
+        "ctf_kwargs": {},
+        "projective_filters": torch.ones(num_particles, tmpl_h, tmpl_w),
+        "batch_size": 1,
+    }
+
+
+def _fake_single_gpu_result(num_particles: int = 2) -> dict:
+    """Numpy payload matching ``_core_refine_template_single_gpu`` output."""
+    return {
+        "refined_cross_correlation": torch.zeros(num_particles).numpy(),
+        "refined_z_score": torch.ones(num_particles).numpy(),
+        "refined_euler_angles": torch.zeros(num_particles, 3).numpy(),
+        "refined_defocus_offset": torch.zeros(num_particles).numpy(),
+        "refined_pixel_size_offset": torch.zeros(num_particles).numpy(),
+        "refined_pos_y": torch.zeros(num_particles).numpy(),
+        "refined_pos_x": torch.zeros(num_particles).numpy(),
+        "particle_indices": torch.arange(num_particles).numpy(),
+        "angle_idx": torch.zeros(num_particles, dtype=torch.long).numpy(),
+    }
+
+
+def test_core_refine_template_single_device_runs_in_process():
+    """Single-GPU refine must not spawn a child process (avoids CUDA IPC errors)."""
+    num_particles = 2
+    kwargs = _minimal_refine_kwargs(num_particles)
+    fake = _fake_single_gpu_result(num_particles)
+
+    def _in_process(result_dict, device_id, **_kwargs):
+        result_dict[device_id] = fake
+
+    with (
+        patch(
+            "leopard_em.backend.core_refine_template.run_multiprocess_jobs"
+        ) as mock_mp,
+        patch(
+            "leopard_em.backend.core_refine_template._core_refine_template_single_gpu",
+            side_effect=_in_process,
+        ) as mock_single,
+    ):
+        result = core_refine_template(device=torch.device("cpu"), **kwargs)
+
+    mock_mp.assert_not_called()
+    mock_single.assert_called_once()
+    assert result["refined_z_score"].shape == (num_particles,)
+
+
+def test_core_refine_template_multi_device_uses_multiprocess():
+    """Multi-GPU refine still dispatches through ``run_multiprocess_jobs``."""
+    num_particles = 2
+    kwargs = _minimal_refine_kwargs(num_particles)
+    fake = _fake_single_gpu_result(num_particles)
+
+    with (
+        patch(
+            "leopard_em.backend.core_refine_template.run_multiprocess_jobs",
+            return_value={0: fake},
+        ) as mock_mp,
+        patch(
+            "leopard_em.backend.core_refine_template._core_refine_template_single_gpu"
+        ) as mock_single,
+    ):
+        result = core_refine_template(
+            device=[torch.device("cpu"), torch.device("cpu")],
+            **kwargs,
+        )
+
+    mock_mp.assert_called_once()
+    mock_single.assert_not_called()
+    assert result["refined_z_score"].shape == (num_particles,)
+
+
 if __name__ == "__main__":
     test_reduce_refine_best_zscore_matches_snapshot()
+    test_core_refine_template_single_device_runs_in_process()
+    test_core_refine_template_multi_device_uses_multiprocess()
