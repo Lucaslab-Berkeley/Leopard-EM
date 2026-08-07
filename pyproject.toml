@@ -80,15 +80,12 @@ dev = [
 ]
 # Documentation dependencies
 docs = [
+    "zensical",
     "python-markdown-math",
-    "mkdocs",
-    "mkdocs-material",
     "mkdocs-jupyter",
     "mkdocs-inline-select-svg-plugin",
     "mkdocs-autorefs",
-    "mkdocs-autoapi",
     "mkdocstrings[python]",
-    "mkdocs-gallery",
 ]
 
 [project.urls]
