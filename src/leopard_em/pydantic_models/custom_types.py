@@ -14,6 +14,12 @@ ExcludedTensor = SkipJsonSchema[
     Annotated[Optional[torch.Tensor], Field(default=None, exclude=True)]
 ]
 
+# Same as ExcludedTensor, but for a name -> tensor mapping (e.g. per-column and
+# per-particle statistics maps of possibly differing shapes).
+ExcludedTensorDict = SkipJsonSchema[
+    Annotated[dict[str, torch.Tensor], Field(default_factory=dict, exclude=True)]
+]
+
 
 class BaseModel2DTM(BaseModel):
     """Implementation of a Pydantic BaseModel with additional, useful methods.

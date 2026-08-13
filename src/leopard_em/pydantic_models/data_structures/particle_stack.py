@@ -39,6 +39,7 @@ from leopard_em.pydantic_models.config import PreprocessingFilters
 from leopard_em.pydantic_models.custom_types import (
     BaseModel2DTM,
     ExcludedTensor,
+    ExcludedTensorDict,
 )
 from leopard_em.pydantic_models.formats import MATCH_TEMPLATE_DF_COLUMN_ORDER
 from leopard_em.utils.data_io import load_mrc_image
@@ -54,6 +55,17 @@ _HDF5_PARTICLES_GROUP = "particles"
 _HDF5_LOCAL_STATS_GROUP = "local_stats"
 _HDF5_IMAGE_STACK_DATASET = "image_stack"
 _HDF5_STRING_DTYPE = h5py.string_dtype()
+
+# Full-micrograph 2DTM result maps extracted per-particle by
+# ``get_local_stat_maps`` when no explicit columns are requested.
+_DEFAULT_LOCAL_STAT_COLUMNS = (
+    "mip_path",
+    "scaled_mip_path",
+    "psi_path",
+    "theta_path",
+    "phi_path",
+    "defocus_path",
+)
 
 
 # TODO: Make this a shared utility function across the package somehow
@@ -485,16 +497,17 @@ class _ParticleStackBase(BaseModel2DTM):
     image_stack : ExcludedTensor
         Stack of extracted particle images, shape ``(N, box_h, box_w)``.
         Not serialized to YAML/JSON.
-    local_stats_correlation_average : ExcludedTensor
-        Per-particle local mean of the cross-correlation map, extracted from
-        the valid cross-correlation region around each particle center.
-        Shape ``(N, valid_h, valid_w)`` where
+    local_stats : ExcludedTensorDict
+        Per-particle local statistic maps, keyed by the ``*_path`` DataFrame column they
+        were derived from (e.g. ``"mip_path"``, ``"correlation_average_path"``). Each
+        value has shape ``(N, valid_h, valid_w)`` where
         ``valid_h = extracted_box_size[0] - original_template_size[0] + 1`` and
         ``valid_w = extracted_box_size[1] - original_template_size[1] + 1``.
+        Populated on demand via :meth:`get_local_stat_maps` -- assign its return value
+        (or a subset of it) here to make those maps available for
+        :meth:`_stored_local_stat_map` lookups and, for ``ParticleStackHDF5``, for
+        ``to_hdf5(include_local_stats=True)``.
         Not serialized to YAML/JSON.
-    local_stats_correlation_variance : ExcludedTensor
-        Per-particle local variance of the cross-correlation map.  Same shape
-        as ``local_stats_correlation_average``.  Not serialized to YAML/JSON.
     """
 
     model_config: ClassVar = ConfigDict(arbitrary_types_allowed=True)
@@ -516,8 +529,7 @@ class _ParticleStackBase(BaseModel2DTM):
 
     # Image and statistics tensors (excluded from YAML/JSON serialization)
     image_stack: ExcludedTensor
-    local_stats_correlation_average: ExcludedTensor
-    local_stats_correlation_variance: ExcludedTensor
+    local_stats: ExcludedTensorDict
 
     def __init__(self, skip_df_load: bool = False, **data: Any):
         """Initialize the particle stack.
@@ -765,7 +777,90 @@ class _ParticleStackBase(BaseModel2DTM):
         images_tensor = torch.stack(images_list, dim=0)
         return images_tensor, indices
 
-    def construct_image_stack(
+    def _stored_local_stat_map(self, column: str) -> torch.Tensor | None:
+        """Return an already-computed local stat map for ``column``, if any.
+
+        Parameters
+        ----------
+        column : str
+            Path column name (e.g. ``"correlation_average_path"``).
+
+        Returns
+        -------
+        torch.Tensor | None
+            The stored ``(num_particles, valid_h, valid_w)`` map, or None if it
+            must be derived from the referenced result file.
+        """
+        return self.local_stats.get(column)
+
+    def get_local_stat_maps(
+        self,
+        columns: list[str] | None = None,
+        device: torch.device | str = "cpu",
+        valid_size: tuple[int, int] | None = None,
+        padding_value: float = 0.0,
+    ) -> dict[str, torch.Tensor]:
+        """Extract per-particle local sub-images for arbitrary result-map columns.
+
+        Generalizes the correlation-statistics extraction to any full-micrograph result
+        map exposed as a ``*_path`` column. Returned regions are cropped to the valid
+        cross-correlation region based on extracted box size and original template size,
+        unless ``valid_size`` is explicitly provided.
+
+        Parameters
+        ----------
+        columns : list[str] | None
+            Path columns to extract. Defaults to the six standard 2DTM statistic
+            maps (``mip``, ``scaled_mip``, ``psi``, ``theta``, ``phi``, ``defocus``).
+        device : torch.device | str
+            Target device for the returned tensors. Defaults to ``"cpu"``.
+        valid_size : tuple[int, int] | None
+            Extraction size ``(height, width)``. Defaults to the valid
+            cross-correlation region
+            ``extracted_box_size - original_template_size + 1``.
+        padding_value : float
+            Constant pad value for out-of-bounds regions. Defaults to ``0.0``.
+
+        Returns
+        -------
+        dict[str, torch.Tensor]
+            Maps each requested column name to its
+            ``(num_particles, valid_h, valid_w)`` sub-image stack on ``device``.
+        """
+        if columns is None:
+            columns = list(_DEFAULT_LOCAL_STAT_COLUMNS)
+
+        use_default_valid_size = valid_size is None
+        if valid_size is None:
+            box_h, box_w = self.extracted_box_size
+            h, w = self.original_template_size
+            valid_size = (box_h - h + 1, box_w - w + 1)
+
+        device = torch.device(device)
+
+        stat_maps: dict[str, torch.Tensor] = {}
+        for column in columns:
+            stored = (
+                self._stored_local_stat_map(column) if use_default_valid_size else None
+            )
+            if stored is not None:
+                stat_maps[column] = stored.to(device)
+                continue
+
+            images, indices = self.load_images_grouped_by_column(column)
+            stat_maps[column] = self._crop_particle_regions(
+                images=images,
+                indices=indices,
+                extraction_size=valid_size,
+                pos_reference="top-left",
+                handle_bounds="pad",
+                padding_mode="constant",
+                padding_value=padding_value,
+            ).to(device)
+
+        return stat_maps
+
+    def _crop_particle_regions(
         self,
         images: torch.Tensor,
         indices: list[pd.Index],
@@ -775,7 +870,7 @@ class _ParticleStackBase(BaseModel2DTM):
         padding_mode: Literal["constant", "reflect", "replicate"] = "constant",
         padding_value: float = 0.0,
     ) -> torch.Tensor:
-        """Construct stack of images from the DataFrame (updates image_stack in-place).
+        """Crop a per-particle sub-image from each source image, read-only.
 
         This method preferentially selects refined position columns by default
         (refined_pos_x, refined_pos_y) if they are present in the DataFrame, falling
@@ -845,7 +940,9 @@ class _ParticleStackBase(BaseModel2DTM):
         h, w = self.original_template_size
         box_h, box_w = self.extracted_box_size
         device = images.device
-        image_stack = torch.zeros((self.num_particles, *extraction_size), device=device)
+        region_stack = torch.zeros(
+            (self.num_particles, *extraction_size), device=device
+        )
 
         if images.shape[0] != len(indices):
             raise ValueError(
@@ -878,8 +975,58 @@ class _ParticleStackBase(BaseModel2DTM):
                 padding_mode=padding_mode,
                 padding_value=padding_value,
             )
-            image_stack[indexes] = cropped_images
+            # ``indexes`` holds DataFrame index *labels* (string ``particle_id`` for
+            # HDF5-backed stacks); ``region_stack`` is positional, so map labels to
+            # 0-based row positions. For a RangeIndex (CSV-backed stacks) this is an
+            # identity map.
+            positions = self._df.index.get_indexer(indexes)
+            region_stack[positions] = cropped_images
 
+        return region_stack
+
+    def construct_image_stack(
+        self,
+        images: torch.Tensor,
+        indices: list[pd.Index],
+        extraction_size: tuple[int, int],
+        pos_reference: Literal["center", "top-left"] = "top-left",
+        handle_bounds: Literal["pad", "error"] = "pad",
+        padding_mode: Literal["constant", "reflect", "replicate"] = "constant",
+        padding_value: float = 0.0,
+    ) -> torch.Tensor:
+        """Construct stack of particle images from the DataFrame.
+
+        Parameters
+        ----------
+        images : torch.Tensor
+            A tensor of loaded images with shape (N, H, W).
+        indices : list[pd.Index]
+            Row indexes for particles from each corresponding image.
+        extraction_size : tuple[int, int]
+            Size of the extracted boxes in pixels (height, width).
+        pos_reference : Literal["center", "top-left"], optional
+            Reference point for the positions, by default "top-left".
+        handle_bounds : Literal["pad", "error"], optional
+            How to handle out-of-bounds regions, by default "pad".
+        padding_mode : Literal["constant", "reflect", "replicate"], optional
+            Padding mode when ``handle_bounds="pad"``, by default "constant".
+        padding_value : float, optional
+            Constant padding value, by default 0.0.
+
+        Returns
+        -------
+        torch.Tensor
+            Stack of extracted images ``(N, extraction_h, extraction_w)``.
+        """
+        image_stack = self._crop_particle_regions(
+            images=images,
+            indices=indices,
+            extraction_size=extraction_size,
+            pos_reference=pos_reference,
+            handle_bounds=handle_bounds,
+            padding_mode=padding_mode,
+            padding_value=padding_value,
+        )
         self.image_stack = image_stack
 
         return image_stack
@@ -1468,8 +1615,8 @@ class ParticleStackCSV(_ParticleStackBase):
             Write ``image_stack`` to the HDF5 file, by default False.
             Raises ``ValueError`` if the image stack has not been loaded.
         include_local_stats : bool, optional
-            Write per-particle local stats to the HDF5 file, by default False.
-            Raises ``ValueError`` if the local stats have not been set.
+            Write every entry currently in :attr:`local_stats` to the HDF5 file, by
+            default False. Raises ``ValueError`` if :attr:`local_stats` is empty.
 
         Returns
         -------
@@ -1494,12 +1641,7 @@ class ParticleStackCSV(_ParticleStackBase):
             global_normalization_applied=self.global_normalization_applied,
             local_normalization_applied=self.local_normalization_applied,
             image_stack=self.image_stack if include_image_stack else None,
-            local_stats_correlation_average=(
-                self.local_stats_correlation_average if include_local_stats else None
-            ),
-            local_stats_correlation_variance=(
-                self.local_stats_correlation_variance if include_local_stats else None
-            ),
+            local_stats=self.local_stats if include_local_stats else {},
             skip_df_load=True,
         )
         hdf5_stack._df = df  # pylint: disable=protected-access
@@ -1518,9 +1660,9 @@ class ParticleStackCSV(_ParticleStackBase):
 class ParticleStackHDF5(_ParticleStackBase):
     """Particle stack stored entirely within a single HDF5 file.
 
-    The particle table, optional image stack, and optional per-particle local
-    correlation statistics are all held in one ``.h5`` file.  Two loading
-    modes are supported — choose one; mixing them raises errors:
+    The particle table, optional image stack, and optional per-particle local statistic
+    maps are all held in one ``.h5`` file.  Two loading modes are supported — choose
+    one. Mixing them raises errors:
 
     * **Load from referenced files**: ``image_stack`` and ``local_stats`` are
       computed from the paths stored in the particle table.  The HDF5 file
@@ -1528,6 +1670,13 @@ class ParticleStackHDF5(_ParticleStackBase):
     * **Load from HDF5**: ``image_stack`` and ``local_stats`` are read
       directly from the HDF5 datasets (``image_stack_stored=True`` and/or
       ``local_stats_stored=True``).
+
+    Any subset of the ``*_path`` statistic-map columns can be stored as ``local_stats``
+    -- not just correlation average/variance. Populate ``self.local_stats`` (e.g. via
+    ``self.local_stats.update(self.get_local_stat_maps())``) before calling
+    ``to_hdf5(include_local_stats=True)``, and every entry present at that point is
+    written, each to its own dataset under ``/local_stats`` named after its column
+    (e.g. ``mip_path``, ``correlation_average_path``).
 
     HDF5 file layout
     ----------------
@@ -1545,8 +1694,11 @@ class ParticleStackHDF5(_ParticleStackBase):
         │      ...
         ├─ image_stack                (N, box_h, box_w)             float32  [optional]
         └─ local_stats/                                                      [optional]
-               correlation_average    (N, valid_h, valid_w)         float32
-               correlation_variance   (N, valid_h, valid_w)         float32
+               <column>                (N, valid_h, valid_w)         float32
+               ...                                     -- one dataset per entry in
+                                                           `local_stats` at write time,
+                                                           e.g. `mip_path`,
+                                                           `correlation_average_path`
 
     where ``valid_h = extracted_box_size[0] - original_template_size[0] + 1``
     and   ``valid_w = extracted_box_size[1] - original_template_size[1] + 1``.
@@ -1640,9 +1792,8 @@ class ParticleStackHDF5(_ParticleStackBase):
             Write ``image_stack`` to ``/image_stack``, by default False.
             Raises ``ValueError`` if ``image_stack`` is None.
         include_local_stats : bool, optional
-            Write per-particle correlation stats to ``/local_stats``, by
-            default False.  Raises ``ValueError`` if either stats tensor is
-            None.
+            Write every entry currently in :attr:`local_stats` to its own
+            dataset under ``/local_stats``, by default False.
         """
         with h5py.File(self.hdf5_path, "w") as f:
             # Root attributes — metadata
@@ -1672,28 +1823,22 @@ class ParticleStackHDF5(_ParticleStackBase):
 
             f.attrs["image_stack_stored"] = self.image_stack_stored
 
-            # Optional per-particle local stats
+            # Optional per-particle local stat maps -- every column currently held in
+            # `local_stats` is written, whatever it is (correlation average/variance,
+            # MIP, orientations, defocus, ...).
             if include_local_stats:
-                if (
-                    self.local_stats_correlation_average is None
-                    or self.local_stats_correlation_variance is None
-                ):
+                if not self.local_stats:
                     raise ValueError(
-                        "local_stats tensors are None; cannot write to HDF5."
+                        "local_stats is empty; cannot write to HDF5. Populate it "
+                        "first, e.g. "
+                        "self.local_stats.update(self.get_local_stat_maps())."
                     )
                 local_grp = f.create_group(_HDF5_LOCAL_STATS_GROUP)
-                local_grp.create_dataset(
-                    "correlation_average",
-                    data=self.local_stats_correlation_average.cpu()
-                    .to(torch.float32)
-                    .numpy(),
-                )
-                local_grp.create_dataset(
-                    "correlation_variance",
-                    data=self.local_stats_correlation_variance.cpu()
-                    .to(torch.float32)
-                    .numpy(),
-                )
+                for column, stat_map in self.local_stats.items():
+                    local_grp.create_dataset(
+                        column,
+                        data=stat_map.cpu().to(torch.float32).numpy(),
+                    )
                 self.local_stats_stored = True
 
             f.attrs["local_stats_stored"] = self.local_stats_stored
@@ -1752,8 +1897,7 @@ class ParticleStackHDF5(_ParticleStackBase):
                     )
                 image_stack = torch.from_numpy(f[_HDF5_IMAGE_STACK_DATASET][:])
 
-            local_avg: torch.Tensor | None = None
-            local_var: torch.Tensor | None = None
+            local_stats: dict[str, torch.Tensor] = {}
             if local_stats_stored:
                 if _HDF5_LOCAL_STATS_GROUP not in f:
                     raise ValueError(
@@ -1761,8 +1905,10 @@ class ParticleStackHDF5(_ParticleStackBase):
                         f"'{_HDF5_LOCAL_STATS_GROUP}' is absent in '{path}'."
                     )
                 local_grp = f[_HDF5_LOCAL_STATS_GROUP]
-                local_avg = torch.from_numpy(local_grp["correlation_average"][:])
-                local_var = torch.from_numpy(local_grp["correlation_variance"][:])
+                local_stats = {
+                    column: torch.from_numpy(local_grp[column][:])
+                    for column in local_grp
+                }
 
         instance = cls(
             hdf5_path=str(path),
@@ -1777,8 +1923,7 @@ class ParticleStackHDF5(_ParticleStackBase):
             image_stack_stored=image_stack_stored,
             local_stats_stored=local_stats_stored,
             image_stack=image_stack,
-            local_stats_correlation_average=local_avg,
-            local_stats_correlation_variance=local_var,
+            local_stats=local_stats,
             skip_df_load=True,
         )
         instance._df = df

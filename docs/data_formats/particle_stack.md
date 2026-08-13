@@ -81,7 +81,7 @@ image_stack = particle_stack.construct_image_stack(
 
 ### HDF5 back-end (`ParticleStackHDF5`)
 
-`ParticleStackHDF5` stores the particle table in a single `.h5` file, and can optionally bundle the extracted particle images (`image_stack`) and/or per-particle local correlation statistics (`local_stats`) directly into that same file, so the stack no longer depends on the original micrograph/statistics-map files being available at their recorded paths.
+`ParticleStackHDF5` stores the particle table in a single `.h5` file, and can optionally bundle the extracted particle images (`image_stack`) and/or per-particle local statistic maps (`local_stats`) directly into that same file, so the stack no longer depends on the original micrograph/statistics-map files being available at their recorded paths.
 
 ```yaml
 particle_stack:
@@ -93,7 +93,7 @@ particle_stack:
 **Use the HDF5 back-end when...**
 
 - You want a fully portable, self-contained particle stack — one file you can archive, share, or move to another machine without also shipping every referenced micrograph and statistics map.
-- You want per-particle local correlation statistics (`local_stats_correlation_average`/`local_stats_correlation_variance`) stored alongside the particle table rather than recomputed.
+- You want per-particle local statistic maps stored alongside the particle table rather than recomputed. `local_stats` is a `dict[str, torch.Tensor]` keyed by `*_path` column name — any subset of `mip_path`, `scaled_mip_path`, `psi_path`, `theta_path`, `phi_path`, `defocus_path`, `correlation_average_path`, `correlation_variance_path` (or all of them) can be stored, not just correlation average/variance.
 
 #### Two loading modes
 
@@ -101,6 +101,17 @@ particle_stack:
 
 - **Load from referenced files** (`image_stack_stored=False`): the HDF5 file stores only the particle table; `image_stack`/`local_stats` are computed on demand from the micrograph/statistics-map paths in that table, same as the CSV back-end.
 - **Load from HDF5 directly** (`image_stack_stored=True` and/or `local_stats_stored=True`): `image_stack`/`local_stats` are read from the HDF5 datasets, no access to the original micrograph files needed.
+
+To populate `local_stats` before writing, use `get_local_stat_maps(...)` (extracts the valid cross-correlation region around each particle for any `*_path` column) and assign the result:
+
+```python
+particle_stack.local_stats.update(particle_stack.get_local_stat_maps())
+# or a specific subset:
+particle_stack.local_stats.update(
+    particle_stack.get_local_stat_maps(columns=["mip_path", "correlation_average_path"])
+)
+particle_stack.to_hdf5(include_local_stats=True)
+```
 
 #### HDF5 file layout
 
@@ -116,8 +127,10 @@ particle_stack:
 │      ...
 ├─ image_stack                (N, box_h, box_w)             float32  [optional]
 └─ local_stats/                                                      [optional]
-       correlation_average    (N, valid_h, valid_w)         float32
-       correlation_variance   (N, valid_h, valid_w)         float32
+       <column>               (N, valid_h, valid_w)         float32
+       ...                    -- one dataset per entry in `local_stats` at write
+                                  time, named after its column (e.g. `mip_path`,
+                                  `correlation_average_path`)
 ```
 
 where `valid_h = extracted_box_size[0] - original_template_size[0] + 1` and `valid_w = extracted_box_size[1] - original_template_size[1] + 1` (see the [note on correlation modes](../data_formats.md#a-note-on-correlation-modes-and-output-shapes)).
