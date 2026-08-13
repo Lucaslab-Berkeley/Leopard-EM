@@ -16,16 +16,18 @@ try:
     # Determine which batch sizes are supported by zipFFT for powers of 2
     # pylint: disable=c-extension-no-member
     ZIPFFT_SUPPORTED_CONFIGS = zipfft.padded_rconv2d.get_supported_conv_configs()
-    ZIPFFT_SUPPORTED_BATCH_SIZES = [
+    ZIPFFT_SUPPORTED_BATCH_SIZES = [  # NOTE: restrictive to 4k images and 512 templates
         x[-2]
         for x in ZIPFFT_SUPPORTED_CONFIGS
         if (x[0] == 512 and x[1] == 512 and x[2] == 4096 and x[3] == 4096)
     ]
     ZIPFFT_SUPPORTED_BATCH_SIZES.sort(reverse=True)  # largest to smallest
+    ZIPFFT_AVAILABLE = True
 except ImportError:
     zipfft = None
     ZIPFFT_SUPPORTED_BATCH_SIZES = []
     ZIPFFT_SUPPORTED_CONFIGS = []
+    ZIPFFT_AVAILABLE = False
 
 
 # pylint: disable=too-many-locals,E1102
@@ -542,7 +544,20 @@ def do_batched_orientation_cross_correlate_zipfft(
         Cross-correlation of the image with the template volume for each
         orientation and defocus value. Will have shape
         (num_Cs, num_defocus, num_orientations, H, W).
+
+    Raises
+    ------
+    ImportError
+        If the optional ``zipfft`` package is not installed.
     """
+    if zipfft is None:
+        raise ImportError(
+            "backend='zipfft' requires the optional 'zipfft' package, which is not "
+            "installed in this environment. Install it from "
+            "https://github.com/mgiammar/zipFFT, or select a different backend "
+            "('batched' or 'streamed')."
+        )
+
     # Accounting for RFFT shape
     projection_shape_real = (template_dft.shape[1], template_dft.shape[2] * 2 - 2)
     image_shape_real = (

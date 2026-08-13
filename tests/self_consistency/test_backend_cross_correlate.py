@@ -25,6 +25,7 @@ from torch_fourier_filter.ctf import calculate_ctf_2d
 from torch_fourier_filter.envelopes import b_envelope
 
 from leopard_em.backend.cross_correlation import (
+    ZIPFFT_AVAILABLE,
     do_batched_orientation_cross_correlate,
     do_batched_orientation_cross_correlate_zipfft,
     do_streamed_orientation_cross_correlate,
@@ -137,6 +138,7 @@ def test_stream_and_batch_cross_correlate_consistency(sample_input_data):
 
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA device not available")
+@pytest.mark.skipif(not ZIPFFT_AVAILABLE, reason="zipfft package not installed")
 def test_batched_zipfft_cross_correlate_consistency(sample_input_data):
     """Test that the batched zip-FFT cross-correlation method is consistent."""
     cross_correlate_kwargs = sample_input_data
@@ -179,3 +181,16 @@ def test_batched_zipfft_cross_correlate_consistency(sample_input_data):
         f"Max absolute difference: {max_abs_diff}\n"
         f"Max relative difference: {max_rel_diff}\n"
     )
+
+
+@pytest.mark.skipif(ZIPFFT_AVAILABLE, reason="zipfft package is installed")
+def test_batched_zipfft_cross_correlate_raises_import_error_when_unavailable():
+    """When zipfft isn't installed, calling the zipfft backend should raise clearly."""
+    dummy = torch.zeros(1)
+    with pytest.raises(ImportError, match="zipfft"):
+        do_batched_orientation_cross_correlate_zipfft(
+            image_dft=dummy,
+            template_dft=dummy,
+            rotation_matrices=dummy,
+            projective_filters=dummy,
+        )

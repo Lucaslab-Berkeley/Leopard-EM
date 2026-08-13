@@ -225,11 +225,10 @@ pip install .
 
 Once installed, `zipfft` is importable from the same Python environment as Leopard-EM, and `backend: zipfft` becomes available in your `computational_config`. See the [zipFFT GitHub page](https://github.com/mgiammar/zipFFT) for additional details on configuring compiled shapes/sizes for your system.
 
-<!-- !!! warning "Unclear error if zipFFT isn't installed"
+!!! note "Backend availability is checked at first use, not at config load"
 
-    Leopard-EM does not currently validate that `zipfft` is importable when `backend: zipfft` is configured.
-    If it isn't installed, the run will proceed until the first cross-correlation batch and then fail with an `AttributeError` (`NoneType` object has no attribute `padded_rconv2d`) rather than a clear "zipFFT is not installed" message.
-    If you hit this error, double check `zipfft` is installed and importable in the same Python environment you're running `match_template` from. -->
+    Leopard-EM does not validate that `zipfft` is importable when the `computational_config` is loaded.
+    If `backend: zipfft` is configured but the package isn't installed, the run raises a clear `ImportError` ("backend='zipfft' requires the optional 'zipfft' package...") as soon as the first cross-correlation batch is computed.
 
 ## Running the match template program
 
