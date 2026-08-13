@@ -1842,16 +1842,15 @@ def export_particle_stack(
             "hdf5" if isinstance(source_particle_stack, ParticleStackHDF5) else "csv"
         )
 
+    spc = source_particle_stack
     shared_kwargs: dict[str, Any] = {
-        "extracted_box_size": source_particle_stack.extracted_box_size,
-        "original_template_size": source_particle_stack.original_template_size,
-        "leopard_em_version": source_particle_stack.leopard_em_version,
-        "global_whitening_applied": source_particle_stack.global_whitening_applied,
-        "local_whitening_applied": source_particle_stack.local_whitening_applied,
-        "global_normalization_applied": (
-            source_particle_stack.global_normalization_applied
-        ),
-        "local_normalization_applied": source_particle_stack.local_normalization_applied,  # noqa: E501
+        "extracted_box_size": spc.extracted_box_size,
+        "original_template_size": spc.original_template_size,
+        "leopard_em_version": spc.leopard_em_version,
+        "global_whitening_applied": spc.global_whitening_applied,
+        "local_whitening_applied": spc.local_whitening_applied,
+        "global_normalization_applied": (spc.global_normalization_applied),
+        "local_normalization_applied": spc.local_normalization_applied,
         "skip_df_load": True,
     }
 
