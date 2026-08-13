@@ -373,6 +373,10 @@ def _core_inspect_template_single_thread(
         - ``"frc"``: tuple ``(frc_tensor, frequency_bins)`` where
           ``frc_tensor`` is ``(n_px, n_defocus, n_orient, n_freq)``.
     """
+    # TODO: corr_mean/corr_std are documented for z-score normalization but are
+    # currently unused here; raw (non-normalized) scores are returned.
+    _ = corr_mean
+    _ = corr_std
     if output_mode == "frc":
         frc_batches = _iter_refine_particle_frc_batches(
             particle_image_dft=particle_image_dft,

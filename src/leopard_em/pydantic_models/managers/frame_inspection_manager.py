@@ -434,7 +434,7 @@ class FrameInspectionManager(PeakInspectionManager):
                 padding_mode="reflect",
                 padding_value=0.0,
             )
-            summed_particle_images_dft = torch.fft.rfftn(
+            summed_particle_images_dft = torch.fft.rfftn(  # pylint: disable=not-callable
                 summed_particle_images, dim=(-2, -1)
             )
             summed_particle_images_dft[..., 0, 0] = 0.0 + 0.0j

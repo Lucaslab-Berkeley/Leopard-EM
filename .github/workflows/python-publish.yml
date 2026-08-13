@@ -48,8 +48,7 @@ jobs:
       - name: Install Dependencies
         run: |
           python -m pip install -U pip
-          # if running a cron job, we add the --pre flag to test against pre-releases
-          python -m pip install .[test] ${{ github.event_name == 'schedule' && '--pre' || ''  }}
+          python -m pip install .[test]
 
       - name: 🧪 Run Tests
         run: pytest --color=yes --cov --cov-report=xml --cov-report=term-missing
@@ -69,7 +68,7 @@ jobs:
           update_existing: true
 
       - name: Coverage
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@v7
 
   deploy:
     name: Deploy

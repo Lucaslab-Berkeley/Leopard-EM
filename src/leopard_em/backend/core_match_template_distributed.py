@@ -496,6 +496,7 @@ def core_match_template_distributed(
     ###########################################################
 
     dist.barrier()
+    # pylint: disable=duplicate-code
     (
         mip,
         best_global_index,

@@ -569,7 +569,6 @@ def do_batched_orientation_cross_correlate_zipfft(
     # Extract central slice(s) from the template volume
     fourier_slice = extract_central_slices_rfft_3d(
         volume_rfft=template_dft,
-        image_shape=(projection_shape_real[0],) * 3,  # NOTE: requires cubic template
         rotation_matrices=rotation_matrices,
     )
     fourier_slice = torch.fft.ifftshift(fourier_slice, dim=(-2,))

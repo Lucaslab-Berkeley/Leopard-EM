@@ -30,7 +30,6 @@ classifiers = [
     "Development Status :: 3 - Alpha",
     "License :: OSI Approved :: BSD License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
@@ -80,19 +79,17 @@ dev = [
     "pre-commit",
     "rich",       # https://github.com/Textualize/rich
     "ruff",
+    "mypy",
     "pylint",
 ]
 # Documentation dependencies
 docs = [
+    "zensical",
     "python-markdown-math",
-    "mkdocs",
-    "mkdocs-material",
     "mkdocs-jupyter",
     "mkdocs-inline-select-svg-plugin",
     "mkdocs-autorefs",
-    "mkdocs-autoapi",
-    "mkdocstrings[python]",
-    "mkdocs-gallery",
+    "mkdocstrings[python]>=1.0",
 ]
 
 [project.urls]

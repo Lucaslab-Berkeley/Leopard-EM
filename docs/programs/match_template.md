@@ -180,6 +180,57 @@ computational_config:
     If you encounter the error `RuntimeError: CUDA error: invalid device ordinal`, then you've probably listed more GPU devices than are on your machine!
     Check how many GPUs you have (for example with `nvidia-smi`) and update the `gpu_ids` field accordingly.
 
+### Choosing a cross-correlation backend
+
+The `computational_config.backend` field selects which implementation computes the 2D cross-correlations for each orientation/defocus combination.
+Three options are available:
+
+- `"streamed"` (default) — individual 2D cross-correlations are computed across multiple CUDA streams using PyTorch.
+- `"batched"` — all 2D cross-correlations for a batch of orientations are computed in a single batched PyTorch call.
+- `"zipfft"` — cross-correlations are computed using the optional [zipFFT](https://github.com/mgiammar/zipFFT) library, which can substantially speed up the FFT-based cross-correlation step over the two PyTorch-based backends.
+
+```yaml
+computational_config:
+  gpu_ids: [0, 1]
+  num_cpus: 4
+  backend: zipfft
+```
+
+<!-- !!! warning "zipFFT requires a cubic template"
+
+    The `zipfft` backend requires the reference template volume to be cubic (equal size along all three dimensions).
+    It also only supports a fixed set of batch sizes internally; Leopard-EM automatically falls back to per-orientation looping for unsupported batch sizes, which will run correctly but without the full performance benefit. -->
+
+!!! note "zipFFT and the correlation-mode shapes"
+
+    Correlation maps produced by the `zipfft` backend are already cropped to "valid" mode internally (rather than "same" mode, like the other two backends).
+    Leopard-EM detects this automatically, so the output statistics maps have the same shapes regardless of backend — see the [note on correlation modes](../data_formats.md#a-note-on-correlation-modes-and-output-shapes) for details.
+
+#### Installing zipFFT
+
+zipFFT is an **optional** dependency and is distributed as a source-only package with a compiled CUDA/C-extension. It must be built locally against a matching CUDA toolkit.
+
+**Requirements:**
+
+- A CUDA-capable GPU with compute capability 8.0 or above.
+- CUDA toolkit >=13.0, plus a working C/C++ compile toolchain (`nvcc` and a compatible host compiler) available on your `PATH`.
+
+**Installation:**
+
+```bash
+git clone https://github.com/mgiammar/zipFFT.git
+cd zipFFT
+pip install .
+```
+
+Once installed, `zipfft` is importable from the same Python environment as Leopard-EM, and `backend: zipfft` becomes available in your `computational_config`. See the [zipFFT GitHub page](https://github.com/mgiammar/zipFFT) for additional details on configuring compiled shapes/sizes for your system.
+
+<!-- !!! warning "Unclear error if zipFFT isn't installed"
+
+    Leopard-EM does not currently validate that `zipfft` is importable when `backend: zipfft` is configured.
+    If it isn't installed, the run will proceed until the first cross-correlation batch and then fail with an `AttributeError` (`NoneType` object has no attribute `padded_rconv2d`) rather than a clear "zipFFT is not installed" message.
+    If you hit this error, double check `zipfft` is installed and importable in the same Python environment you're running `match_template` from. -->
+
 ## Running the match template program
 
 Once you've configured a YAML file, running the match template program is fairly simple.
@@ -195,7 +246,6 @@ For example,
 # Select peaks bases on a number of false positives
 df = mt_manager.results_to_dataframe(locate_peaks_kwargs={"false_positives": 1.0})
 
-
 # Uses a pre-defined z-score cutoff for peak calling
 df = mt_manager.results_to_dataframe(locate_peaks_kwargs={"z_score_cutoff": 7.8})
 ```
@@ -207,7 +257,6 @@ Currently, Leopard-EM uses a false-positive rate of 1 per micrograph by default 
 The provided program script will output the statistics maps over the image for the search as well as a Pandas DataFrame with compacted information on found particles.
 These data can be passed onto downstream analysis, for example the refine template program.
 More detail about these data and their formats is on the [Leopard-EM data formats page](../data_formats.md).
-
 
 ## Mathematical description
 

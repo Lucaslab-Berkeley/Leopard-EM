@@ -648,6 +648,7 @@ def _core_match_template_single_gpu(
 
     torch.cuda.synchronize(device)
 
+    # pylint: disable=duplicate-code
     return (
         mip,
         best_global_index,
@@ -668,6 +669,7 @@ def _core_match_template_multiprocess_wrapper(
 
     See the _core_match_template_single_gpu function for parameter descriptions.
     """
+    # pylint: disable=duplicate-code
     (
         mip,
         best_global_index,
