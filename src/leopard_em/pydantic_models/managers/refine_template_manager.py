@@ -295,6 +295,7 @@ class RefineTemplateManager(BaseModel2DTM):
             allow_file_overwrite=allow_file_overwrite,
         )
 
+    # pylint: disable=too-many-positional-arguments,too-many-arguments
     def run_differentiable_refine(
         self,
         output_dataframe_path: str,

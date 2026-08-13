@@ -41,7 +41,10 @@ from leopard_em.pydantic_models.custom_types import (
     ExcludedTensor,
     ExcludedTensorDict,
 )
-from leopard_em.pydantic_models.formats import MATCH_TEMPLATE_DF_COLUMN_ORDER
+from leopard_em.pydantic_models.formats import (
+    MATCH_TEMPLATE_DF_COLUMN_ORDER,
+    STATISTIC_MAP_PATH_COLUMNS,
+)
 from leopard_em.utils.data_io import load_mrc_image
 from leopard_em.utils.image_processing import dose_weight_movie_to_micrograph
 
@@ -58,14 +61,7 @@ _HDF5_STRING_DTYPE = h5py.string_dtype()
 
 # Full-micrograph 2DTM result maps extracted per-particle by
 # ``get_local_stat_maps`` when no explicit columns are requested.
-_DEFAULT_LOCAL_STAT_COLUMNS = (
-    "mip_path",
-    "scaled_mip_path",
-    "psi_path",
-    "theta_path",
-    "phi_path",
-    "defocus_path",
-)
+_DEFAULT_LOCAL_STAT_COLUMNS = tuple(STATISTIC_MAP_PATH_COLUMNS)
 
 
 # TODO: Make this a shared utility function across the package somehow

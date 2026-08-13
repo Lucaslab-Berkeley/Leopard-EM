@@ -1,5 +1,16 @@
 """Submodule for shared formats used in pydantic models."""
 
+# Full-micrograph 2DTM result map paths, shared across the column-order
+# lists below and by ``_DEFAULT_LOCAL_STAT_COLUMNS`` in particle_stack.py.
+STATISTIC_MAP_PATH_COLUMNS = [
+    "mip_path",
+    "scaled_mip_path",
+    "psi_path",
+    "theta_path",
+    "phi_path",
+    "defocus_path",
+]
+
 MATCH_TEMPLATE_DF_COLUMN_ORDER = [
     "particle_index",
     "mip",
