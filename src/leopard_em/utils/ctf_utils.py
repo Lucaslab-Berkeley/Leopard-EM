@@ -13,7 +13,10 @@ from leopard_em.utils.search_utils import get_cs_range
 # Using the TYPE_CHECKING statement to avoid circular imports
 if TYPE_CHECKING:
     from leopard_em.pydantic_models.data_structures.optics_group import OpticsGroup
-    from leopard_em.pydantic_models.data_structures.particle_stack import ParticleStack
+    from leopard_em.pydantic_models.data_structures.particle_stack import (
+        ParticleStackCSV,
+        ParticleStackHDF5,
+    )
 
 
 def move_ctf_kwargs_tensors_to_device(
@@ -229,13 +232,14 @@ def _parse_json_string_from_series_value(value: Any) -> dict | None:
 
 
 def _setup_ctf_kwargs_from_particle_stack(
-    particle_stack: "ParticleStack", template_shape: tuple[int, int]
+    particle_stack: "ParticleStackCSV | ParticleStackHDF5",
+    template_shape: tuple[int, int],
 ) -> dict[str, Any]:
     """Helper function for per-particle CTF kwargs.
 
     Parameters
     ----------
-    particle_stack : ParticleStack
+    particle_stack : ParticleStackCSV | ParticleStackHDF5
         The particle stack to extract the CTF parameters from.
     template_shape : tuple[int, int]
         The shape of the template to use for the CTF calculation.

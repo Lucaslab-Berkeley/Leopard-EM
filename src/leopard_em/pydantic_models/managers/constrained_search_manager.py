@@ -18,7 +18,10 @@ from leopard_em.pydantic_models.config import (
     PreprocessingFilters,
 )
 from leopard_em.pydantic_models.custom_types import BaseModel2DTM, ExcludedTensor
-from leopard_em.pydantic_models.data_structures import ParticleStack
+from leopard_em.pydantic_models.data_structures import (
+    ParticleStackCSV,
+    ParticleStackHDF5,
+)
 from leopard_em.pydantic_models.formats import CONSTRAINED_DF_COLUMN_ORDER
 from leopard_em.utils.backend_setup import (
     _setup_correlation_stacks_from_micrographs,
@@ -42,9 +45,12 @@ class ConstrainedSearchManager(BaseModel2DTM):
         Path to the template volume MRC file.
     center_vector : list[float]
         The centre vector of the template volume.
-    particle_stack_reference : ParticleStack
-        Particle stack object containing particle data reference particles.
-    particle_stack_constrained : ParticleStack
+    particle_stack_reference : ParticleStackCSV | ParticleStackHDF5
+        Particle stack object containing particle data reference particles. Use
+        ``ParticleStackCSV`` for a CSV-backed particle table or
+        ``ParticleStackHDF5`` for an HDF5-backed one. Both expose the same in-memory
+        API.
+    particle_stack_constrained : ParticleStackCSV | ParticleStackHDF5
         Particle stack object containing particle data constrained particles.
     defocus_refinement_config : DefocusSearchConfig
         Configuration for defocus refinement.
@@ -75,8 +81,8 @@ class ConstrainedSearchManager(BaseModel2DTM):
     template_volume_path: str  # In df per-particle, but ensure only one reference
     center_vector: list[float] = Field(default=[0.0, 0.0, 0.0])
 
-    particle_stack_reference: ParticleStack
-    particle_stack_constrained: ParticleStack
+    particle_stack_reference: ParticleStackCSV | ParticleStackHDF5
+    particle_stack_constrained: ParticleStackCSV | ParticleStackHDF5
     defocus_refinement_config: DefocusSearchConfig
     orientation_refinement_config: ConstrainedOrientationConfig
     preprocessing_filters: PreprocessingFilters

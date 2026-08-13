@@ -19,7 +19,10 @@ from leopard_em.pydantic_models.config import (
     RefineOrientationConfig,
 )
 from leopard_em.pydantic_models.custom_types import BaseModel2DTM, ExcludedTensor
-from leopard_em.pydantic_models.data_structures import ParticleStack
+from leopard_em.pydantic_models.data_structures import (
+    ParticleStackCSV,
+    ParticleStackHDF5,
+)
 from leopard_em.pydantic_models.formats import REFINED_DF_COLUMN_ORDER
 from leopard_em.utils.backend_setup import setup_particle_backend_kwargs
 from leopard_em.utils.data_io import (
@@ -36,8 +39,10 @@ class RefineTemplateManager(BaseModel2DTM):
     ----------
     template_volume_path : str
         Path to the template volume MRC file.
-    particle_stack : ParticleStack
-        Particle stack object containing particle data.
+    particle_stack : ParticleStackCSV | ParticleStackHDF5
+        Particle stack object containing particle data. Use ``ParticleStackCSV`` for a
+        CSV-backed particle table or ``ParticleStackHDF5`` for an HDF5-backed one. Both
+        expose the same in-memory API.
     defocus_refinement_config : DefocusSearchConfig
         Configuration for defocus refinement.
     pixel_size_refinement_config : PixelSizeSearchConfig
@@ -71,7 +76,7 @@ class RefineTemplateManager(BaseModel2DTM):
     model_config: ClassVar = ConfigDict(arbitrary_types_allowed=True)
 
     template_volume_path: str  # In df per-particle, but ensure only one reference
-    particle_stack: ParticleStack
+    particle_stack: ParticleStackCSV | ParticleStackHDF5
     defocus_refinement_config: DefocusSearchConfig
     pixel_size_refinement_config: PixelSizeSearchConfig
     orientation_refinement_config: RefineOrientationConfig

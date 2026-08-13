@@ -17,13 +17,16 @@ if TYPE_CHECKING:
     from leopard_em.pydantic_models.config.correlation_filters import (
         PreprocessingFilters,
     )
-    from leopard_em.pydantic_models.data_structures.particle_stack import ParticleStack
+    from leopard_em.pydantic_models.data_structures.particle_stack import (
+        ParticleStackCSV,
+        ParticleStackHDF5,
+    )
 
 
 # pylint: disable=too-many-locals
 # pylint: disable=too-many-arguments
 def _process_particle_images_for_filters(
-    particle_stack: "ParticleStack",
+    particle_stack: "ParticleStackCSV | ParticleStackHDF5",
     preprocessing_filters: "PreprocessingFilters",
     template: torch.Tensor,
     particle_images: torch.Tensor,
@@ -40,7 +43,7 @@ def _process_particle_images_for_filters(
 
     Parameters
     ----------
-    particle_stack : ParticleStack
+    particle_stack : ParticleStackCSV | ParticleStackHDF5
         The particle stack containing images to process.
     preprocessing_filters : PreprocessingFilters
         Filters to apply to the particle images.
@@ -146,7 +149,7 @@ def _process_particle_images_for_filters(
 
 # pylint: disable=too-many-arguments
 def setup_frame_filters_particle_stack(
-    particle_stack: "ParticleStack",
+    particle_stack: "ParticleStackCSV | ParticleStackHDF5",
     preprocessing_filters: "PreprocessingFilters",
     template: torch.Tensor,
     particle_images: torch.Tensor,
@@ -180,7 +183,7 @@ def setup_frame_filters_particle_stack(
 # pylint: disable=too-many-arguments
 # pylint: disable=too-many-positional-arguments
 def _setup_images_filters_from_micrographs(
-    particle_stack: "ParticleStack",
+    particle_stack: "ParticleStackCSV | ParticleStackHDF5",
     preprocessing_filters: "PreprocessingFilters",
     template: torch.Tensor,
     apply_global_filtering: bool,
@@ -198,7 +201,7 @@ def _setup_images_filters_from_micrographs(
 
     Parameters
     ----------
-    particle_stack : ParticleStack
+    particle_stack : ParticleStackCSV | ParticleStackHDF5
         The particle stack containing images to process.
     preprocessing_filters : PreprocessingFilters
         Filters to apply to the particle images.
@@ -317,7 +320,7 @@ def _setup_images_filters_from_micrographs(
 
 # pylint: disable=too-many-arguments
 def _setup_images_filters_from_particles(
-    particle_stack: "ParticleStack",
+    particle_stack: "ParticleStackCSV | ParticleStackHDF5",
     preprocessing_filters: "PreprocessingFilters",
     template: torch.Tensor,
     apply_global_filtering: bool,
@@ -329,7 +332,7 @@ def _setup_images_filters_from_particles(
 
     Parameters
     ----------
-    particle_stack : ParticleStack
+    particle_stack : ParticleStackCSV | ParticleStackHDF5
         The particle stack containing images to process.
     preprocessing_filters : PreprocessingFilters
         Filters to apply to the particle images.
@@ -365,7 +368,7 @@ def _setup_images_filters_from_particles(
 # pylint: disable=too-many-arguments
 # pylint: disable=too-many-positional-arguments
 def setup_images_filters_particle_stack(
-    particle_stack: "ParticleStack",
+    particle_stack: "ParticleStackCSV | ParticleStackHDF5",
     preprocessing_filters: "PreprocessingFilters",
     template: torch.Tensor,
     apply_global_filtering: bool = True,
@@ -385,7 +388,7 @@ def setup_images_filters_particle_stack(
 
     Parameters
     ----------
-    particle_stack : ParticleStack
+    particle_stack : ParticleStackCSV | ParticleStackHDF5
         The particle stack containing images to process.
     preprocessing_filters : PreprocessingFilters
         Filters to apply to the particle images.
@@ -450,7 +453,7 @@ def setup_images_filters_particle_stack(
 
 # pylint: disable=too-many-arguments
 def _setup_correlation_stacks_from_micrographs(
-    particle_stack: "ParticleStack",
+    particle_stack: "ParticleStackCSV | ParticleStackHDF5",
     mean_stack: torch.Tensor | None,
     std_stack: torch.Tensor | None,
     particle_indices: list[pd.Index] | None,
@@ -461,7 +464,7 @@ def _setup_correlation_stacks_from_micrographs(
 
     Parameters
     ----------
-    particle_stack : ParticleStack
+    particle_stack : ParticleStackCSV | ParticleStackHDF5
         The particle stack containing images to process.
     mean_stack : torch.Tensor | None
         Pre-loaded mean stack tensor.
@@ -580,7 +583,7 @@ def _setup_correlation_stacks_from_particles(
 
 
 def astigmatism_angle_tensor(
-    particle_stack: "ParticleStack",
+    particle_stack: "ParticleStackCSV | ParticleStackHDF5",
     device: torch.device,
 ) -> torch.Tensor:
     """Return the per-particle astigmatism angle as a tensor on ``device``."""
@@ -591,7 +594,7 @@ def astigmatism_angle_tensor(
 # pylint: disable=too-many-arguments
 # pylint: disable=too-many-positional-arguments
 def setup_static_particle_kwargs(
-    particle_stack: "ParticleStack",
+    particle_stack: "ParticleStackCSV | ParticleStackHDF5",
     template: torch.Tensor,
     euler_angles: torch.Tensor,
     euler_angle_offsets: torch.Tensor,
@@ -613,7 +616,7 @@ def setup_static_particle_kwargs(
 
     Parameters
     ----------
-    particle_stack : ParticleStack
+    particle_stack : ParticleStackCSV | ParticleStackHDF5
         The particle stack containing images to process.
     template : torch.Tensor
         The 3D template volume (used for device and CTF output shape).
@@ -697,7 +700,7 @@ def setup_static_particle_kwargs(
 # pylint: disable=too-many-arguments
 # pylint: disable=too-many-positional-arguments
 def setup_particle_backend_kwargs(
-    particle_stack: "ParticleStack",
+    particle_stack: "ParticleStackCSV | ParticleStackHDF5",
     template: torch.Tensor,
     preprocessing_filters: "PreprocessingFilters",
     euler_angles: torch.Tensor,
@@ -724,7 +727,7 @@ def setup_particle_backend_kwargs(
 
     Parameters
     ----------
-    particle_stack : ParticleStack
+    particle_stack : ParticleStackCSV | ParticleStackHDF5
         The particle stack containing images to process.
     template : torch.Tensor
         The 3D template volume.

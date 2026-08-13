@@ -13,10 +13,10 @@ As with match template results, particle stacks support two storage back-ends.
     Both back-ends are subclasses of a shared (non-instantiable) base class and expose the same in-memory API (`get_euler_angles()`, `get_relative_defocus()`, `construct_image_stack(...)`, etc.) — only how the particle table (and optionally particle images) are read from and written to disk differs.
     `ParticleStack` remains available as a backward-compatible alias for `ParticleStackCSV`.
 
-!!! warning "`refine_template` currently only supports the CSV back-end"
+!!! note "`refine_template`, `optimize_template`, and `constrained_search` accept either back-end, output is still CSV"
 
-    Unlike `match_template`, the `refine_template` program (and `PeakInspectionManager`/`FrameInspectionManager`, which subclass it) is CSV-in, CSV-out: `RefineTemplateManager.particle_stack` is typed as plain `ParticleStack` (i.e. `ParticleStackCSV`), not a CSV/HDF5 union, and `run_refine_template(...)` always writes its refined DataFrame with `to_csv(...)`.
-    There is currently no way to pass a `ParticleStackHDF5` into `refine_template` or to have it write an HDF5-backed result directly.
+    `RefineTemplateManager.particle_stack`, `OptimizeTemplateManager.particle_stack`, and `ConstrainedSearchManager.particle_stack_reference`/`particle_stack_constrained` are all typed as `ParticleStackCSV | ParticleStackHDF5`, so a `ParticleStackHDF5` can be passed in directly wherever a particle stack input is required.
+    Output is still CSV-only: `run_refine_template(...)`, `run_constrained_search(...)`, and the CSV export in `optimize_template` always write the refined DataFrame with `to_csv(...)`, regardless of which back-end the input particle stack used.
     If you want an HDF5-backed particle stack after refinement, convert the refined CSV manually with `ParticleStackCSV.to_hdf5(...)` as a separate post-processing step (see below).
 
 ### CSV back-end (`ParticleStackCSV`)

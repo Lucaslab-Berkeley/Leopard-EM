@@ -15,7 +15,10 @@ from leopard_em.pydantic_models.config import (
     PreprocessingFilters,
 )
 from leopard_em.pydantic_models.custom_types import BaseModel2DTM, ExcludedTensor
-from leopard_em.pydantic_models.data_structures import ParticleStack
+from leopard_em.pydantic_models.data_structures import (
+    ParticleStackCSV,
+    ParticleStackHDF5,
+)
 from leopard_em.pydantic_models.formats import REFINED_DF_COLUMN_ORDER
 from leopard_em.utils.backend_setup import setup_particle_backend_kwargs
 
@@ -25,8 +28,10 @@ class OptimizeTemplateManager(BaseModel2DTM):
 
     Attributes
     ----------
-    particle_stack : ParticleStack
-        Particle stack object containing particle data.
+    particle_stack : ParticleStackCSV | ParticleStackHDF5
+        Particle stack object containing particle data. Use ``ParticleStackCSV``
+        for a CSV-backed particle table or ``ParticleStackHDF5`` for an HDF5-backed one.
+        Both expose the same in-memory API.
     pixel_size_coarse_search : PixelSizeSearchConfig
         Configuration for pixel size coarse search.
     pixel_size_fine_search : PixelSizeSearchConfig
@@ -55,7 +60,7 @@ class OptimizeTemplateManager(BaseModel2DTM):
 
     model_config: ClassVar = ConfigDict(arbitrary_types_allowed=True)
 
-    particle_stack: ParticleStack
+    particle_stack: ParticleStackCSV | ParticleStackHDF5
     pixel_size_coarse_search: PixelSizeSearchConfig
     pixel_size_fine_search: PixelSizeSearchConfig
     preprocessing_filters: PreprocessingFilters

@@ -10,7 +10,10 @@ if TYPE_CHECKING:
     from leopard_em.pydantic_models.config.correlation_filters import (
         PreprocessingFilters,
     )
-    from leopard_em.pydantic_models.data_structures.particle_stack import ParticleStack
+    from leopard_em.pydantic_models.data_structures.particle_stack import (
+        ParticleStackCSV,
+        ParticleStackHDF5,
+    )
 
 
 def preprocess_image(
@@ -113,7 +116,7 @@ def get_image_normalization_factor(
 
 
 def apply_image_filtering(
-    particle_stack: "ParticleStack",
+    particle_stack: "ParticleStackCSV | ParticleStackHDF5",
     preprocessing_filters: "PreprocessingFilters",
     images_dft: torch.Tensor,
     full_image_shape: tuple[int, int],
@@ -125,7 +128,7 @@ def apply_image_filtering(
 
     Parameters
     ----------
-    particle_stack : ParticleStack
+    particle_stack : ParticleStackCSV | ParticleStackHDF5
         The particle stack
     preprocessing_filters : PreprocessingFilters
         Filters to apply to the images.
