@@ -451,7 +451,11 @@ class OptimizeTemplateManager(BaseModel2DTM):
         result: dict[str, np.ndarray],
         prefer_refined_angles: bool = True,
     ) -> None:
-        """Convert refine template result to dataframe.
+        """Convert refine template result to a dataframe and write it to CSV.
+
+        NOTE: This always writes CSV, regardless of the input particle_stack's
+        back-end. It is only used to dump intermediate, per-pixel-size
+        diagnostic results during the pixel size search.
 
         Parameters
         ----------

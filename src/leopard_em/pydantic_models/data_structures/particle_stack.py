@@ -69,6 +69,30 @@ def _any_nan_or_inf(s: pd.Series) -> bool:
     return bool(s.isna().any() or s.isin([float("inf"), float("-inf")]).any())
 
 
+def _check_output_path(path: str, allow_file_overwrite: bool) -> None:
+    """Ensure ``path``'s parent directory is writable and overwrite policy is met.
+
+    Creates the parent directory if it does not already exist.
+
+    Raises
+    ------
+    ValueError
+        If the parent directory is not writable, or the file already exists
+        and ``allow_file_overwrite`` is False.
+    """
+    directory = str(Path(path).parent)
+    if directory and not os.path.exists(directory):
+        os.makedirs(directory, exist_ok=True)
+    if directory and not os.access(directory, os.W_OK):
+        raise ValueError(
+            f"Directory '{directory}' does not permit writing to '{path}'."
+        )
+    if not allow_file_overwrite and os.path.exists(path):
+        raise ValueError(
+            f"File '{path}' already exists but 'allow_file_overwrite' is False."
+        )
+
+
 def _generate_particle_ids(df: pd.DataFrame) -> list[str]:
     """Generate particle IDs of the form ``{mic_stem}_{local_idx:05d}``."""
     ids: pd.Series = pd.Series("", index=df.index, dtype=object)
@@ -1403,6 +1427,28 @@ class ParticleStackCSV(_ParticleStackBase):
 
         self._df = tmp_df
 
+    # ---------------------------------------------------------------------------
+    # I/O methods
+    # ---------------------------------------------------------------------------
+
+    def export_results(self, allow_file_overwrite: bool = False) -> None:
+        """Write the particle table to ``df_path`` as CSV.
+
+        Parameters
+        ----------
+        allow_file_overwrite : bool
+            Whether to overwrite an existing file at ``df_path``. Default is
+            False.
+
+        Raises
+        ------
+        ValueError
+            If the parent directory is not writable, or ``df_path`` already
+            exists and ``allow_file_overwrite`` is False.
+        """
+        _check_output_path(self.df_path, allow_file_overwrite)
+        self._df.to_csv(self.df_path)
+
     def to_hdf5(
         self,
         hdf5_path: str,
@@ -1540,19 +1586,7 @@ class ParticleStackHDF5(_ParticleStackBase):
             If the path is not writable or the file exists and overwrite is
             disabled.
         """
-        directory = str(Path(self.hdf5_path).parent)
-        if directory and not os.path.exists(directory):
-            os.makedirs(directory, exist_ok=True)
-        if directory and not os.access(directory, os.W_OK):
-            raise ValueError(
-                f"Directory '{directory}' does not permit writing to "
-                f"'{self.hdf5_path}'."
-            )
-        if not self.allow_file_overwrite and os.path.exists(self.hdf5_path):
-            raise ValueError(
-                f"File '{self.hdf5_path}' already exists but "
-                "'allow_file_overwrite' is False."
-            )
+        _check_output_path(self.hdf5_path, self.allow_file_overwrite)
         return self
 
     ###########################
@@ -1578,6 +1612,20 @@ class ParticleStackHDF5(_ParticleStackBase):
     ###########################
     ### I/O methods         ###
     ###########################
+
+    def export_results(
+        self,
+        include_image_stack: bool = False,
+        include_local_stats: bool = False,
+    ) -> None:
+        """Write the particle table (and optional tensors) to ``hdf5_path``.
+
+        Alias for ``to_hdf5``, kept for API symmetry with ``ParticleStackCSV``.
+        """
+        self.to_hdf5(
+            include_image_stack=include_image_stack,
+            include_local_stats=include_local_stats,
+        )
 
     def to_hdf5(
         self,
@@ -1735,6 +1783,105 @@ class ParticleStackHDF5(_ParticleStackBase):
         )
         instance._df = df
         return instance
+
+
+# ---------------------------------------------------------------------------
+# Shared result-export helper
+# ---------------------------------------------------------------------------
+
+
+def export_particle_stack(
+    df: pd.DataFrame,
+    output_path: str,
+    source_particle_stack: "_ParticleStackBase",
+    output_format: Literal["csv", "hdf5"] | None = None,
+    allow_file_overwrite: bool = False,
+) -> "ParticleStackCSV | ParticleStackHDF5":
+    """Wrap a particle-result DataFrame in a ParticleStack and write it to disk.
+
+    Notes
+    -----
+    Used by the refine/optimize/constrained-search managers so that their output back-
+    end matches the back-end of the input particle stack by default, while still
+    allowing an explicit override. The DataFrame is only an intermediate — the returned
+    object is the actual particle stack, reusable directly (e.g. fed into the next
+    program) without re-reading from disk.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        The particle table to write (e.g. a refined result table). Must be a superset of
+        the columns a `ParticleStackCSV`/`ParticleStackHDF5` expects; extra columns
+        (e.g. `refined_*`) are preserved as-is.
+    output_path : str
+        Destination file path.
+    source_particle_stack : _ParticleStackBase
+        The particle stack `df` was derived from. Supplies the default output format
+        (matches its own back-end) and the shared box-size/pre-processing metadata to
+        carry over to the new instance.
+    output_format : Literal["csv", "hdf5"] | None
+        Explicit output back-end. If None (default), inferred from
+        ``type(source_particle_stack)``: ``ParticleStackHDF5`` -> "hdf5", otherwise
+        "csv".
+    allow_file_overwrite : bool
+        Whether to overwrite an existing file at ``output_path``. Default is False.
+
+    Returns
+    -------
+    ParticleStackCSV | ParticleStackHDF5
+        The newly constructed particle stack, already written to
+        ``output_path``.
+
+    Raises
+    ------
+    ValueError
+        If ``output_format`` is not one of "csv" or "hdf5".
+    """
+    if output_format is None:
+        output_format = (
+            "hdf5" if isinstance(source_particle_stack, ParticleStackHDF5) else "csv"
+        )
+
+    shared_kwargs: dict[str, Any] = {
+        "extracted_box_size": source_particle_stack.extracted_box_size,
+        "original_template_size": source_particle_stack.original_template_size,
+        "leopard_em_version": source_particle_stack.leopard_em_version,
+        "global_whitening_applied": source_particle_stack.global_whitening_applied,
+        "local_whitening_applied": source_particle_stack.local_whitening_applied,
+        "global_normalization_applied": (
+            source_particle_stack.global_normalization_applied
+        ),
+        "local_normalization_applied": source_particle_stack.local_normalization_applied,  # noqa: E501
+        "skip_df_load": True,
+    }
+
+    if output_format == "csv":
+        csv_stack = ParticleStackCSV(df_path=output_path, **shared_kwargs)
+        csv_stack._df = df  # pylint: disable=protected-access
+        csv_stack.export_results(allow_file_overwrite=allow_file_overwrite)
+        return csv_stack
+
+    if output_format != "hdf5":
+        raise ValueError(
+            f"Unknown output_format '{output_format}'; expected 'csv' or 'hdf5'."
+        )
+
+    df_out = df
+    if df_out.index.name != "particle_id" and "particle_id" not in df_out.columns:
+        df_out = df_out.copy()
+        particle_ids = _generate_particle_ids(df_out)
+        df_out.insert(0, "particle_id", particle_ids)
+        df_out = df_out.set_index("particle_id")
+        df_out.index.name = "particle_id"
+
+    hdf5_stack = ParticleStackHDF5(
+        hdf5_path=output_path,
+        allow_file_overwrite=allow_file_overwrite,
+        **shared_kwargs,
+    )
+    hdf5_stack._df = df_out  # pylint: disable=protected-access
+    hdf5_stack.export_results()
+    return hdf5_stack
 
 
 # ---------------------------------------------------------------------------

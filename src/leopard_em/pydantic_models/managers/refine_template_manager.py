@@ -1,6 +1,6 @@
 """Pydantic model for running the refine template program."""
 
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Literal
 
 import numpy as np
 import pandas as pd
@@ -22,6 +22,7 @@ from leopard_em.pydantic_models.custom_types import BaseModel2DTM, ExcludedTenso
 from leopard_em.pydantic_models.data_structures import (
     ParticleStackCSV,
     ParticleStackHDF5,
+    export_particle_stack,
 )
 from leopard_em.pydantic_models.formats import REFINED_DF_COLUMN_ORDER
 from leopard_em.utils.backend_setup import setup_particle_backend_kwargs
@@ -71,6 +72,12 @@ class RefineTemplateManager(BaseModel2DTM):
         Create the kwargs for the backend refine_template core function.
     run_refine_template(self, correlation_batch_size: int = 32) -> None
         Run the refine template program.
+    refine_result_to_dataframe(self, result, prefer_refined_angles: bool = True)
+        -> pd.DataFrame
+        Build the refined particle DataFrame from a backend result (no I/O).
+    export_results(self, output_dataframe_path: str, result, ...) -> None
+        Build the refined DataFrame and write it to disk, matching the input
+        particle_stack's back-end by default (override with `output_format`).
     """
 
     model_config: ClassVar = ConfigDict(arbitrary_types_allowed=True)
@@ -255,9 +262,13 @@ class RefineTemplateManager(BaseModel2DTM):
         )
 
     def run_refine_template(
-        self, output_dataframe_path: str, correlation_batch_size: int = 32
+        self,
+        output_dataframe_path: str,
+        correlation_batch_size: int = 32,
+        output_format: Literal["csv", "hdf5"] | None = None,
+        allow_file_overwrite: bool = False,
     ) -> None:
-        """Run the refine template program and saves the resultant DataFrame to csv.
+        """Run the refine template program and export the resultant DataFrame.
 
         Parameters
         ----------
@@ -265,13 +276,23 @@ class RefineTemplateManager(BaseModel2DTM):
             Path to save the refined particle data.
         correlation_batch_size : int
             Number of cross-correlations to process in one batch, defaults to 32.
+        output_format : Literal["csv", "hdf5"] | None
+            Output back-end to write. Defaults to None, which matches the back-end of
+            ``self.particle_stack`` (CSV in, CSV out; HDF5 in, HDF5 out). Pass "csv" or
+            "hdf5" to override.
+        allow_file_overwrite : bool
+            Whether to overwrite an existing file at ``output_dataframe_path``. Defaults
+            to False.
         """
         backend_kwargs = self.make_backend_core_function_kwargs()
 
         result = self.get_refine_result(backend_kwargs, correlation_batch_size)
 
-        self.refine_result_to_dataframe(
-            output_dataframe_path=output_dataframe_path, result=result
+        self.export_results(
+            output_dataframe_path=output_dataframe_path,
+            result=result,
+            output_format=output_format,
+            allow_file_overwrite=allow_file_overwrite,
         )
 
     def run_differentiable_refine(
@@ -284,8 +305,10 @@ class RefineTemplateManager(BaseModel2DTM):
         template_tensor: torch.Tensor | None = None,
         correlation_batch_size: int = 32,
         images_are_particles: bool = False,
+        output_format: Literal["csv", "hdf5"] | None = None,
+        allow_file_overwrite: bool = False,
     ) -> None:
-        """Run the differentiable refine template program and saves DataFrame to csv.
+        """Run the differentiable refine template program and export the DataFrame.
 
         Parameters
         ----------
@@ -306,6 +329,13 @@ class RefineTemplateManager(BaseModel2DTM):
             Number of cross-correlations to process in one batch, defaults to 32.
         images_are_particles : bool
             Whether the images are particles or not. Defaults to False.
+        output_format : Literal["csv", "hdf5"] | None
+            Output back-end to write. Defaults to None, which matches the back-end of
+            ``self.particle_stack`` (CSV in, CSV out; HDF5 in, HDF5 out). Pass "csv" or
+            "hdf5" to override.
+        allow_file_overwrite : bool
+            Whether to overwrite an existing file at ``output_dataframe_path``. Defaults
+            to False.
 
         """
         backend_kwargs = self.make_differentiable_backend_kwargs(
@@ -321,8 +351,11 @@ class RefineTemplateManager(BaseModel2DTM):
             backend_kwargs, correlation_batch_size, use_differentiable=True
         )
 
-        self.refine_result_to_dataframe(
-            output_dataframe_path=output_dataframe_path, result=result
+        self.export_results(
+            output_dataframe_path=output_dataframe_path,
+            result=result,
+            output_format=output_format,
+            allow_file_overwrite=allow_file_overwrite,
         )
 
     def get_refine_result(
@@ -369,21 +402,24 @@ class RefineTemplateManager(BaseModel2DTM):
     # pylint: disable=too-many-locals
     def refine_result_to_dataframe(
         self,
-        output_dataframe_path: str,
         result: dict[str, np.ndarray | torch.Tensor],
         prefer_refined_angles: bool = True,
-    ) -> None:
-        """Convert refine template result to dataframe.
+    ) -> pd.DataFrame:
+        """Convert refine template result to a DataFrame.
 
         Parameters
         ----------
-        output_dataframe_path : str
-            Path to save the refined particle data.
         result : dict[str, np.ndarray | torch.Tensor]
             The result of the refine template program. Can contain either
             np.ndarray (regular refine) or torch.Tensor (differentiable refine).
         prefer_refined_angles : bool
             Whether to use the refined angles or not. Defaults to True.
+
+        Returns
+        -------
+        pd.DataFrame
+            The refined particle data. Not written to disk; use ``export_results`` to do
+            both in one call.
         """
         # pylint: disable=duplicate-code
         df_refined = self.particle_stack._df.copy()  # pylint: disable=protected-access
@@ -484,5 +520,49 @@ class RefineTemplateManager(BaseModel2DTM):
         # Reorder the columns
         df_refined = df_refined.reindex(columns=REFINED_DF_COLUMN_ORDER)
 
-        # Save the refined DataFrame to disk
-        df_refined.to_csv(output_dataframe_path)
+        return df_refined
+
+    def export_results(
+        self,
+        output_dataframe_path: str,
+        result: dict[str, np.ndarray | torch.Tensor],
+        prefer_refined_angles: bool = True,
+        output_format: Literal["csv", "hdf5"] | None = None,
+        allow_file_overwrite: bool = False,
+    ) -> ParticleStackCSV | ParticleStackHDF5:
+        """Build the refined DataFrame and write it to disk.
+
+        Parameters
+        ----------
+        output_dataframe_path : str
+            Path to save the refined particle data.
+        result : dict[str, np.ndarray | torch.Tensor]
+            The result of the refine template program. Can contain either np.ndarray
+            (regular refine) or torch.Tensor (differentiable refine).
+        prefer_refined_angles : bool
+            Whether to use the refined angles or not. Defaults to True.
+        output_format : Literal["csv", "hdf5"] | None
+            Output back-end to write. Defaults to None, which matches the back-end of
+            ``self.particle_stack`` (CSV in, CSV out; HDF5 in, HDF5 out). Pass "csv" or
+            "hdf5" to override.
+        allow_file_overwrite : bool
+            Whether to overwrite an existing file at ``output_dataframe_path``. Defaults
+            to False.
+
+        Returns
+        -------
+        ParticleStackCSV | ParticleStackHDF5
+            The refined particle stack, already written to ``output_dataframe_path``.
+            Reuse directly instead of re-reading from disk if feeding into another
+            program.
+        """
+        df_refined = self.refine_result_to_dataframe(
+            result=result, prefer_refined_angles=prefer_refined_angles
+        )
+        return export_particle_stack(
+            df=df_refined,
+            output_path=output_dataframe_path,
+            source_particle_stack=self.particle_stack,
+            output_format=output_format,
+            allow_file_overwrite=allow_file_overwrite,
+        )

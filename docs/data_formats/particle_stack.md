@@ -13,11 +13,36 @@ As with match template results, particle stacks support two storage back-ends.
     Both back-ends are subclasses of a shared (non-instantiable) base class and expose the same in-memory API (`get_euler_angles()`, `get_relative_defocus()`, `construct_image_stack(...)`, etc.) — only how the particle table (and optionally particle images) are read from and written to disk differs.
     `ParticleStack` remains available as a backward-compatible alias for `ParticleStackCSV`.
 
-!!! note "`refine_template`, `optimize_template`, and `constrained_search` accept either back-end, output is still CSV"
+!!! note "`refine_template` and `constrained_search` output matches the input back-end by default"
 
     `RefineTemplateManager.particle_stack`, `OptimizeTemplateManager.particle_stack`, and `ConstrainedSearchManager.particle_stack_reference`/`particle_stack_constrained` are all typed as `ParticleStackCSV | ParticleStackHDF5`, so a `ParticleStackHDF5` can be passed in directly wherever a particle stack input is required.
-    Output is still CSV-only: `run_refine_template(...)`, `run_constrained_search(...)`, and the CSV export in `optimize_template` always write the refined DataFrame with `to_csv(...)`, regardless of which back-end the input particle stack used.
-    If you want an HDF5-backed particle stack after refinement, convert the refined CSV manually with `ParticleStackCSV.to_hdf5(...)` as a separate post-processing step (see below).
+
+    `ConstrainedSearchManager.export_results(...)` additionally writes two small CSV sibling tables — `<base>_parameters.csv` (search parameters and the false-positive threshold) and `<base>_above_threshold.csv` (rows above that threshold) — derived from the base of `output_dataframe_path` regardless of the main table's `output_format`.
+
+    `OptimizeTemplateManager`'s optional per-pixel-size diagnostic dumps (`write_individual_csv`) are intermediate debug artifacts, not the program's primary output, and remain hardcoded to CSV.
+
+    To convert an existing CSV-backed refined table to HDF5 after the fact, use `ParticleStackCSV.to_hdf5(...)` as a separate post-processing step (see below), or see [exporting results](#exporting-refined-results) for the general-purpose helper.
+
+### Exporting refined results
+
+`RefineTemplateManager.export_results(...)` and `ConstrainedSearchManager.export_results(...)` build the refined particle table and write it to disk, then **return the newly-written particle stack instance** (a `ParticleStackCSV` or `ParticleStackHDF5`, matching whichever `output_format` was used) — reuse it directly as input to the next program in a pipeline instead of re-reading it from disk:
+
+```python
+result_stack = refine_manager.export_results(
+    output_dataframe_path="/some/path/to/refined.h5",
+    result=refine_result,
+    output_format="hdf5",  # omit to match the input particle_stack's back-end
+)
+# result_stack is a ready-to-use ParticleStackHDF5 — e.g. feed it straight into
+# ConstrainedSearchManager(particle_stack_reference=result_stack, ...)
+```
+<!-- 
+Both `ParticleStackCSV` and `ParticleStackHDF5` also expose a symmetric `export_results(...)` method for writing an existing instance's own table back to its own path (`df_path`/`hdf5_path`):
+
+- `ParticleStackCSV.export_results(allow_file_overwrite=False)` — writes `self._df` to `self.df_path`, now validating write permissions and the overwrite policy the same way the HDF5 back-end always has (previously, writing a CSV silently ignored `allow_file_overwrite` and could clobber an existing file).
+- `ParticleStackHDF5.export_results(include_image_stack=False, include_local_stats=False)` — alias for `to_hdf5(...)`.
+
+Internally, both managers build their output through the shared `export_particle_stack(df, output_path, source_particle_stack, output_format=None, allow_file_overwrite=False)` helper (`leopard_em.pydantic_models.data_structures.export_particle_stack`), which infers `output_format` from `type(source_particle_stack)` when not given, constructs the appropriate `ParticleStackCSV`/`ParticleStackHDF5` around the result table, calls its `export_results(...)`, and returns it. -->
 
 ### CSV back-end (`ParticleStackCSV`)
 
