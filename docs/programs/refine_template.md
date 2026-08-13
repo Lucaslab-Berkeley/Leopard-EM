@@ -154,5 +154,5 @@ In addition to the YAML configuration path, there are the additional variables `
 The latter variable is used to process multiple particles at once since we want to maximize hardware utilization.
 But this parameter also needs to balance available GPU memory.
 
-The former variable, `DATAFRAME_OUTPUT_PATH`, will write a new particle stack csv file with new columns corresponding to the refined position, orientation, defocus, and pixel size on a per-particle basis.
-More details on the particle stack csv format can be found on the [Leopard-EM data formats page](../data_formats.md).
+The former variable, `DATAFRAME_OUTPUT_PATH`, will write a new particle stack file with new columns corresponding to the refined position, orientation, defocus, and pixel size on a per-particle basis — as CSV or HDF5, matching the input `particle_stack`'s back-end by default (or override via `output_format` on `run_refine_template(...)`).
+More details on the particle stack csv/HDF5 formats can be found on the [Leopard-EM data formats page](../data_formats.md) and the [particle stack formats page](../data_formats/particle_stack.md).
