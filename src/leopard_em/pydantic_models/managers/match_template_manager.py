@@ -16,9 +16,11 @@ from leopard_em.backend.core_match_template_distributed import (
 from leopard_em.pydantic_models.config import (
     ComputationalConfigMatch,
     DefocusSearchConfig,
+    FilamentConstraint,
     MultipleOrientationConfig,
     OrientationSearchConfig,
     PreprocessingFilters,
+    SpatialConstraintMaps,
 )
 from leopard_em.pydantic_models.custom_types import BaseModel2DTM, ExcludedTensor
 from leopard_em.pydantic_models.data_structures import OpticsGroup
@@ -109,6 +111,9 @@ class MatchTemplateManager(BaseModel2DTM):
     # Non-serialized large array-like attributes
     micrograph: ExcludedTensor
     template_volume: ExcludedTensor
+    eligible_pixels: ExcludedTensor = None
+    n_orientations_map: ExcludedTensor = None
+    stats_from_valid_orientations: bool = False
 
     ###########################
     ### Pydantic Validators ###
@@ -137,6 +142,33 @@ class MatchTemplateManager(BaseModel2DTM):
             # Load the data from the MRC files
             self.micrograph = load_mrc_image(self.micrograph_path)
             self.template_volume = load_mrc_volume(self.template_volume_path)
+
+    def apply_spatial_constraint(
+        self,
+        maps: SpatialConstraintMaps,
+        stats_from_valid_orientations: bool = False,
+    ) -> None:
+        """Install stats-map-coordinate spatial masks for the next search."""
+        self.eligible_pixels = torch.from_numpy(maps.eligible.astype(bool))
+        self.n_orientations_map = torch.from_numpy(
+            maps.n_orientations.astype("int32")
+        )
+        self.stats_from_valid_orientations = stats_from_valid_orientations
+
+    def apply_filament_constraint(self, constraint: FilamentConstraint) -> None:
+        """Replace orientation search and optional spatial maps from a sidecar."""
+        self.orientation_search_config = constraint.to_orientation_config()
+        if self.micrograph is None:
+            self.micrograph = load_mrc_image(self.micrograph_path)
+        image = self.micrograph
+        image_shape = (int(image.shape[-2]), int(image.shape[-1]))
+        template_width = int(mrcfile.open(self.template_volume_path).header.nx)
+        maps = constraint.stats_maps_for_template(image_shape, template_width)
+        if maps is not None:
+            self.apply_spatial_constraint(
+                maps,
+                stats_from_valid_orientations=constraint.stats_from_valid_orientations,
+            )
 
     ############################################
     ### Functional (data processing) methods ###
@@ -224,6 +256,12 @@ class MatchTemplateManager(BaseModel2DTM):
             "pixel_values": pixel_size_offsets,
             "device": self.computational_config.gpu_devices,
             "mag_matrix": self.optics_group.mag_matrix_tensor,
+            "eligible_pixels": (
+                None
+                if self.eligible_pixels is None
+                else torch.as_tensor(self.eligible_pixels, dtype=torch.bool)
+            ),
+            "stats_from_valid_orientations": self.stats_from_valid_orientations,
         }
 
     def run_match_template(
@@ -437,12 +475,25 @@ class MatchTemplateManager(BaseModel2DTM):
         pd.DataFrame
             DataFrame containing the match template results.
         """
-        # Short circuit if no kwargs and peaks have already been located
-        if locate_peaks_kwargs is None:
-            if self.match_template_result.match_template_peaks is None:
-                self.match_template_result.locate_peaks()
-        else:
-            self.match_template_result.locate_peaks(**locate_peaks_kwargs)
+        locate_kwargs = dict(locate_peaks_kwargs or {})
+        if self.n_orientations_map is not None:
+            n_orients = self.n_orientations_map
+            if not isinstance(n_orients, torch.Tensor):
+                n_orients = torch.as_tensor(n_orients)
+            locate_kwargs.setdefault("n_orientations_map", n_orients)
+            locate_kwargs.setdefault(
+                "n_defocus", int(self.match_template_result.total_defocus) or 1
+            )
+            n_cs = 1
+            total_orient = int(self.match_template_result.total_orientations) or 1
+            total_proj = int(self.match_template_result.total_projections)
+            total_def = int(self.match_template_result.total_defocus) or 1
+            if total_orient > 0 and total_def > 0 and total_proj > 0:
+                n_cs = max(1, total_proj // (total_orient * total_def))
+            locate_kwargs.setdefault("n_cs", n_cs)
+
+        if locate_kwargs or self.match_template_result.match_template_peaks is None:
+            self.match_template_result.locate_peaks(**locate_kwargs)
 
         # DataFrame comes with the following columns :
         # ['mip', 'scaled_mip', 'correlation_mean', 'correlation_variance',

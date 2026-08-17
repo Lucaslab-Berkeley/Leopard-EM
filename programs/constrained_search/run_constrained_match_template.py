@@ -2,7 +2,9 @@
 
 This is the standard match-template program. If CONSTRAINT_YAML_PATH points at
 a sidecar written by ``napari_choose_constraint.py``, that file replaces
-``orientation_search_config`` in the match-template YAML.
+``orientation_search_config`` in the match-template YAML and, if present,
+loads the per-pixel spatial constraint HDF5 for mask-before-max MIP updates
+and the z-score ``num_ccg`` count.
 """
 
 import time
@@ -27,6 +29,32 @@ DATAFRAME_OUTPUT_PATH = "/path/to/constrained-match-template-results.csv"
 # Number of orientations to cross-correlate simultaneously.
 ORIENTATION_BATCH_SIZE = 8
 
+# How mean and variance (the z-score background) are accumulated.
+#
+# The MIP is always the best *allowed* (pixel, orientation) pair: angles
+# outside the Euler box, and pixels outside the spatial box, cannot win.
+#
+# Mean / variance are separate. They answer "what does a typical correlation
+# look like at this pixel?" and are the divisor for scaled_mip =
+# (mip - mean) / std.
+#
+#   False (default): use every orientation this run actually searched.
+#       Today that is the Euler box (not full SO(3)). This matches a normal
+#       match-template run, where mean/std come from the whole search grid.
+#       Pixels outside the spatial box still contribute to the running sums,
+#       but they are not used as peaks.
+#
+#   True: use only allowed (pixel, orientation) pairs, and divide by a
+#       per-pixel count. Outside the spatial box, count is 0 so mean/std
+#       are 0. This only differs from False once the search grid is larger
+#       than the allowed set (e.g. a future full-SO(3) search with a
+#       per-pixel Euler box). With the current Euler-box search, True and
+#       False agree inside the spatial box.
+#
+# Peak cutoff (num_ccg) always uses the sum of allowed tests, independent of
+# this flag: n_box_pixels * n_orientations * n_defocus.
+STATS_FROM_VALID_ORIENTATIONS = False
+
 ##############################################################
 ### Main function called to run the match template program ###
 ##############################################################
@@ -38,10 +66,23 @@ def main() -> None:
 
     if CONSTRAINT_YAML_PATH:
         constraint = FilamentConstraint.from_yaml(CONSTRAINT_YAML_PATH)
-        mt_manager.orientation_search_config = constraint.to_orientation_config()
+        constraint.stats_from_valid_orientations = STATS_FROM_VALID_ORIENTATIONS
+        mt_manager.apply_filament_constraint(constraint)
         n_orient = int(mt_manager.orientation_search_config.euler_angles.shape[0])
         print(constraint.preview_text())
         print(f"Using filament constraint with {n_orient} orientations.")
+        if constraint.spatial_constraint_path:
+            print(f"Spatial constraint: {constraint.spatial_constraint_path}")
+        if STATS_FROM_VALID_ORIENTATIONS:
+            print(
+                "Mean/variance: allowed (pixel, orientation) pairs only "
+                "(per-pixel count)."
+            )
+        else:
+            print(
+                "Mean/variance: all orientations searched in this run "
+                "(MIP still restricted to the spatial/Euler box)."
+            )
     else:
         n_orient = int(mt_manager.orientation_search_config.euler_angles.shape[0])
         print(f"Using orientation_search_config from YAML ({n_orient} orientations).")

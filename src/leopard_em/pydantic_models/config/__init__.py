@@ -21,6 +21,7 @@ from .orientation_search import (
     RefineOrientationConfig,
 )
 from .pixel_size_search import PixelSizeSearchConfig
+from .spatial_constraint import SpatialBox, SpatialConstraintMaps
 
 __all__ = [
     "ArbitraryCurveFilterConfig",
@@ -38,5 +39,7 @@ __all__ = [
     "PixelSizeSearchConfig",
     "PreprocessingFilters",
     "RefineOrientationConfig",
+    "SpatialBox",
+    "SpatialConstraintMaps",
     "WhiteningFilterConfig",
 ]

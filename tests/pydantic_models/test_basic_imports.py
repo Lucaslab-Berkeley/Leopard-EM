@@ -32,6 +32,8 @@ def test_config_imports():
             PixelSizeSearchConfig,
             PreprocessingFilters,
             RefineOrientationConfig,
+            SpatialBox,
+            SpatialConstraintMaps,
             WhiteningFilterConfig,
         )
     except ImportError as e:

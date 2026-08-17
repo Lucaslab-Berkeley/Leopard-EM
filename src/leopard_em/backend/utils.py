@@ -191,6 +191,8 @@ def normalize_template_projection(
 
 @torch.compile  # type: ignore[misc]
 # pylint: disable=too-many-locals
+# pylint: disable=too-many-arguments
+# pylint: disable=too-many-positional-arguments
 def _stats_and_table_core(
     cross_correlation: torch.Tensor,
     current_indexes: torch.Tensor,
@@ -201,7 +203,12 @@ def _stats_and_table_core(
     valid_shape_w: int,
     needs_valid_cropping: bool = True,
     compute_correlation_table: bool = True,
+    apply_eligibility: bool = False,
+    pixel_ok: torch.Tensor | None = None,
+    orient_ok: torch.Tensor | None = None,
+    stats_from_valid_orientations: bool = False,
 ) -> tuple[
+    torch.Tensor,
     torch.Tensor,
     torch.Tensor,
     torch.Tensor,
@@ -244,6 +251,15 @@ def _stats_and_table_core(
         shape.
     compute_correlation_table : bool, optional
         Whether to find and return threshold exceedances for the correlation table.
+    apply_eligibility : bool, optional
+        If True, mask illegal (pixel, orientation) pairs before taking the MIP max.
+    pixel_ok : torch.Tensor, optional
+        Boolean mask of shape (H, W). True where the pixel is in play.
+    orient_ok : torch.Tensor, optional
+        Boolean mask of shape (B,) for the current batch of search indexes.
+    stats_from_valid_orientations : bool, optional
+        If True, running sums use only eligible pairs. Default False uses all
+        searched angles.
     """
     # create cropped view as in existing functions
     if needs_valid_cropping:
@@ -263,23 +279,50 @@ def _stats_and_table_core(
             -1, cross_correlation.shape[-2], cross_correlation.shape[-1]
         )
 
-    # per-pixel maxima across the unraveled batch dimension
-    max_values, max_indices = torch.max(cc_reshaped, dim=0)
+    if apply_eligibility:
+        assert pixel_ok is not None
+        assert orient_ok is not None
+        eligible = orient_ok[:, None, None] & pixel_ok[None, :, :]
+        neg_inf = torch.finfo(cc_reshaped.dtype).min
+        cc_for_mip = torch.where(eligible, cc_reshaped, neg_inf)
+        max_values, max_indices = torch.max(cc_for_mip, dim=0)
+        any_allowed = eligible.any(dim=0)
+        update_mask = (max_values > mip) & any_allowed
+        if stats_from_valid_orientations:
+            cc_for_stats = torch.where(eligible, cc_reshaped, 0)
+            corr_count = eligible.to(cc_reshaped.dtype).sum(dim=0)
+        else:
+            cc_for_stats = cc_reshaped
+            corr_count = torch.zeros(
+                (valid_shape_h, valid_shape_w),
+                dtype=cc_reshaped.dtype,
+                device=cc_reshaped.device,
+            )
+    else:
+        max_values, max_indices = torch.max(cc_reshaped, dim=0)
+        update_mask = max_values > mip
+        cc_for_stats = cc_reshaped
+        corr_count = torch.zeros(
+            (valid_shape_h, valid_shape_w),
+            dtype=cc_reshaped.dtype,
+            device=cc_reshaped.device,
+        )
+        eligible = None
 
-    # masked mip / index updates (do not modify originals here; return updated tensors)
-    update_mask = max_values > mip
     new_mip = torch.where(update_mask, max_values, mip)
     new_best_global_index = torch.where(
         update_mask, current_indexes[max_indices], best_global_index
     )
 
-    # sums used for statistics
-    corr_sum = cc_reshaped.sum(dim=0)
-    corr_sq_sum = (cc_reshaped * cc_reshaped).sum(dim=0)
+    corr_sum = cc_for_stats.sum(dim=0)
+    corr_sq_sum = (cc_for_stats * cc_for_stats).sum(dim=0)
 
     # find threshold exceedances (for correlation table)
     if compute_correlation_table:
-        batch_idxs, y_idxs, x_idxs = torch.where(cc_reshaped > threshold)
+        table_mask = cc_reshaped > threshold
+        if apply_eligibility:
+            table_mask = table_mask & eligible
+        batch_idxs, y_idxs, x_idxs = torch.where(table_mask)
         values = cc_reshaped[batch_idxs, y_idxs, x_idxs]
         global_idxs = current_indexes[batch_idxs]
     else:
@@ -293,6 +336,7 @@ def _stats_and_table_core(
         new_best_global_index,
         corr_sum,
         corr_sq_sum,
+        corr_count,
         global_idxs,
         y_idxs,
         x_idxs,
@@ -316,6 +360,10 @@ def do_iteration_and_correlation_table_updates(
     valid_shape_w: int,
     needs_valid_cropping: bool = True,
     compute_correlation_table: bool = True,
+    eligible_pixels: torch.Tensor | None = None,
+    allowed_search_mask: torch.Tensor | None = None,
+    stats_from_valid_orientations: bool = False,
+    correlation_count: torch.Tensor | None = None,
 ) -> None:
     """Helper function for updating maxima, tracked statistics, and correlation table.
 
@@ -357,13 +405,37 @@ def do_iteration_and_correlation_table_updates(
     compute_correlation_table : bool, optional
         Whether to threshold the cross-correlation values and add exceedances to the
         correlation table.
+    eligible_pixels : torch.Tensor, optional
+        Boolean (H, W) mask of pixels in play. If None, all pixels are eligible.
+    allowed_search_mask : torch.Tensor, optional
+        Boolean mask indexed by global search index. If None, every searched
+        index in this run is allowed.
+    stats_from_valid_orientations : bool, optional
+        If True, accumulate sums and a per-pixel count over eligible pairs only.
+    correlation_count : torch.Tensor, optional
+        Running eligible-pair count per pixel. Updated when
+        ``stats_from_valid_orientations`` is True.
     """
-    # call compiled core
+    apply_eligibility = eligible_pixels is not None
+    pixel_ok = eligible_pixels
+    if apply_eligibility:
+        if allowed_search_mask is None:
+            orient_ok = torch.ones(
+                current_indexes.numel(),
+                dtype=torch.bool,
+                device=cross_correlation.device,
+            )
+        else:
+            orient_ok = allowed_search_mask[current_indexes]
+    else:
+        orient_ok = None
+
     (
         new_mip,
         new_best_global_index,
         corr_sum,
         corr_sq_sum,
+        corr_count,
         global_idxs,
         y_idxs,
         x_idxs,
@@ -378,6 +450,10 @@ def do_iteration_and_correlation_table_updates(
         valid_shape_w,
         needs_valid_cropping=needs_valid_cropping,
         compute_correlation_table=compute_correlation_table,
+        apply_eligibility=apply_eligibility,
+        pixel_ok=pixel_ok,
+        orient_ok=orient_ok,
+        stats_from_valid_orientations=stats_from_valid_orientations,
     )
 
     # update inplace the statistics tensors
@@ -386,6 +462,8 @@ def do_iteration_and_correlation_table_updates(
 
     correlation_sum += corr_sum
     correlation_squared_sum += corr_sq_sum
+    if correlation_count is not None and stats_from_valid_orientations:
+        correlation_count += corr_count
 
     # update correlation_table (tensordict operations not compiled)
     if global_idxs.numel() > 0:

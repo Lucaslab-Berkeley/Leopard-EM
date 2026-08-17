@@ -23,6 +23,13 @@ from pydantic import ConfigDict, Field
 from leopard_em.pydantic_models.custom_types import BaseModel2DTM
 
 from .orientation_search import MultipleOrientationConfig, OrientationSearchConfig
+from .spatial_constraint import (
+    SpatialBox,
+    SpatialConstraintMaps,
+    rasterize_rectangle,
+    read_spatial_constraint_hdf5,
+    write_spatial_constraint_hdf5,
+)
 
 _ANGLE_DECIMALS = 4
 
@@ -64,6 +71,14 @@ class FilamentConstraint(BaseModel2DTM):
         Image-space line the angle was measured from.
     micrograph_path : str, optional
         Micrograph the line was drawn on.
+    spatial_constraint_path : str, optional
+        Path to a per-pixel constraint HDF5 written by the napari helper.
+    spatial_box : SpatialBox, optional
+        Image-space rectangle (particle-center coordinates). Stored for
+        round-trip; the HDF5 is authoritative at runtime.
+    stats_from_valid_orientations : bool
+        If True, mean/variance use only eligible (pixel, orientation) pairs.
+        Default False keeps mean/variance from all searched angles.
     """
 
     # Sidecar YAML may also contain a generated orientation_search_config block.
@@ -79,6 +94,9 @@ class FilamentConstraint(BaseModel2DTM):
     base_grid_method: Literal["uniform", "healpix", "cartesian"] = "uniform"
     line: FilamentLine | None = None
     micrograph_path: str | None = None
+    spatial_constraint_path: str | None = None
+    spatial_box: SpatialBox | None = None
+    stats_from_valid_orientations: bool = False
 
     @classmethod
     def from_line(
@@ -170,6 +188,89 @@ class FilamentConstraint(BaseModel2DTM):
                 default_flow_style=False,
                 sort_keys=False,
             )
+
+    def load_spatial_maps(self) -> SpatialConstraintMaps | None:
+        """Load per-pixel maps from ``spatial_constraint_path``, if set.
+
+        ``n_orientations`` is filled from this constraint's Euler-angle grid
+        so the count matches the search that will actually run.
+        """
+        if not self.spatial_constraint_path:
+            return None
+        maps = read_spatial_constraint_hdf5(self.spatial_constraint_path)
+        n_orient = int(self.to_orientation_config().euler_angles.shape[0])
+        maps.fill_n_orientations(n_orient)
+        return maps
+
+    def stats_maps_for_template(
+        self,
+        image_shape: tuple[int, int],
+        template_width: int,
+    ) -> SpatialConstraintMaps | None:
+        """Return maps in stats-map (``pos_xy``) coordinates, or None."""
+        maps = self.load_spatial_maps()
+        if maps is None:
+            return None
+        half_width = int(template_width) // 2
+        stats_shape = (
+            int(image_shape[0]) - int(template_width) + 1,
+            int(image_shape[1]) - int(template_width) + 1,
+        )
+        if stats_shape[0] <= 0 or stats_shape[1] <= 0:
+            raise ValueError(
+                "Template is larger than the micrograph; cannot convert "
+                "spatial constraint maps to stats-map coordinates."
+            )
+        return maps.to_stats_map_coords(half_width, stats_shape)
+
+    def write_spatial_hdf5(
+        self,
+        path: str,
+        image_shape: tuple[int, int],
+        n_orientations: int | None = None,
+        pixel_size_angstrom: float | None = None,
+        leopard_em_version: str = "uninstalled",
+    ) -> SpatialConstraintMaps:
+        """Rasterize ``spatial_box`` and write the constraint HDF5."""
+        if self.spatial_box is None:
+            raise ValueError("spatial_box is required to write a constraint HDF5.")
+        if n_orientations is None:
+            n_orientations = int(self.to_orientation_config().euler_angles.shape[0])
+        maps = rasterize_rectangle(
+            image_shape=image_shape,
+            box=self.spatial_box,
+            n_orientations=n_orientations,
+        )
+        maps.pixel_size_angstrom = pixel_size_angstrom
+        maps.regions = [
+            {
+                "cone_half_angle_deg": self.cone_half_angle_deg,
+                "theta_center_deg": self.theta_center_deg,
+                "psi_min": self.psi_min,
+                "psi_max": self.psi_max,
+                "psi_step": self.psi_step,
+                "theta_step": self.theta_step,
+                "base_grid_method": self.base_grid_method,
+                "region_id": 1,
+                "box": (
+                    self.spatial_box.y0,
+                    self.spatial_box.x0,
+                    self.spatial_box.y1,
+                    self.spatial_box.x1,
+                ),
+                "line": None
+                if self.line is None
+                else (self.line.y0, self.line.x0, self.line.y1, self.line.x1),
+                "orientation_configs": [
+                    block.model_dump()
+                    for block in self.to_orientation_config().orientation_configs
+                ],
+            }
+        ]
+        write_spatial_constraint_hdf5(
+            path, maps, leopard_em_version=leopard_em_version
+        )
+        return maps
 
     def _make_orientation_config(
         self,

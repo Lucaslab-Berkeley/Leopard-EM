@@ -3,8 +3,8 @@ r"""Standalone napari helper to choose a filament Euler-box orientation constrai
 Draw a line along a filament in a micrograph, set the ± Euler-box range, and
 export a YAML sidecar for ``run_constrained_match_template.py``.
 
-Dependencies: napari, numpy, mrcfile (qtpy ships with napari). This script does
-not import leopard_em.
+Dependencies: napari, numpy, mrcfile, h5py (qtpy ships with napari). This
+script does not import leopard_em.
 
 The template filament axis is assumed to lie along Z. Roma ``'ZYZ'`` is
 intrinsic with angles ``(phi, theta, psi)``. The drawn line sets ``phi``
@@ -33,8 +33,8 @@ from pathlib import Path
 import numpy as np
 
 _NAPARI_INSTALL_MESSAGE = (
-    "This program needs napari, numpy, and mrcfile.\n"
-    "Install with:  pip install napari mrcfile numpy"
+    "This program needs napari, numpy, mrcfile, and h5py.\n"
+    "Install with:  pip install napari mrcfile numpy h5py"
 )
 _ANGLE_DECIMALS = 4
 
@@ -56,6 +56,117 @@ def last_filament_line(shapes_layer) -> tuple[float, float, float, float]:
         float(points[1, 0]),
         float(points[1, 1]),
     )
+
+
+def last_search_box(shapes_layer) -> tuple[float, float, float, float]:
+    """Return ``(y0, x0, y1, x1)`` bounds of the last rectangle in a Shapes layer."""
+    rects = []
+    for data, shape_type in zip(shapes_layer.data, shapes_layer.shape_type):
+        arr = np.asarray(data, dtype=float)
+        if shape_type in ("rectangle", "polygon") or arr.shape[0] >= 4:
+            rects.append(arr)
+    if not rects:
+        raise ValueError("Draw a search-region rectangle first.")
+    points = rects[-1]
+    return (
+        float(points[:, 0].min()),
+        float(points[:, 1].min()),
+        float(points[:, 0].max()),
+        float(points[:, 1].max()),
+    )
+
+
+def estimate_n_orientations(blocks: list[dict]) -> int:
+    """Rough Euler-grid size from YAML-style orientation blocks."""
+    total = 0
+    for block in blocks:
+        psi_step = float(block["psi_step"])
+        theta_step = float(block["theta_step"])
+        n_psi = max(1, int(round((block["psi_max"] - block["psi_min"]) / psi_step)))
+        n_theta = max(
+            1,
+            int(round((block["theta_max"] - block["theta_min"]) / theta_step)) + 1,
+        )
+        n_phi = max(
+            1,
+            int(round((block["phi_max"] - block["phi_min"]) / theta_step)) + 1,
+        )
+        total += n_psi * n_theta * n_phi
+    return total
+
+
+def rasterize_search_box(
+    image_shape: tuple[int, int],
+    y0: float,
+    x0: float,
+    y1: float,
+    x1: float,
+    n_orientations: int,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Return ``eligible``, ``region_id``, ``n_orientations`` maps for one box."""
+    height, width = image_shape
+    ymin, ymax = min(y0, y1), max(y0, y1)
+    xmin, xmax = min(x0, x1), max(x0, x1)
+    y_idx = np.arange(height)[:, None]
+    x_idx = np.arange(width)[None, :]
+    inside = (y_idx >= ymin) & (y_idx <= ymax) & (x_idx >= xmin) & (x_idx <= xmax)
+    eligible = inside.astype(np.uint8)
+    region_id = np.where(inside, 1, 0).astype(np.int16)
+    n_orients = np.where(inside, int(n_orientations), 0).astype(np.int32)
+    return eligible, region_id, n_orients
+
+
+def write_spatial_constraint_hdf5(
+    path: str,
+    eligible: np.ndarray,
+    region_id: np.ndarray,
+    n_orientations: np.ndarray,
+    payload: dict,
+    box: tuple[float, float, float, float],
+    pixel_size_angstrom: float | None = None,
+) -> None:
+    """Write the constraint HDF5 sidecar (standalone; no leopard_em import)."""
+    import h5py
+
+    compression = {"compression": "gzip", "compression_opts": 4}
+    with h5py.File(path, "w") as handle:
+        handle.attrs["leopard_em_version"] = "uninstalled"
+        handle.attrs["coordinate_frame"] = "pos_xy_img"
+        handle.attrs["micrograph_shape"] = np.array(eligible.shape, dtype=np.int32)
+        if pixel_size_angstrom is not None:
+            handle.attrs["pixel_size_angstrom"] = float(pixel_size_angstrom)
+
+        maps_group = handle.create_group("maps")
+        maps_group.create_dataset("eligible", data=eligible, **compression)
+        maps_group.create_dataset("region_id", data=region_id, **compression)
+        maps_group.create_dataset("n_orientations", data=n_orientations, **compression)
+
+        region = handle.create_group("regions").create_group("0001")
+        region.attrs["cone_half_angle_deg"] = payload["cone_half_angle_deg"]
+        region.attrs["theta_center_deg"] = payload["theta_center_deg"]
+        region.attrs["psi_min"] = payload["psi_min"]
+        region.attrs["psi_max"] = payload["psi_max"]
+        region.attrs["psi_step"] = payload["psi_step"]
+        region.attrs["theta_step"] = payload["theta_step"]
+        region.attrs["base_grid_method"] = payload["base_grid_method"]
+        region.attrs["region_id"] = 1
+        line = payload["line"]
+        region.create_dataset(
+            "line",
+            data=np.array(
+                [line["y0"], line["x0"], line["y1"], line["x1"]], dtype=np.float64
+            ),
+        )
+        region.create_dataset("box", data=np.array(box, dtype=np.float64))
+        cfg_root = region.create_group("orientation_configs")
+        for index, block in enumerate(
+            payload["orientation_search_config"]["orientation_configs"]
+        ):
+            cfg_grp = cfg_root.create_group(str(index))
+            for key, value in block.items():
+                if value is None:
+                    continue
+                cfg_grp.attrs[key] = value
 
 
 def filament_phi_from_image_line(y0: float, x0: float, y1: float, x1: float) -> float:
@@ -160,21 +271,25 @@ def imagej_contrast_limits(
     return float(low), float(high)
 
 
-def raise_filament_layer(viewer) -> None:
-    """Keep the filament shapes layer above the micrograph.
-
-    Napari draws the last layer on top. ``move(src, dest)`` treats ``dest`` as
-    an insertion index and decrements it when ``dest > src``, so ``len - 1``
-    is a no-op for the bottom layer. Insert at ``len(layers)`` instead.
-    """
+def raise_constraint_layers(viewer) -> None:
+    """Keep search-region then filament above the micrograph."""
     names = [layer.name for layer in viewer.layers]
-    if "filament" not in names:
-        return
-    idx = names.index("filament")
     n_layers = len(viewer.layers)
-    if idx == n_layers - 1:
-        return
-    viewer.layers.move(idx, n_layers)
+    if "search_region" in names:
+        idx = names.index("search_region")
+        if idx != n_layers - 1:
+            viewer.layers.move(idx, n_layers)
+            names = [layer.name for layer in viewer.layers]
+            n_layers = len(viewer.layers)
+    if "filament" in names:
+        idx = names.index("filament")
+        if idx != n_layers - 1:
+            viewer.layers.move(idx, n_layers)
+
+
+def raise_filament_layer(viewer) -> None:
+    """Keep constraint shapes above the micrograph."""
+    raise_constraint_layers(viewer)
 
 
 def add_or_replace_micrograph(
@@ -243,6 +358,8 @@ def build_constraint_payload(
     theta_step: float,
     theta_center_deg: float,
     micrograph_path: str | None,
+    spatial_box: tuple[float, float, float, float] | None = None,
+    spatial_constraint_path: str | None = None,
 ) -> dict:
     """Build the sidecar dict consumed by FilamentConstraint.from_yaml."""
     phi = round(filament_phi_from_image_line(y0, x0, y1, x1), _ANGLE_DECIMALS)
@@ -293,6 +410,15 @@ def build_constraint_payload(
     }
     if micrograph_path:
         payload["micrograph_path"] = micrograph_path
+    if spatial_box is not None:
+        payload["spatial_box"] = {
+            "y0": spatial_box[0],
+            "x0": spatial_box[1],
+            "y1": spatial_box[2],
+            "x1": spatial_box[3],
+        }
+    if spatial_constraint_path:
+        payload["spatial_constraint_path"] = spatial_constraint_path
     return payload
 
 
@@ -333,10 +459,22 @@ def dump_constraint_yaml(payload: dict) -> str:
     ]
     if "micrograph_path" in payload:
         lines.append(f"micrograph_path: {_yaml_scalar(payload['micrograph_path'])}")
+    if "spatial_constraint_path" in payload:
+        lines.append(
+            "spatial_constraint_path: "
+            f"{_yaml_scalar(payload['spatial_constraint_path'])}"
+        )
+    if payload.get("stats_from_valid_orientations"):
+        lines.append("stats_from_valid_orientations: true")
     line = payload["line"]
     lines.append("line:")
     for key in ("y0", "x0", "y1", "x1"):
         lines.append(f"  {key}: {_yaml_scalar(line[key])}")
+    if "spatial_box" in payload:
+        box = payload["spatial_box"]
+        lines.append("spatial_box:")
+        for key in ("y0", "x0", "y1", "x1"):
+            lines.append(f"  {key}: {_yaml_scalar(box[key])}")
     lines.append("orientation_search_config:")
     lines.append("  orientation_configs:")
     keys = (
@@ -386,6 +524,14 @@ def build_viewer(
         raise SystemExit(_NAPARI_INSTALL_MESSAGE) from exc
 
     viewer = napari.Viewer(title="Choose filament constraint")
+    search_region = viewer.add_shapes(
+        name="search_region",
+        ndim=2,
+        edge_color="yellow",
+        edge_width=4,
+        face_color="transparent",
+    )
+    search_region.mode = "add_rectangle"
     shapes = viewer.add_shapes(
         name="filament",
         ndim=2,
@@ -402,8 +548,9 @@ def build_viewer(
         QLabel(
             "1. Load a micrograph\n"
             "2. Draw a line along the filament\n"
-            "3. Set the ± Euler-box range\n"
-            "4. Export YAML"
+            "3. Draw a rectangle for allowed particle centers\n"
+            "4. Set the ± Euler-box range\n"
+            "5. Export YAML + HDF5"
         )
     )
 
@@ -499,8 +646,9 @@ def build_viewer(
     preview = QTextEdit()
     preview.setReadOnly(True)
     preview.setPlainText(
-        "Draw a line along the filament.\n"
+        "Draw a line along the filament and a rectangle for allowed centers.\n"
         "The line sets phi (tube azimuth in the image).\n"
+        "The box is pos_x_img / pos_y_img (particle center).\n"
         "psi is searched 0-360° around the tube.\n"
         "A second pole at phi+180° covers the flip."
     )
@@ -514,6 +662,10 @@ def build_viewer(
 
     def current_payload() -> dict:
         y0, x0, y1, x1 = last_filament_line(shapes)
+        try:
+            box = last_search_box(search_region)
+        except ValueError:
+            box = None
         return build_constraint_payload(
             y0=y0,
             x0=x0,
@@ -524,6 +676,7 @@ def build_viewer(
             theta_step=float(theta_step_spin.value()),
             theta_center_deg=float(theta_center_spin.value()),
             micrograph_path=current_micrograph_path(),
+            spatial_box=box,
         )
 
     def refresh_preview() -> None:
@@ -558,7 +711,8 @@ def build_viewer(
             preview.setPlainText(str(exc))
             return
         shapes.mode = "add_line"
-        raise_filament_layer(viewer)
+        search_region.mode = "add_rectangle"
+        raise_constraint_layers(viewer)
         try:
             preview.setPlainText(f"{notes}\n\n{preview_text(current_payload())}")
         except (ValueError, IndexError):
@@ -570,15 +724,48 @@ def build_viewer(
             preview.setPlainText("Choose an output YAML path first.")
             return
         try:
+            box = last_search_box(search_region)
             payload = current_payload()
+            if "spatial_box" not in payload:
+                raise ValueError("Draw a search-region rectangle first.")
             out_path = Path(out)
             out_path.parent.mkdir(parents=True, exist_ok=True)
+            h5_path = out_path.with_suffix(".h5")
+            payload["spatial_constraint_path"] = str(h5_path)
+
+            micrograph_layer = next(
+                (layer for layer in viewer.layers if layer.name == "micrograph"),
+                None,
+            )
+            if micrograph_layer is None:
+                raise ValueError("Load a micrograph before exporting.")
+            image_shape = tuple(int(v) for v in micrograph_layer.data.shape[-2:])
+            n_orient = estimate_n_orientations(
+                payload["orientation_search_config"]["orientation_configs"]
+            )
+            eligible, region_id, n_orients = rasterize_search_box(
+                image_shape, *box, n_orientations=n_orient
+            )
+            px = float(pixel_size_spin.value())
+            pixel_size = px if px > 0.0 else None
+            write_spatial_constraint_hdf5(
+                str(h5_path),
+                eligible,
+                region_id,
+                n_orients,
+                payload,
+                box,
+                pixel_size_angstrom=pixel_size,
+            )
             out_path.write_text(dump_constraint_yaml(payload), encoding="utf-8")
         except (ValueError, IndexError, OSError) as exc:
             preview.setPlainText(str(exc))
             return
-        preview.setPlainText(f"Wrote {out_path}\n\n{preview_text(payload)}")
+        preview.setPlainText(
+            f"Wrote {out_path}\nWrote {h5_path}\n\n{preview_text(payload)}"
+        )
         print(f"Wrote filament constraint to {out_path}")
+        print(f"Wrote spatial constraint maps to {h5_path}")
 
     load_button.clicked.connect(on_load)
     export_button.clicked.connect(on_export)
@@ -587,6 +774,7 @@ def build_viewer(
     theta_step_spin.valueChanged.connect(lambda _: refresh_preview())
     theta_center_spin.valueChanged.connect(lambda _: refresh_preview())
     shapes.events.data.connect(lambda _: refresh_preview())
+    search_region.events.data.connect(lambda _: refresh_preview())
 
     viewer.window.add_dock_widget(panel, name="Filament constraint", area="right")
 
@@ -616,7 +804,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--pixel-size",
         type=float,
         default=None,
-        help="Pixel size in Angstroms. Used for the lowpass if the MRC header has none.",
+        help=(
+            "Pixel size in Angstroms. Used for the lowpass if the MRC "
+            "header has none."
+        ),
     )
     parser.add_argument(
         "--output",

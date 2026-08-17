@@ -53,11 +53,19 @@ def aggregate_distributed_results(
         [result["correlation_squared_sum"] for result in results], axis=0
     ).sum(axis=0)
 
+    correlation_count = None
+    if all("correlation_count" in result for result in results):
+        correlation_count = np.stack(
+            [result["correlation_count"] for result in results], axis=0
+        ).sum(axis=0)
+
     # Cast back to torch tensors on the CPU
     mip_max = torch.from_numpy(mip_max)
     best_index = torch.from_numpy(best_index)
     correlation_sum = torch.from_numpy(correlation_sum)
     correlation_squared_sum = torch.from_numpy(correlation_squared_sum)
+    if correlation_count is not None:
+        correlation_count = torch.from_numpy(correlation_count)
 
     # Concatenate the per-device/per-rank correlation table entries
     per_key_values: dict[str, list[torch.Tensor]] = {}
@@ -84,6 +92,7 @@ def aggregate_distributed_results(
         "correlation_sum": correlation_sum,
         "correlation_squared_sum": correlation_squared_sum,
         "correlation_table": full_correlation_table,
+        "correlation_count": correlation_count,
     }
 
 
@@ -176,7 +185,7 @@ def process_correlation_table(
 def correlation_sum_and_squared_sum_to_mean_and_variance(
     correlation_sum: torch.Tensor,
     correlation_squared_sum: torch.Tensor,
-    total_correlation_positions: int,
+    total_correlation_positions: int | torch.Tensor,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Convert the sum and squared sum of the correlation values to mean and variance.
 
@@ -186,17 +195,26 @@ def correlation_sum_and_squared_sum_to_mean_and_variance(
         Sum of the correlation values.
     correlation_squared_sum : torch.Tensor
         Sum of the squared correlation values.
-    total_correlation_positions : int
-        Total number cross-correlograms calculated.
+    total_correlation_positions : int | torch.Tensor
+        Total number of cross-correlograms calculated. A scalar uses the same
+        divisor at every pixel; an ``(H, W)`` tensor is a per-pixel count.
 
     Returns
     -------
     tuple[torch.Tensor, torch.Tensor]
         Tuple containing the mean and variance of the correlation values.
     """
-    correlation_mean = correlation_sum / total_correlation_positions
-    correlation_variance = correlation_squared_sum / total_correlation_positions
-    correlation_variance -= correlation_mean**2
+    if isinstance(total_correlation_positions, torch.Tensor):
+        count = total_correlation_positions.to(dtype=correlation_sum.dtype)
+        zeros = torch.zeros_like(correlation_sum)
+        correlation_mean = torch.where(count > 0, correlation_sum / count, zeros)
+        correlation_variance = torch.where(
+            count > 0, correlation_squared_sum / count, zeros
+        )
+    else:
+        correlation_mean = correlation_sum / total_correlation_positions
+        correlation_variance = correlation_squared_sum / total_correlation_positions
+    correlation_variance = correlation_variance - correlation_mean**2
     correlation_variance = torch.sqrt(torch.clamp(correlation_variance, min=0))
     return correlation_mean, correlation_variance
 
@@ -206,7 +224,7 @@ def scale_mip(
     mip_scaled: torch.Tensor,
     correlation_sum: torch.Tensor,
     correlation_squared_sum: torch.Tensor,
-    total_correlation_positions: int,
+    total_correlation_positions: int | torch.Tensor,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """Scale the MIP to Z-score map by the mean and variance of the correlation values.
 
@@ -232,8 +250,9 @@ def scale_mip(
         Sum of the correlation values. Updated to mean of the correlation values.
     correlation_squared_sum : torch.Tensor
         Sum of the squared correlation values. Updated to variance of the correlation.
-    total_correlation_positions : int
-        Total number cross-correlograms calculated.
+    total_correlation_positions : int | torch.Tensor
+        Total number of cross-correlograms calculated. A scalar uses the same
+        divisor at every pixel; an ``(H, W)`` tensor is a per-pixel count.
 
     Returns
     -------
