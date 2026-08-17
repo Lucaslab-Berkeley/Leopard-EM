@@ -137,14 +137,14 @@ class _MatchTemplateResultBase(BaseModel2DTM):
     match_template_peaks: MatchTemplatePeaks = Field(default=None, exclude=True)
     correlation_table: CorrelationTable | None = Field(default=None, exclude=True)
 
-    mip: ExcludedTensor
-    scaled_mip: ExcludedTensor
-    correlation_average: ExcludedTensor
-    correlation_variance: ExcludedTensor
-    orientation_psi: ExcludedTensor
-    orientation_theta: ExcludedTensor
-    orientation_phi: ExcludedTensor
-    relative_defocus: ExcludedTensor
+    mip: ExcludedTensor = None
+    scaled_mip: ExcludedTensor = None
+    correlation_average: ExcludedTensor = None
+    correlation_variance: ExcludedTensor = None
+    orientation_psi: ExcludedTensor = None
+    orientation_theta: ExcludedTensor = None
+    orientation_phi: ExcludedTensor = None
+    relative_defocus: ExcludedTensor = None
 
     ############################################
     ### Functional (data processing) methods ###

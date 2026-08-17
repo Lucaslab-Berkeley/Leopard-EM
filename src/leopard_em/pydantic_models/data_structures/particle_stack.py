@@ -524,8 +524,8 @@ class _ParticleStackBase(BaseModel2DTM):
     _df: pd.DataFrame
 
     # Image and statistics tensors (excluded from YAML/JSON serialization)
-    image_stack: ExcludedTensor
-    local_stats: ExcludedTensorDict
+    image_stack: ExcludedTensor = None
+    local_stats: ExcludedTensorDict = Field(default_factory=dict)
 
     def __init__(self, skip_df_load: bool = False, **data: Any):
         """Initialize the particle stack.

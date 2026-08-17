@@ -70,7 +70,7 @@ class OptimizeTemplateManager(BaseModel2DTM):
     apply_global_filtering: bool = True
 
     # Excluded tensors
-    template_volume: ExcludedTensor
+    template_volume: ExcludedTensor = None
 
     def make_backend_core_function_kwargs(
         self, prefer_refined_angles: bool = True

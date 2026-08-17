@@ -93,7 +93,7 @@ class RefineTemplateManager(BaseModel2DTM):
     apply_global_filtering: bool = True
 
     # Excluded tensors
-    template_volume: ExcludedTensor
+    template_volume: ExcludedTensor = None
 
     def __init__(self, skip_mrc_preloads: bool = False, **data: Any):
         super().__init__(**data)

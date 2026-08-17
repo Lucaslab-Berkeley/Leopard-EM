@@ -1,20 +1,11 @@
-"""Tests for spatial CTF config models (isolated imports)."""
+"""Tests for spatial CTF config models."""
 
 from __future__ import annotations
 
-import importlib
-
 import pytest
-from tests._spatial_ctf_import_hacks import install_minimal_pydantic_models_packages
+from pydantic import ValidationError
 
-install_minimal_pydantic_models_packages()
-importlib.import_module("leopard_em.pydantic_models.config.spatial_ctf_premultiply")
-
-from pydantic import ValidationError  # noqa: E402
-
-from leopard_em.pydantic_models.config.spatial_ctf_premultiply import (  # noqa: E402
-    SpatialPsfConfig,
-)
+from leopard_em.pydantic_models.config.spatial_ctf_premultiply import SpatialPsfConfig
 
 
 def test_spatial_psf_kernel_must_be_odd():

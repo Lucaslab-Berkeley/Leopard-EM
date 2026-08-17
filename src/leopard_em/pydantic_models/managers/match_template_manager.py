@@ -118,11 +118,11 @@ class MatchTemplateManager(BaseModel2DTM):
     match_template_result: MatchTemplateResultMRC | MatchTemplateResultHDF5
     computational_config: ComputationalConfigMatch
     ctf_premultiplied: bool = False
-    orientation_eligible_for_mip: ExcludedTensor | None = None
+    orientation_eligible_for_mip: ExcludedTensor = None
 
     # Non-serialized large array-like attributes
-    micrograph: ExcludedTensor
-    template_volume: ExcludedTensor
+    micrograph: ExcludedTensor = None
+    template_volume: ExcludedTensor = None
 
     ###########################
     ### Pydantic Validators ###

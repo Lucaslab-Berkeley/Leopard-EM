@@ -98,7 +98,7 @@ class ConstrainedSearchManager(BaseModel2DTM):
     computational_config: ComputationalConfigRefine
 
     # Excluded tensors
-    template_volume: ExcludedTensor
+    template_volume: ExcludedTensor = None
     zdiffs: ExcludedTensor = torch.tensor([0.0])
 
     def __init__(self, skip_mrc_preloads: bool = False, **data: Any):

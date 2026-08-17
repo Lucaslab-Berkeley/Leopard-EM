@@ -1,15 +1,12 @@
-"""Tests for spatial CTF field tensors."""
+"""Tests for spatial CTF field tensors and real-space PSF helpers."""
 
 import torch
-from tests._spatial_ctf_import_hacks import install_minimal_leopard_em_packages
 
-install_minimal_leopard_em_packages()
-
-from leopard_em.utils.spatial_ctf_fields import (  # noqa: E402
+from leopard_em.utils.spatial_ctf_fields import (
     defocus_linear_field,
     phase_quadratic_field,
 )
-from leopard_em.utils.spatial_ctf_realspace import (  # noqa: E402
+from leopard_em.utils.spatial_ctf_realspace import (
     apply_spatial_psf_grid,
     apply_spatially_varying_psf,
     ctf_to_psf_crop,

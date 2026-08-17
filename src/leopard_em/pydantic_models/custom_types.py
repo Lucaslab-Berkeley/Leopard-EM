@@ -9,15 +9,17 @@ import yaml  # type: ignore
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic.json_schema import SkipJsonSchema
 
-# Pydantic type-hint to exclude tensor from JSON schema/dump (still attribute)
+# Pydantic type-hint to exclude tensor from JSON schema/dump (still attribute).
+# Do not put default/default_factory in Field() here — pydantic >=2.11 warns that
+# those attributes have no effect on type aliases (and CI treats warnings as errors).
 ExcludedTensor = SkipJsonSchema[
-    Annotated[Optional[torch.Tensor], Field(default=None, exclude=True)]
+    Annotated[Optional[torch.Tensor], Field(exclude=True)]
 ]
 
 # Same as ExcludedTensor, but for a name -> tensor mapping (e.g. per-column and
 # per-particle statistics maps of possibly differing shapes).
 ExcludedTensorDict = SkipJsonSchema[
-    Annotated[dict[str, torch.Tensor], Field(default_factory=dict, exclude=True)]
+    Annotated[dict[str, torch.Tensor], Field(exclude=True)]
 ]
 
 
