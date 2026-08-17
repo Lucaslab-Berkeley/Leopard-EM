@@ -1,7 +1,7 @@
 """Program for running sectored SO(3) search using 2D template matching.
 
 The sphere is split into HEALPix sectors via ``get_sectored_euler_angles`` from
-``torch-so3`` (>= 0.2.2).  Each sector runs an independent masked-MIP
+``torch-so3`` (>= 0.5.2).  Each sector runs an independent masked-MIP
 ``core_match_template`` call so that every orientation in the sector contributes
 to the per-pixel mean and variance (for proper z-score normalisation), while
 orientations that fall outside the user-defined or symmetry-derived angular window
@@ -11,7 +11,7 @@ Results from all sectors are merged with ``merge_runs_independent_zscore``
 (using *full* per-sector totals for z-score normalisation) and peak extraction
 uses the *eligible-only* total (summed across sectors) as the multiplicity.
 
-Requires: torch-so3 >= 0.2.2
+Requires: torch-so3 >= 0.5.2
 """
 
 import time
@@ -137,7 +137,7 @@ def _decode_poses_and_defocus_from_sectors(
         if not mask.any():
             continue
         sub_bgi = bgi[mask].long()
-        phi, theta, psi, defocus = decode_global_search_index(
+        phi, theta, psi, defocus, _pixels = decode_global_search_index(
             sub_bgi,
             pixel_values,
             defocus_values,
@@ -205,6 +205,7 @@ def main() -> None:  # pylint: disable=too-many-locals
             orientation_batch_size=ORIENTATION_BATCH_SIZE,
             num_cuda_streams=manager.computational_config.num_cpus,
             backend="streamed_masked_mip",
+            compute_correlation_table=False,
         )
         runs.append(results)
         sector_euler_tables.append(euler_s)
@@ -254,12 +255,7 @@ def main() -> None:  # pylint: disable=too-many-locals
 
     result.relative_defocus = defocus_map
 
-    # Apply valid-mode cropping (remove template edge artefacts).
-    if manager.template_volume is not None:
-        nx = manager.template_volume.shape[-1]
-        result.apply_valid_cropping((nx, nx))
-
-    # Export MRC statistics files.
+    # Backend already applies valid-mode cropping; do not crop again.
     result.export_results()
 
     # --- Peak extraction ---

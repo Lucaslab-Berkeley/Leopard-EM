@@ -4,10 +4,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Literal
 
+import roma
 import torch
 import torch.nn.functional as F
 from torch_ctf import calc_LPP_ctf_2D, calculate_ctf_2d
 from torch_fourier_filter.envelopes import b_envelope
+from torch_fourier_slice import extract_central_slices_rfft_3d
 
 from leopard_em.utils.search_utils import get_cs_range
 
@@ -101,12 +103,95 @@ def _ctf_rfft_single(
     return tmp * env
 
 
-def ctf_to_normalized_psf_crop(
+def apply_circular_ctf_multiply(
+    image: torch.Tensor,
+    optics: OpticsGroup,
+    defocus_mean_angstrom: float,
+    phase_shift_deg: float,
+) -> torch.Tensor:
+    """Apply CTF by circular convolution: ``irfft(rfft(image) * CTF)``.
+
+    No kernel crop or sum-normalization. Matches a Fourier-domain CTF multiply
+    on the full micrograph (uniform spatial field).
+    """
+    image_shape = (int(image.shape[-2]), int(image.shape[-1]))
+    ctf = _ctf_rfft_single(
+        optics,
+        defocus_mean_angstrom,
+        phase_shift_deg,
+        image_shape,
+        image.device,
+    )
+    image_dft = torch.fft.rfft2(image)  # pylint: disable=not-callable
+    return torch.fft.irfft2(  # pylint: disable=not-callable
+        image_dft * ctf, s=image_shape
+    )
+
+
+def rfft2_parseval_power(x: torch.Tensor) -> torch.Tensor:
+    """Energy of an unshifted rFFT with interior columns doubled (Nyquist-aware)."""
+    abs2 = torch.abs(x) ** 2
+    return abs2.sum(dim=(-2, -1)) + abs2[..., :, 1:-1].sum(dim=(-2, -1))
+
+
+def sample_template_slices_for_gain(
+    template_dft: torch.Tensor,
+    euler_angles: torch.Tensor,
+    max_slices: int = 32,
+) -> torch.Tensor:
+    """Evenly sample Fourier slices for the plane-wise template-norm gain."""
+    n_orient = int(euler_angles.shape[0])
+    n_sample = min(int(max_slices), n_orient)
+    idx = torch.linspace(0, n_orient - 1, n_sample).long()
+    eulers = euler_angles[idx].to(device=template_dft.device, dtype=torch.float32)
+    rotation_matrices = roma.euler_to_rotmat(
+        "ZYZ", eulers, degrees=True, device=template_dft.device
+    )
+    slices = extract_central_slices_rfft_3d(
+        volume_rfft=template_dft,
+        rotation_matrices=rotation_matrices,
+    )
+    slices = torch.fft.ifftshift(slices, dim=-2)  # pylint: disable=not-callable
+    slices[..., 0, 0] = 0 + 0j
+    return slices
+
+
+def template_ctf_unit_variance_gain(
+    ctf_rfft: torch.Tensor,
+    whitening_filter_template: torch.Tensor,
+    template_slices_rfft: torch.Tensor | None = None,
+) -> torch.Tensor:
+    """Scale so spatial raw MIP matches Fourier-2DTM template-side CTF norm.
+
+    Fourier 2DTM unit-normalizes ``T · CTF · W``. Spatial puts CTF on the image
+    and unit-normalizes ``T · W``. The ratio ``||T W|| / ||T CTF W||`` is the
+    missing template gain (one scalar per defocus plane). If ``template_slices_rfft``
+    is omitted, ``T`` is treated as white (``||W|| / ||CTF W||``).
+    """
+    whitening = whitening_filter_template.to(dtype=torch.float32)
+    ctf = ctf_rfft.to(device=whitening.device)
+    if template_slices_rfft is None:
+        probe = whitening
+        filtered = ctf * whitening
+    else:
+        slices = template_slices_rfft.to(device=whitening.device)
+        probe = slices * whitening
+        filtered = slices * ctf * whitening
+    numerator = rfft2_parseval_power(probe)
+    denominator = rfft2_parseval_power(filtered).clamp_min(1e-12)
+    return torch.sqrt(numerator / denominator).mean()
+
+
+def ctf_to_psf_crop(
     ctf_rfft: torch.Tensor,
     image_shape: tuple[int, int],
     kernel_size: int,
 ) -> torch.Tensor:
-    """Inverse FFT, center-crop ``kernel_size``, normalize kernel sum to 1."""
+    """Inverse FFT and center-crop ``kernel_size``; do not sum-normalize.
+
+    Sum-to-1 forces DC gain to 1 and destroys CTF oscillations. The crop is a
+    truncated copy of ``irfft(CTF)``.
+    """
     h, w = image_shape
     psf_full = torch.fft.irfft2(ctf_rfft, s=(h, w))  # pylint: disable=not-callable
     psf_shifted = torch.fft.fftshift(psf_full)  # pylint: disable=not-callable
@@ -116,10 +201,21 @@ def ctf_to_normalized_psf_crop(
         center_y - side : center_y + side + 1,
         center_x - side : center_x + side + 1,
     ]
-    s = cropped.sum()
-    if s.abs() < 1e-12:
-        raise ValueError("PSF crop sum is near zero; check CTF parameters.")
-    return (cropped / s).to(dtype=torch.float32)
+    return cropped.to(dtype=torch.float32)
+
+
+def _circular_pad_kernel(image: torch.Tensor, kernel_size: int) -> torch.Tensor:
+    """Wrap-pad a 2D image so a ``kernel_size`` window is centered on every pixel."""
+    pad_val = (kernel_size - 1) // 2
+    return (
+        F.pad(
+            image.unsqueeze(0).unsqueeze(0),
+            (pad_val, pad_val, pad_val, pad_val),
+            mode="circular",
+        )
+        .squeeze(0)
+        .squeeze(0)
+    )
 
 
 def build_psf_kernel_grid_defocus(
@@ -130,7 +226,7 @@ def build_psf_kernel_grid_defocus(
     kernel_size: int,
     device: torch.device,
 ) -> torch.Tensor:
-    """``(nx, ny, kh, kw)`` normalized PSF crops.
+    """``(nx, ny, kh, kw)`` truncated PSF crops (not sum-normalized).
 
     ``defocus_vertex_angstrom`` is ``(nx, ny)`` in Å.
     """
@@ -149,7 +245,7 @@ def build_psf_kernel_grid_defocus(
                 image_shape,
                 device,
             )
-            row_k.append(ctf_to_normalized_psf_crop(ctf, image_shape, kernel_size))
+            row_k.append(ctf_to_psf_crop(ctf, image_shape, kernel_size))
         kernels.append(torch.stack(row_k, dim=0))
     return torch.stack(kernels, dim=0)
 
@@ -186,7 +282,7 @@ def build_psf_kernel_grid_phase(
                 image_shape,
                 device,
             )
-            row_k.append(ctf_to_normalized_psf_crop(ctf, image_shape, kernel_size))
+            row_k.append(ctf_to_psf_crop(ctf, image_shape, kernel_size))
         kernels.append(torch.stack(row_k, dim=0))
     return torch.stack(kernels, dim=0)
 
@@ -297,7 +393,8 @@ def apply_spatial_psf_grid(  # pylint: disable=too-many-locals
     Pixel normalized coordinates match ``pixel_norm_coords`` / ``make_positions_2d``.
     **bilinear** is used for linear defocus; **biquadratic** approximates per-pixel
     ``PSF(φ(p))`` more closely when phase varies smoothly (falls back to bilinear
-    if ``nx < 3`` or ``ny < 3``).
+    if ``nx < 3`` or ``ny < 3``). Convolution is circular (wrap-around), matching
+    a Fourier CTF multiply on the full micrograph.
     """
     if kernel_grid.shape[:2] != (grid_nx, grid_ny):
         raise ValueError(
@@ -309,20 +406,7 @@ def apply_spatial_psf_grid(  # pylint: disable=too-many-locals
         raise ValueError("kernel_grid trailing dims must equal kernel_size.")
 
     size_h, size_w = image.shape
-    pad_val = (kernel_size - 1) // 2
-    # F.pad expects 4D (N, C, H, W); pad tuple is (left, right, top, bottom) on (W, H).
-    # After pad+squeeze: (H+2*pad, W+2*pad) so sliding k-by-k windows stay centered on
-    # each output pixel (valid convolution / "same" geometry).
-    padded = (
-        F.pad(
-            image.unsqueeze(0).unsqueeze(0),
-            (pad_val, pad_val, pad_val, pad_val),
-            mode="constant",
-            value=0.0,
-        )
-        .squeeze(0)
-        .squeeze(0)
-    )
+    padded = _circular_pad_kernel(image, kernel_size)
 
     x_1d = torch.linspace(0.0, 1.0, size_w, device=image.device, dtype=torch.float32)
     if size_w == 1:
@@ -386,7 +470,7 @@ def build_defocus_psf_stack(
             image_shape,
             device,
         )
-        kernels.append(ctf_to_normalized_psf_crop(ctf, image_shape, kernel_size))
+        kernels.append(ctf_to_psf_crop(ctf, image_shape, kernel_size))
     return torch.stack(kernels, dim=0)
 
 
@@ -414,7 +498,7 @@ def build_phase_psf_stack(
             image_shape,
             device,
         )
-        kernels.append(ctf_to_normalized_psf_crop(ctf, image_shape, kernel_size))
+        kernels.append(ctf_to_psf_crop(ctf, image_shape, kernel_size))
     return torch.stack(kernels, dim=0)
 
 
@@ -436,17 +520,7 @@ def apply_spatially_varying_psf(  # pylint: disable=too-many-locals
     size_h, _ = image.shape
     s_min, s_max = _scalar_map_interp_range(scalar_map)
 
-    pad_val = (kernel_size - 1) // 2
-    padded = (
-        F.pad(
-            image.unsqueeze(0).unsqueeze(0),
-            (pad_val, pad_val, pad_val, pad_val),
-            mode="constant",
-            value=0.0,
-        )
-        .squeeze(0)
-        .squeeze(0)
-    )
+    padded = _circular_pad_kernel(image, kernel_size)
 
     level_idx = (scalar_map - s_min) / (s_max - s_min) * (lcount - 1)
     level_lo = level_idx.clamp(0, lcount - 1.0001).long()

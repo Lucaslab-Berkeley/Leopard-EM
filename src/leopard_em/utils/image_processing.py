@@ -22,6 +22,7 @@ def preprocess_image(
     bandpass_filter: torch.Tensor,
     full_image_shape: tuple[int, int],
     extracted_box_shape: tuple[int, int],
+    normalization_ref_rfft: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """Preprocess and normalize image FFTs with computed normalization factors.
 
@@ -38,14 +39,19 @@ def preprocess_image(
         The shape of the full image.
     extracted_box_shape : tuple[int, int]
         The shape of the extracted box.
+    normalization_ref_rfft : torch.Tensor, optional
+        If set, Parseval normalization is computed from this RFFT (e.g. the
+        unconvolved micrograph) while ``image_rfft`` still receives the filters.
+        Defaults to ``image_rfft``.
 
     Returns
     -------
     torch.Tensor
         Preprocessed and normalized image in Fourier space.
     """
+    norm_rfft = image_rfft if normalization_ref_rfft is None else normalization_ref_rfft
     normalization_factor = get_image_normalization_factor(
-        image_rfft=image_rfft,
+        image_rfft=norm_rfft,
         cumulative_fourier_filters=cumulative_fourier_filters,
         bandpass_filter=bandpass_filter,
         full_image_shape=full_image_shape,

@@ -161,8 +161,22 @@ class MatchTemplateManager(BaseModel2DTM):
         image: torch.Tensor,
         *,
         defocus_values: torch.Tensor,
+        whitening_ref_image: torch.Tensor | None = None,
     ) -> dict[str, Any]:
-        """Shared ``core_match_template`` kwargs from a real-space image tensor."""
+        """Shared ``core_match_template`` kwargs from a real-space image tensor.
+
+        Parameters
+        ----------
+        image
+            Real-space micrograph used for the search (RFFT + preprocessing).
+        defocus_values
+            Defocus offsets for the CTF filter stack.
+        whitening_ref_image
+            Optional real-space image whose power spectrum is used to build the
+            whitening (and other cumulative Fourier) filters. Defaults to ``image``.
+            Spatial CTF uses the unconvolved micrograph here so the filter matches
+            a normal match-template run.
+        """
         # Ensure the micrograph and template are both Tensors before proceeding
         if not isinstance(image, torch.Tensor):
             image = torch.from_numpy(image)
@@ -178,6 +192,15 @@ class MatchTemplateManager(BaseModel2DTM):
         image_dft = torch.fft.rfftn(image)  # pylint: disable=E1102
         image_dft[0, 0] = 0 + 0j  # zero out the constant term
 
+        if whitening_ref_image is None:
+            ref_dft = image_dft
+        else:
+            if not isinstance(whitening_ref_image, torch.Tensor):
+                whitening_ref_image = torch.from_numpy(whitening_ref_image)
+            whitening_ref_image = whitening_ref_image.to(dtype=torch.float32)
+            ref_dft = torch.fft.rfftn(whitening_ref_image)  # pylint: disable=E1102
+            ref_dft[0, 0] = 0 + 0j
+
         # Get the bandpass filter individually
         bp_config = self.preprocessing_filters.bandpass_filter
         bandpass_filter = bp_config.calculate_bandpass_filter(image_dft.shape)
@@ -186,7 +209,7 @@ class MatchTemplateManager(BaseModel2DTM):
         # NOTE: We don't want to do random fourier masking on the image, so skip the
         # dropout mask for the image-side filter (without mutating the config).
         cumulative_filter_image = self.preprocessing_filters.get_combined_filter(
-            ref_img_rfft=image_dft,
+            ref_img_rfft=ref_dft,
             output_shape=image_dft.shape,
             apply_random_dropout=False,
         )
@@ -194,7 +217,7 @@ class MatchTemplateManager(BaseModel2DTM):
         # NOTE: Here, manually accounting for the RFFT in output shape since we have not
         # RFFT'd the template volume yet. Also, this is 2-dimensional, not 3-dimensional
         cumulative_filter_template = self.preprocessing_filters.get_combined_filter(
-            ref_img_rfft=image_dft,
+            ref_img_rfft=ref_dft,
             output_shape=(template.shape[-2], template.shape[-1] // 2 + 1),
         )
 
@@ -205,6 +228,9 @@ class MatchTemplateManager(BaseModel2DTM):
             bandpass_filter=bandpass_filter,
             full_image_shape=(image.shape[-2], image.shape[-1]),
             extracted_box_shape=(image.shape[-2], image.shape[-1]),
+            normalization_ref_rfft=(
+                ref_dft if whitening_ref_image is not None else None
+            ),
         )
 
         # Calculate the CTF filters at each defocus value
@@ -270,6 +296,7 @@ class MatchTemplateManager(BaseModel2DTM):
         image: torch.Tensor,
         *,
         defocus_values: torch.Tensor | None = None,
+        whitening_ref_image: torch.Tensor | None = None,
     ) -> dict[str, Any]:
         """Like :meth:`make_backend_core_function_kwargs` but using ``image``.
 
@@ -280,6 +307,9 @@ class MatchTemplateManager(BaseModel2DTM):
         defocus_values
             Defocus offsets for the CTF filter stack and backend. Defaults to
             ``defocus_search_config.defocus_values``.
+        whitening_ref_image
+            Optional real-space image used only to build whitening filters.
+            Defaults to ``image``.
         """
         dv = (
             defocus_values
@@ -289,6 +319,7 @@ class MatchTemplateManager(BaseModel2DTM):
         return self._make_backend_core_kwargs_from_image_tensor(
             image,
             defocus_values=dv,
+            whitening_ref_image=whitening_ref_image,
         )
 
     def _invoke_core_match_template(
@@ -488,15 +519,18 @@ class MatchTemplateManager(BaseModel2DTM):
 
         # Build a typed CorrelationTable from the processed backend output, looking up
         # per-detection mean/variance from the statistics tensors independently.
-        self.match_template_result.correlation_table = (
-            CorrelationTable.from_match_template_results(
-                processed_correlation_table=results["correlation_table"],
-                defocus_values=defocus_values,
-                euler_angles=euler_angles,
-                correlation_average=results["correlation_mean"],
-                correlation_variance_map=results["correlation_variance"],
+        # Merged/sectored/spatial paths may omit the table.
+        processed_table = results.get("correlation_table")
+        if processed_table is not None:
+            self.match_template_result.correlation_table = (
+                CorrelationTable.from_match_template_results(
+                    processed_correlation_table=processed_table,
+                    defocus_values=defocus_values,
+                    euler_angles=euler_angles,
+                    correlation_average=results["correlation_mean"],
+                    correlation_variance_map=results["correlation_variance"],
+                )
             )
-        )
 
         # Apply the valid cropping mode to the results
         # NOTE: zipFFT already applies valid cropping internally

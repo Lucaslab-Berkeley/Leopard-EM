@@ -22,15 +22,19 @@ from leopard_em.pydantic_models.config.spatial_ctf_premultiply import (
 from leopard_em.pydantic_models.managers.match_template_manager import (
     MatchTemplateManager,
 )
+from leopard_em.utils.ctf_utils import calculate_ctf_filter_stack
 from leopard_em.utils.data_io import load_mrc_image, write_mrc_from_tensor
 from leopard_em.utils.spatial_ctf_fields import (
     defocus_linear_increment_vertex_grid,
     phase_quadratic_vertex_grid,
 )
 from leopard_em.utils.spatial_ctf_realspace import (
+    _ctf_rfft_single,
     apply_spatial_psf_grid,
     build_psf_kernel_grid_defocus,
     build_psf_kernel_grid_phase,
+    sample_template_slices_for_gain,
+    template_ctf_unit_variance_gain,
 )
 
 
@@ -40,6 +44,10 @@ class SpatialCtfMatchTemplateManager(MatchTemplateManager):
     Runs ``core_match_template`` once per entry in ``defocus_search_config`` with
     ``ctf_premultiplied=True`` and a single Fourier defocus plane (0 Å offset).
     ``relative_defocus`` maps store the winning spatial defocus offset (Å) per pixel.
+
+    Every plane uses a vertex PSF grid (truncated kernel, not sum-normalized,
+    circular convolution), including uniform fields. Image DFTs are scaled by
+    ``||T W|| / ||T CTF(d_mean+d_k) W||`` so raw MIP is in Fourier-2DTM units.
     """
 
     model_config: ClassVar = ConfigDict(arbitrary_types_allowed=True)
@@ -98,6 +106,10 @@ class SpatialCtfMatchTemplateManager(MatchTemplateManager):
         When looping over defocus offsets, pass grids from
         :meth:`_precompute_spatial_vertex_grids` so vertex geometry is not
         recomputed each iteration.
+
+        Always uses the vertex PSF grid (circular convolution of truncated
+        kernels). A full-image Fourier CTF multiply is available as
+        :func:`apply_circular_ctf_multiply` for tests, not the production path.
         """
         img = load_mrc_image(self.micrograph_path).to(
             device=device, dtype=torch.float32
@@ -174,16 +186,53 @@ class SpatialCtfMatchTemplateManager(MatchTemplateManager):
 
         raise TypeError(f"Unsupported spatial_model: {type(sm)!r}")
 
+    def _plane_template_ctf_gain(
+        self,
+        d_k: float,
+        whitening_filter_template: torch.Tensor,
+        template_shape: tuple[int, int],
+        template_dft: torch.Tensor,
+        euler_angles: torch.Tensor,
+    ) -> torch.Tensor:
+        """``||T W|| / ||T CTF(d_mean+d_k) W||`` averaged over sampled orientations."""
+        sm = self.spatial_model
+        if isinstance(sm, QuadraticPhaseSpatialConfig):
+            ctf = _ctf_rfft_single(
+                self.optics_group,
+                self._mean_defocus_angstrom() + d_k,
+                sm.phase_c,
+                template_shape,
+                whitening_filter_template.device,
+            )
+        else:
+            ctf_stack = calculate_ctf_filter_stack(
+                template_shape=template_shape,
+                optics_group=self.optics_group,
+                defocus_offsets=torch.tensor([d_k], dtype=torch.float32),
+                pixel_size_offsets=torch.tensor([0.0], dtype=torch.float32),
+            )
+            ctf = ctf_stack[0, 0]
+        slices = sample_template_slices_for_gain(template_dft, euler_angles)
+        return template_ctf_unit_variance_gain(
+            ctf, whitening_filter_template, slices
+        )
+
     def make_backend_core_function_kwargs_with_image(
         self,
         image: torch.Tensor,
         *,
         defocus_values: torch.Tensor | None = None,
+        whitening_ref_image: torch.Tensor | None = None,
+        plane_defocus_offset: float = 0.0,
     ) -> dict[str, Any]:
         """Build backend kwargs from a premultiplied micrograph (Fourier defocus 0).
 
         Defocus is searched in real space; the Fourier stack uses a single plane unless
-        ``defocus_values`` is passed explicitly.
+        ``defocus_values`` is passed explicitly. Whitening is taken from
+        ``whitening_ref_image`` when provided (the unconvolved micrograph).
+
+        ``plane_defocus_offset`` is the spatial search offset ``d_k`` (Å) used to
+        scale the image DFT into Fourier-2DTM raw-MIP units.
         """
         if not self.ctf_premultiplied:
             raise ValueError(
@@ -195,10 +244,31 @@ class SpatialCtfMatchTemplateManager(MatchTemplateManager):
             if defocus_values is not None
             else torch.tensor([0.0], dtype=torch.float32)
         )
-        return super().make_backend_core_function_kwargs_with_image(
+        kwargs = super().make_backend_core_function_kwargs_with_image(
             image,
             defocus_values=dv,
+            whitening_ref_image=whitening_ref_image,
         )
+        template_h = int(kwargs["template_dft"].shape[-2])
+        gain = self._plane_template_ctf_gain(
+            plane_defocus_offset,
+            kwargs["whitening_filter_template"],
+            (template_h, template_h),
+            kwargs["template_dft"],
+            kwargs["euler_angles"],
+        )
+        image_dft = kwargs["image_dft"]
+        kwargs["image_dft"] = image_dft * gain.to(
+            device=image_dft.device, dtype=image_dft.real.dtype
+        )
+        return kwargs
+
+    def _unconvolved_micrograph(self) -> torch.Tensor:
+        """Load the original micrograph (no spatial PSF) as float32 CPU tensor."""
+        img = load_mrc_image(self.micrograph_path)
+        if not isinstance(img, torch.Tensor):
+            img = torch.from_numpy(img)
+        return img.to(dtype=torch.float32)
 
     def run_premultiply_only(self) -> None:
         """Write spatially CTF-corrected micrographs for each defocus search value."""
@@ -233,9 +303,14 @@ class SpatialCtfMatchTemplateManager(MatchTemplateManager):
         self,
         orientation_batch_size: int = 16,
         do_result_export: bool = True,
-        do_valid_cropping: bool = True,
+        do_valid_cropping: bool = False,
+        compute_correlation_table: bool = False,
     ) -> None:
-        """Premultiply per defocus plane, merge MIP and stats, 1 pooled z-score map."""
+        """Premultiply per defocus plane, merge MIP and stats, 1 pooled z-score map.
+
+        ``do_valid_cropping`` defaults to False: the match-template backend already
+        writes valid-cropped statistic maps (same as ``run_match_template``).
+        """
         offsets = self.defocus_search_config.defocus_values.cpu()
         n = int(offsets.numel())
         if n < 1:
@@ -244,6 +319,7 @@ class SpatialCtfMatchTemplateManager(MatchTemplateManager):
         device_mt = torch.device(str(self.computational_config.gpu_devices[0]))
         defocus_inc, phase_v = self._precompute_spatial_vertex_grids(device_mt)
         n_orient = int(self.orientation_search_config.euler_angles.shape[0])
+        whitening_ref = self._unconvolved_micrograph()
 
         plane_runs: list[dict[str, Any]] = []
 
@@ -256,9 +332,15 @@ class SpatialCtfMatchTemplateManager(MatchTemplateManager):
                 defocus_vertex_increment_grid=defocus_inc,
                 phase_vertex_grid=phase_v,
             ).cpu()
-            core_kwargs = self.make_backend_core_function_kwargs_with_image(img_corr)
+            core_kwargs = self.make_backend_core_function_kwargs_with_image(
+                img_corr,
+                whitening_ref_image=whitening_ref,
+                plane_defocus_offset=d_k,
+            )
             results = self._invoke_core_match_template(
-                core_kwargs, orientation_batch_size
+                core_kwargs,
+                orientation_batch_size,
+                compute_correlation_table=compute_correlation_table,
             )
 
             mip_k = results["mip"]
@@ -309,7 +391,7 @@ class SpatialCtfMatchTemplateManager(MatchTemplateManager):
         defocus_single = torch.tensor([0.0], dtype=torch.float32)
         euler = self.orientation_search_config.euler_angles.cpu().to(torch.float32)
 
-        phi, theta, psi, _df = decode_global_search_index(
+        phi, theta, psi, _df, _px = decode_global_search_index(
             best_gi, pixel_values, defocus_single, euler
         )
 
@@ -328,6 +410,8 @@ class SpatialCtfMatchTemplateManager(MatchTemplateManager):
         }
         self._populate_match_template_result(
             merged,
+            defocus_values=defocus_single,
+            euler_angles=euler,
             do_result_export=do_result_export,
             do_valid_cropping=do_valid_cropping,
         )
@@ -339,9 +423,13 @@ class SpatialCtfMatchTemplateManager(MatchTemplateManager):
         local_rank: int,
         orientation_batch_size: int = 16,
         do_result_export: bool = True,
-        do_valid_cropping: bool = True,
+        do_valid_cropping: bool = False,
+        compute_correlation_table: bool = False,
     ) -> None:
-        """Distributed spatial match template; accumulation on rank 0 only."""
+        """Distributed spatial match template; accumulation on rank 0 only.
+
+        ``do_valid_cropping`` defaults to False (backend already valid-crops).
+        """
         if not dist.is_initialized():
             raise RuntimeError("Distributed process group has not been initialized.")
 
@@ -351,6 +439,7 @@ class SpatialCtfMatchTemplateManager(MatchTemplateManager):
         device_mt = torch.device(str(self.computational_config.gpu_devices[0]))
         local_device = torch.device(f"cuda:{local_rank}")
         defocus_inc, phase_v = self._precompute_spatial_vertex_grids(device_mt)
+        whitening_ref = self._unconvolved_micrograph() if rank == 0 else None
 
         plane_runs: list[dict[str, Any]] = []
 
@@ -365,7 +454,9 @@ class SpatialCtfMatchTemplateManager(MatchTemplateManager):
                     phase_vertex_grid=phase_v,
                 ).cpu()
                 core_kwargs = self.make_backend_core_function_kwargs_with_image(
-                    img_corr
+                    img_corr,
+                    whitening_ref_image=whitening_ref,
+                    plane_defocus_offset=d_k,
                 )
 
             else:
@@ -378,6 +469,7 @@ class SpatialCtfMatchTemplateManager(MatchTemplateManager):
                 local_device,
                 core_kwargs,
                 orientation_batch_size,
+                compute_correlation_table=compute_correlation_table,
             )
             # pylint: enable=duplicate-code
 
@@ -435,7 +527,7 @@ class SpatialCtfMatchTemplateManager(MatchTemplateManager):
         defocus_single = torch.tensor([0.0], dtype=torch.float32)
         euler = self.orientation_search_config.euler_angles.cpu().to(torch.float32)
 
-        phi, theta, psi, _df = decode_global_search_index(
+        phi, theta, psi, _df, _px = decode_global_search_index(
             best_gi, pixel_values, defocus_single, euler
         )
 
@@ -454,6 +546,8 @@ class SpatialCtfMatchTemplateManager(MatchTemplateManager):
         }
         self._populate_match_template_result(
             merged,
+            defocus_values=defocus_single,
+            euler_angles=euler,
             do_result_export=do_result_export,
             do_valid_cropping=do_valid_cropping,
         )

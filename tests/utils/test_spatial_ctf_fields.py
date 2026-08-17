@@ -12,6 +12,8 @@ from leopard_em.utils.spatial_ctf_fields import (  # noqa: E402
 from leopard_em.utils.spatial_ctf_realspace import (  # noqa: E402
     apply_spatial_psf_grid,
     apply_spatially_varying_psf,
+    ctf_to_psf_crop,
+    template_ctf_unit_variance_gain,
 )
 
 
@@ -35,7 +37,7 @@ def test_phase_quadratic_clamped():
 
 
 def test_apply_spatial_psf_grid_single_kernel():
-    """1x1 grid: every pixel uses the same PSF."""
+    """1x1 grid: every pixel uses the same PSF (circular convolution)."""
     dev = torch.device("cpu")
     k = 5
     h, w = 10, 12
@@ -51,8 +53,7 @@ def test_apply_spatial_psf_grid_single_kernel():
         torch.nn.functional.pad(
             img.unsqueeze(0).unsqueeze(0),
             (pad, pad, pad, pad),
-            mode="constant",
-            value=0.0,
+            mode="circular",
         )
         .squeeze(0)
         .squeeze(0)
@@ -81,8 +82,7 @@ def test_spatial_psf_uniform_weights_match_single_kernel():
         torch.nn.functional.pad(
             img.unsqueeze(0).unsqueeze(0),
             (pad, pad, pad, pad),
-            mode="constant",
-            value=0.0,
+            mode="circular",
         )
         .squeeze(0)
         .squeeze(0)
@@ -93,3 +93,23 @@ def test_spatial_psf_uniform_weights_match_single_kernel():
         expected_rows.append((row_patches * kernel).sum(dim=(-1, -2)))
     expected = torch.stack(expected_rows, dim=0)
     assert torch.allclose(out, expected, atol=1e-5, rtol=1e-5)
+
+
+def test_template_ctf_unit_variance_gain_constant_ctf():
+    whitening = torch.ones(8, 5)
+    ctf = torch.full((8, 5), 0.5)
+    gain = template_ctf_unit_variance_gain(ctf, whitening)
+    assert abs(float(gain) - 2.0) < 1e-5
+    slices = torch.randn(4, 8, 5, dtype=torch.complex64)
+    gain_slices = template_ctf_unit_variance_gain(ctf, whitening, slices)
+    assert abs(float(gain_slices) - 2.0) < 1e-4
+
+
+def test_ctf_to_psf_crop_not_sum_normalized():
+    h, w = 32, 32
+    ksz = 5
+    # rFFT of a scaled delta is a constant; crop sum tracks the scale, not 1.
+    ctf = torch.ones(h, w // 2 + 1) * 2.0
+    crop = ctf_to_psf_crop(ctf, (h, w), ksz)
+    assert crop.shape == (ksz, ksz)
+    assert abs(float(crop.sum()) - 2.0) < 0.05

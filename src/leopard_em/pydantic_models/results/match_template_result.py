@@ -343,7 +343,11 @@ class MatchTemplateResultMRC(_MatchTemplateResultBase):
                 overwrite=self.allow_file_overwrite,
             )
 
-        self.export_correlation_table()
+        if (
+            self.correlation_table is not None
+            and self.correlation_table_path is not None
+        ):
+            self.export_correlation_table()
 
     def export_correlation_table(self) -> None:
         """Write the held CorrelationTable to ``self.correlation_table_path``."""

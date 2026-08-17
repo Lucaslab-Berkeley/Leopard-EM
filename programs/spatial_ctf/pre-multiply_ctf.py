@@ -1,4 +1,8 @@
-"""Write spatially CTF-corrected MRCs using ``SpatialCtfMatchTemplateManager``."""
+"""Write spatially CTF-corrected MRCs using ``SpatialCtfMatchTemplateManager``.
+
+Requires ``premultiplied_output_dir`` and ``premultiplied_output_base_name`` in
+the YAML. Does not run match-template.
+"""
 
 from __future__ import annotations
 
@@ -14,7 +18,14 @@ YAML_CONFIG_PATH = "/path/to/spatial_ctf_match_template.yaml"
 def main() -> None:
     """Load YAML and run premultiply-only (requires YAML premultiply output paths)."""
     mgr = SpatialCtfMatchTemplateManager.from_yaml(YAML_CONFIG_PATH)
+    print("Loaded configuration.")
+    print(f"spatial_model: {mgr.spatial_model}")
+    print(
+        f"Writing premultiplied MRCs to "
+        f"{mgr.premultiplied_output_dir}/{mgr.premultiplied_output_base_name}_*.mrc"
+    )
     mgr.run_premultiply_only()
+    print("Done!")
 
 
 if __name__ == "__main__":

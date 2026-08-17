@@ -9,7 +9,7 @@ See the online documentation for comprehensive information on configuring the ma
 - `run_match_template.py` - The default Python script for running the match template program. This supports muli-GPU systems (configure GPUs using the YAML file).
 - `run_distributed_match_template.py` - A Python script for running match template on large-scale distributed systems (multi-node clusters). _Use the default script unless you're running on more than one machine_.
 - `distributed_match_template.slurm` - An example SLURM script for running the distributed match template (_launching from a workload manager is required_).
-- `run_sectored_match_template.py` - Sectored SO(3) search: splits orientation space into HEALPix sectors and runs an independent masked-MIP match template per sector, then merges results. Requires `torch-so3 >= 0.2.2`.
+- `run_sectored_match_template.py` - Sectored SO(3) search: splits orientation space into HEALPix sectors and runs an independent masked-MIP match template per sector, then merges results. Requires `torch-so3 >= 0.5.2`.
 
 ## Sectored match template
 
@@ -34,8 +34,8 @@ masked-MIP `core_match_template` per sector, and merge results with
 | `NSIDE_COARSE` | `1` | Coarse HEALPix resolution (`n_sectors = 12 * NSIDE_COARSE**2`) |
 | `NSIDE_FINE` | `None` | Fine HEALPix resolution (inferred from `theta_step` if `None`) |
 
-**Installation requirement:** `torch-so3 >= 0.2.2`
+**Installation requirement:** `torch-so3 >= 0.5.2` (same as the package dependency).
 
 ```bash
-pip install "torch-so3>=0.2.2"
+pip install "torch-so3>=0.5.2"
 ```
