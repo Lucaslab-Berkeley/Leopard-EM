@@ -1,0 +1,46 @@
+# Example config for per-frame peak inspection (frame correlations).
+# Uses the same schema as refine/inspect configs, but movie_config.enabled must be true.
+template_volume_path: /some/path/to/template.mrc
+particle_stack:
+  df_path: /some/path/to/particles.csv  # Needs to be readable by pandas
+  extracted_box_size: [512, 512]
+  original_template_size: [512, 512]
+defocus_refinement_config:
+  enabled: false
+  defocus_max: 100.0
+  defocus_min: -100.0
+  defocus_step: 20.0
+orientation_refinement_config:
+  enabled: false
+  psi_step_coarse: 1.5
+  psi_step_fine: 0.15
+  theta_step_coarse: 2.5
+  theta_step_fine: 0.25
+pixel_size_refinement_config:
+  enabled: false
+  pixel_size_min: -0.005
+  pixel_size_max: 0.005
+  pixel_size_step: 0.001
+preprocessing_filters:
+  whitening_filter:
+    do_power_spectrum: true
+    enabled: true
+    max_freq: 0.5
+    num_freq_bins: null
+  bandpass_filter:
+    enabled: false
+    falloff: null
+    high_freq_cutoff: null
+    low_freq_cutoff: null
+computational_config:
+  gpu_ids: 0
+  num_cpus: 1
+apply_global_filtering: true
+movie_config:
+  enabled: true
+  movie_path: /some/path/to/aligned_or_unaligned_movie.mrc
+  # Optional: either provide particle_shifts_path OR deformation_field_path.
+  # deformation_field_path: /some/path/to/deformation_grid.csv
+  # particle_shifts_path: /some/path/to/particle_shifts.csv
+  pre_exposure: 0.0
+  fluence_per_frame: 1.0

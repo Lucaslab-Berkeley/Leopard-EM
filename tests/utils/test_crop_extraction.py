@@ -150,7 +150,7 @@ def test_get_cropped_image_regions_torch_random_nonoverlapping():
             y = np.random.randint(0, image_size[0] - box_size[0] + 1)
             x = np.random.randint(0, image_size[1] - box_size[1] + 1)
             if all(
-                not (y <= py < y + box_size[0] and x <= px < x + box_size[1])
+                not (abs(y - py) < box_size[0] and abs(x - px) < box_size[1])
                 for py, px in positions
             ):
                 positions.append((y, x))

@@ -32,7 +32,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.11", "3.12"]
+        python-version: ["3.11", "3.12", "3.13"]
         platform: [ubuntu-latest, macos-latest]
 
     steps:
@@ -48,8 +48,7 @@ jobs:
       - name: Install Dependencies
         run: |
           python -m pip install -U pip
-          # if running a cron job, we add the --pre flag to test against pre-releases
-          python -m pip install .[test] ${{ github.event_name == 'schedule' && '--pre' || ''  }}
+          python -m pip install .[test]
 
       - name: 🧪 Run Tests
         run: pytest --color=yes --cov --cov-report=xml --cov-report=term-missing
@@ -69,7 +68,7 @@ jobs:
           update_existing: true
 
       - name: Coverage
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@v7
 
   deploy:
     name: Deploy
@@ -102,7 +101,7 @@ jobs:
       - name: 🚢 Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
 
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           generate_release_notes: true
           files: './dist/*'

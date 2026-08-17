@@ -1,5 +1,10 @@
 """Submodule for analyzing results during the template matching pipeline."""
 
+from .inspect_peaks_result import (
+    InspectionResult,
+    load_inspection_result,
+    save_inspection_result,
+)
 from .match_template_peaks import (
     MatchTemplatePeaks,
     match_template_peaks_to_dataframe,
@@ -12,6 +17,9 @@ from .zscore_metric import (
 )
 
 __all__ = [
+    "InspectionResult",
+    "load_inspection_result",
+    "save_inspection_result",
     "MatchTemplatePeaks",
     "match_template_peaks_to_dict",
     "match_template_peaks_to_dataframe",

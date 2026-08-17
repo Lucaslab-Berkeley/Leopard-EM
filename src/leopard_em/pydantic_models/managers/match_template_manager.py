@@ -27,7 +27,11 @@ from leopard_em.pydantic_models.config import (
 from leopard_em.pydantic_models.custom_types import BaseModel2DTM, ExcludedTensor
 from leopard_em.pydantic_models.data_structures import OpticsGroup
 from leopard_em.pydantic_models.formats import MATCH_TEMPLATE_DF_COLUMN_ORDER
-from leopard_em.pydantic_models.results import MatchTemplateResult
+from leopard_em.pydantic_models.results import (
+    MatchTemplateResultHDF5,
+    MatchTemplateResultMRC,
+)
+from leopard_em.pydantic_models.results.correlation_table import CorrelationTable
 from leopard_em.utils.ctf_utils import calculate_ctf_filter_stack
 from leopard_em.utils.data_io import load_mrc_image, load_mrc_volume
 from leopard_em.utils.image_processing import (
@@ -59,9 +63,10 @@ class MatchTemplateManager(BaseModel2DTM):
     preprocessing_filters : PreprocessingFilters
         Configurations for the preprocessing filters to apply during
         correlation.
-    match_template_result : MatchTemplateResult
-        Result of the match template program stored as an instance of the
-        `MatchTemplateResult` class.
+    match_template_result : MatchTemplateResultMRC | MatchTemplateResultHDF5
+        Result of the match template program.  Use ``MatchTemplateResultMRC``
+        to write individual MRC files or ``MatchTemplateResultHDF5`` to bundle
+        all tensors into a single HDF5 file.
     computational_config : ComputationalConfigMatch
         Parameters for controlling computational resources.
     orientation_eligible_for_mip : ExcludedTensor, optional
@@ -110,7 +115,7 @@ class MatchTemplateManager(BaseModel2DTM):
     defocus_search_config: DefocusSearchConfig
     orientation_search_config: OrientationSearchConfig | MultipleOrientationConfig
     preprocessing_filters: PreprocessingFilters
-    match_template_result: MatchTemplateResult
+    match_template_result: MatchTemplateResultMRC | MatchTemplateResultHDF5
     computational_config: ComputationalConfigMatch
     ctf_premultiplied: bool = False
     orientation_eligible_for_mip: ExcludedTensor | None = None
@@ -178,10 +183,14 @@ class MatchTemplateManager(BaseModel2DTM):
         bandpass_filter = bp_config.calculate_bandpass_filter(image_dft.shape)
 
         # Calculate the cumulative filters for both the image and the template.
+        # NOTE: We don't want to do random fourier masking on the image, so skip the
+        # dropout mask for the image-side filter (without mutating the config).
         cumulative_filter_image = self.preprocessing_filters.get_combined_filter(
             ref_img_rfft=image_dft,
             output_shape=image_dft.shape,
+            apply_random_dropout=False,
         )
+
         # NOTE: Here, manually accounting for the RFFT in output shape since we have not
         # RFFT'd the template volume yet. Also, this is 2-dimensional, not 3-dimensional
         cumulative_filter_template = self.preprocessing_filters.get_combined_filter(
@@ -286,6 +295,7 @@ class MatchTemplateManager(BaseModel2DTM):
         self,
         core_kwargs: dict[str, Any],
         orientation_batch_size: int,
+        compute_correlation_table: bool = True,
     ) -> dict[str, Any]:
         """Run :func:`core_match_template` with this manager's compute settings."""
         return core_match_template(
@@ -293,6 +303,7 @@ class MatchTemplateManager(BaseModel2DTM):
             orientation_batch_size=orientation_batch_size,
             num_cuda_streams=self.computational_config.num_cpus,
             backend=self.computational_config.backend,
+            compute_correlation_table=compute_correlation_table,
         )
 
     def _invoke_core_match_template_distributed(
@@ -303,6 +314,7 @@ class MatchTemplateManager(BaseModel2DTM):
         device: torch.device,
         core_kwargs: dict[str, Any],
         orientation_batch_size: int,
+        compute_correlation_table: bool = True,
     ) -> dict[str, Any]:
         """Run distributed core match; strips ``device`` from kwargs if present."""
         kwargs = dict(core_kwargs)
@@ -315,6 +327,7 @@ class MatchTemplateManager(BaseModel2DTM):
             orientation_batch_size,
             self.computational_config.num_cpus,
             self.computational_config.backend,
+            compute_correlation_table=compute_correlation_table,
             **kwargs,
         )
 
@@ -322,7 +335,8 @@ class MatchTemplateManager(BaseModel2DTM):
         self,
         orientation_batch_size: int = 16,
         do_result_export: bool = True,
-        do_valid_cropping: bool = True,
+        do_valid_cropping: bool = False,
+        compute_correlation_table: bool = True,
     ) -> None:
         """Runs the base match template in pytorch.
 
@@ -334,18 +348,31 @@ class MatchTemplateManager(BaseModel2DTM):
             If True, call the `MatchTemplateResult.export_results` method to save the
             results to disk directly after running the match template. Default is True.
         do_valid_cropping : bool
-            If True, apply the valid cropping mode to the results. Default is True.
+            If True, then apply valid cropping to the result maps based on the relative
+            size of the image and template (N-n+1 along each axis). The backend of
+            Leopard-EM will automatically do this, so generally set this to False. The
+            default is False.
+        compute_correlation_table : bool
+            If True, track cross-correlation values which surpass the correlation
+            table threshold during the search. If False, the `CorrelationTable` will be
+            empty. Default is True.
 
         Returns
         -------
         None
         """
         core_kwargs = self.make_backend_core_function_kwargs()
-        results = self._invoke_core_match_template(core_kwargs, orientation_batch_size)
+        results = self._invoke_core_match_template(
+            core_kwargs,
+            orientation_batch_size,
+            compute_correlation_table=compute_correlation_table,
+        )
 
         # Populate the MatchTemplateResult via a private helper
         self._populate_match_template_result(
             results,
+            defocus_values=core_kwargs["defocus_values"],
+            euler_angles=core_kwargs["euler_angles"],
             do_result_export=do_result_export,
             do_valid_cropping=do_valid_cropping,
         )
@@ -357,7 +384,8 @@ class MatchTemplateManager(BaseModel2DTM):
         local_rank: int,
         orientation_batch_size: int = 16,
         do_result_export: bool = True,
-        do_valid_cropping: bool = True,
+        do_valid_cropping: bool = False,
+        compute_correlation_table: bool = True,
     ) -> None:
         """Runs the base match template in a distributed, multi-node environment.
 
@@ -375,7 +403,14 @@ class MatchTemplateManager(BaseModel2DTM):
             If True, call the `MatchTemplateResult.export_results` method to save the
             results to disk directly after running the match template. Default is True.
         do_valid_cropping : bool
-            If True, apply the valid cropping mode to the results. Default is True.
+            If True, then apply valid cropping to the result maps based on the relative
+            size of the image and template (N-n+1 along each axis). The backend of
+            Leopard-EM will automatically do this, so generally set this to False. The
+            default is False.
+        compute_correlation_table : bool
+            If True, track cross-correlation values which surpass the correlation
+            table threshold during the search. If False, the `CorrelationTable` will be
+            empty. Default is True.
 
         Raises
         ------
@@ -408,6 +443,7 @@ class MatchTemplateManager(BaseModel2DTM):
             device,
             core_kwargs,
             orientation_batch_size,
+            compute_correlation_table=compute_correlation_table,
         )
         # pylint: enable=duplicate-code
 
@@ -415,6 +451,8 @@ class MatchTemplateManager(BaseModel2DTM):
         if torch.distributed.get_rank() == 0:
             self._populate_match_template_result(
                 results,
+                defocus_values=core_kwargs["defocus_values"],
+                euler_angles=core_kwargs["euler_angles"],
                 do_result_export=do_result_export,
                 do_valid_cropping=do_valid_cropping,
             )
@@ -422,8 +460,10 @@ class MatchTemplateManager(BaseModel2DTM):
     def _populate_match_template_result(
         self,
         results: dict[str, Any],
+        defocus_values: torch.Tensor,
+        euler_angles: torch.Tensor,
         do_result_export: bool = True,
-        do_valid_cropping: bool = True,
+        do_valid_cropping: bool = False,
     ) -> None:
         """Helper function to populate the MatchTemplateResult object post-core call."""
         # Place results into the `MatchTemplateResult` object
@@ -446,7 +486,20 @@ class MatchTemplateManager(BaseModel2DTM):
         self.match_template_result.total_orientations = results["total_orientations"]
         self.match_template_result.total_defocus = results["total_defocus"]
 
+        # Build a typed CorrelationTable from the processed backend output, looking up
+        # per-detection mean/variance from the statistics tensors independently.
+        self.match_template_result.correlation_table = (
+            CorrelationTable.from_match_template_results(
+                processed_correlation_table=results["correlation_table"],
+                defocus_values=defocus_values,
+                euler_angles=euler_angles,
+                correlation_average=results["correlation_mean"],
+                correlation_variance_map=results["correlation_variance"],
+            )
+        )
+
         # Apply the valid cropping mode to the results
+        # NOTE: zipFFT already applies valid cropping internally
         if do_valid_cropping:
             nx = self.template_volume.shape[-1]
             self.match_template_result.apply_valid_cropping((nx, nx))
@@ -551,19 +604,30 @@ class MatchTemplateManager(BaseModel2DTM):
         df["micrograph_path"] = self.micrograph_path
         df["template_path"] = self.template_volume_path
 
-        # Add paths to the output statistic files
-        df["mip_path"] = self.match_template_result.mip_path
-        df["scaled_mip_path"] = self.match_template_result.scaled_mip_path
-        df["psi_path"] = self.match_template_result.orientation_psi_path
-        df["theta_path"] = self.match_template_result.orientation_theta_path
-        df["phi_path"] = self.match_template_result.orientation_phi_path
-        df["defocus_path"] = self.match_template_result.relative_defocus_path
-        df["correlation_average_path"] = (
-            self.match_template_result.correlation_average_path
-        )
-        df["correlation_variance_path"] = (
-            self.match_template_result.correlation_variance_path
-        )
+        # Add paths to the output statistic files, branching on storage back-end
+        if isinstance(self.match_template_result, MatchTemplateResultMRC):
+            df["mip_path"] = self.match_template_result.mip_path
+            df["scaled_mip_path"] = self.match_template_result.scaled_mip_path
+            df["psi_path"] = self.match_template_result.orientation_psi_path
+            df["theta_path"] = self.match_template_result.orientation_theta_path
+            df["phi_path"] = self.match_template_result.orientation_phi_path
+            df["defocus_path"] = self.match_template_result.relative_defocus_path
+            df["correlation_average_path"] = (
+                self.match_template_result.correlation_average_path
+            )
+            df["correlation_variance_path"] = (
+                self.match_template_result.correlation_variance_path
+            )
+        else:
+            # HDF5: all tensors are in one file; individual MRC paths are not applicable
+            df["mip_path"] = self.match_template_result.hdf5_path
+            df["scaled_mip_path"] = self.match_template_result.hdf5_path
+            df["psi_path"] = self.match_template_result.hdf5_path
+            df["theta_path"] = self.match_template_result.hdf5_path
+            df["phi_path"] = self.match_template_result.hdf5_path
+            df["defocus_path"] = self.match_template_result.hdf5_path
+            df["correlation_average_path"] = self.match_template_result.hdf5_path
+            df["correlation_variance_path"] = self.match_template_result.hdf5_path
 
         # Add particle index
         df["particle_index"] = df.index

@@ -6,7 +6,7 @@ import torch
 from pydantic import BaseModel, Field
 
 # Type alias for non-negative integer
-NonNegativeInt = Annotated[int, Field(ge=0)]
+NonNegativeInt = Annotated[int, Field(ge=0)]  # pylint: disable=invalid-name
 
 
 class BaseComputationalConfig(BaseModel):
@@ -73,11 +73,16 @@ class ComputationalConfigMatch(BaseComputationalConfig):
         - The specific string "cpu" which means to use CPU.
     num_cpus : int
         Total number of CPUs to use, defaults to 1.
-    backend : Optional[str]
-        Match-template backend: ``streamed``, ``batched``, ``streamed_masked_mip``, or
-        ``batched_masked_mip``. Masked variants require ``orientation_eligible`` when
-        calling the core (see ``MatchTemplateManager.orientation_eligible_for_mip``).
-        Defaults to ``streamed``.
+    backend : Literal[
+        "streamed", "batched", "zipfft", "streamed_masked_mip", "batched_masked_mip"
+    ], optional
+        Cross-correlation backend for match template. ``streamed`` / ``batched`` use
+        PyTorch (streamed vs single batched CC). ``zipfft`` uses the zipFFT library.
+        ``streamed_masked_mip`` / ``batched_masked_mip`` use the same CC paths as the
+        unprefixed names but restrict MIP / best-orientation selection via
+        ``orientation_eligible`` (see
+        ``MatchTemplateManager.orientation_eligible_for_mip``). Defaults to
+        ``streamed``.
     """
 
     # Type-hinting here is ensuring non-negative integers, and list of at least one
@@ -93,6 +98,7 @@ class ComputationalConfigMatch(BaseComputationalConfig):
     backend: Literal[
         "streamed",
         "batched",
+        "zipfft",
         "streamed_masked_mip",
         "batched_masked_mip",
     ] = "streamed"

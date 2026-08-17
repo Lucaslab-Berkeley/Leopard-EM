@@ -1,29 +1,50 @@
-"""Particle stack Pydantic model for dealing with extracted particle data."""
+"""Particle stack Pydantic model for dealing with extracted particle data.
+
+Two public classes are provided for different storage back-ends:
+
+* ``ParticleStackCSV`` - the original behavior, loading particle data from a
+  CSV file and micrograph images from referenced paths on disk.
+  ``ParticleStack`` is an alias for this class for backward compatibility.
+* ``ParticleStackHDF5`` - stores the particle table, optional image stack, and
+  optional per-particle local correlation statistics in a single HDF5 file.
+
+The base class ``_ParticleStackBase`` holds all shared computation methods and
+tensor fields.  It is not intended to be used directly.
+"""
+
+# TODO: Move these into two separate files (long file)
 
 # pylint: disable=too-many-lines
 
+import json
+import os
 import warnings
+from importlib.metadata import PackageNotFoundError, version
+from pathlib import Path
 from typing import Any, ClassVar, Literal
 
+import h5py
 import numpy as np
 import pandas as pd
 import torch
-from pydantic import ConfigDict
+from pydantic import ConfigDict, Field, model_validator
 from torch.utils.checkpoint import checkpoint
-from torch_cubic_spline_grids import CubicCatmullRomGrid3d
 from torch_fourier_shift import fourier_shift_dft_2d
 from torch_grid_utils import coordinate_grid
 from torch_motion_correction.correct_motion import get_pixel_shifts
-from torch_motion_correction.deformation_field_utils import (
-    evaluate_deformation_field_at_t,
-)
+from torch_motion_correction.deformation_field import DeformationField
+from typing_extensions import Self
 
 from leopard_em.pydantic_models.config import PreprocessingFilters
 from leopard_em.pydantic_models.custom_types import (
     BaseModel2DTM,
     ExcludedTensor,
+    ExcludedTensorDict,
 )
-from leopard_em.pydantic_models.formats import MATCH_TEMPLATE_DF_COLUMN_ORDER
+from leopard_em.pydantic_models.formats import (
+    MATCH_TEMPLATE_DF_COLUMN_ORDER,
+    STATISTIC_MAP_PATH_COLUMNS,
+)
 from leopard_em.utils.data_io import load_mrc_image
 from leopard_em.utils.image_processing import dose_weight_movie_to_micrograph
 
@@ -33,21 +54,174 @@ TORCH_TO_NUMPY_PADDING_MODE = {
     "replicate": "edge",
 }
 
+_HDF5_PARTICLES_GROUP = "particles"
+_HDF5_LOCAL_STATS_GROUP = "local_stats"
+_HDF5_IMAGE_STACK_DATASET = "image_stack"
+_HDF5_STRING_DTYPE = h5py.string_dtype()
+
+# Full-micrograph 2DTM result maps extracted per-particle by
+# ``get_local_stat_maps`` when no explicit columns are requested.
+_DEFAULT_LOCAL_STAT_COLUMNS = tuple(STATISTIC_MAP_PATH_COLUMNS)
+
+
+# TODO: Make this a shared utility function across the package somehow
+def _leopard_em_version() -> str:
+    try:
+        return version("leopard_em")
+    except PackageNotFoundError:
+        return "uninstalled"
+
 
 def _any_nan_or_inf(s: pd.Series) -> bool:
-    """Helper function to check if any value in the Series is NaN or infinite.
-
-    Parameters
-    ----------
-    s : pd.Series
-        The Series to check.
-
-    Returns
-    -------
-    bool
-        True if any value in the Series is NaN or infinite, False otherwise.
-    """
+    """Helper function to check if any value in the Series is NaN or infinite."""
     return bool(s.isna().any() or s.isin([float("inf"), float("-inf")]).any())
+
+
+def _check_output_path(path: str, allow_file_overwrite: bool) -> None:
+    """Ensure ``path``'s parent directory is writable and overwrite policy is met.
+
+    Creates the parent directory if it does not already exist.
+
+    Raises
+    ------
+    ValueError
+        If the parent directory is not writable, or the file already exists
+        and ``allow_file_overwrite`` is False.
+    """
+    directory = str(Path(path).parent)
+    if directory and not os.path.exists(directory):
+        os.makedirs(directory, exist_ok=True)
+    if directory and not os.access(directory, os.W_OK):
+        raise ValueError(
+            f"Directory '{directory}' does not permit writing to '{path}'."
+        )
+    if not allow_file_overwrite and os.path.exists(path):
+        raise ValueError(
+            f"File '{path}' already exists but 'allow_file_overwrite' is False."
+        )
+
+
+def _generate_particle_ids(df: pd.DataFrame) -> list[str]:
+    """Generate particle IDs of the form ``{mic_stem}_{local_idx:05d}``."""
+    ids: pd.Series = pd.Series("", index=df.index, dtype=object)
+    for mic_path, group in df.groupby("micrograph_path", sort=False):
+        stem = Path(str(mic_path)).stem
+        for local_idx, row_label in enumerate(group.index):
+            ids.at[row_label] = f"{stem}_{local_idx:05d}"
+
+    res: list[str] = ids.tolist()
+    return res
+
+
+# TODO: Better management of Zernikie coefficient columns/arrays in the HDF5 format...
+#       This is a lot of boilerplate code, and probably a better schema would eliminate
+#       these parsing needs.
+def _value_to_str(v: Any) -> str:
+    """Serialize a value to a string for HDF5 storage."""
+    if v is None:
+        return ""
+    if isinstance(v, str):
+        return v
+    return json.dumps(v)
+
+
+def _str_to_value(s: str) -> Any:
+    """Deserialize a string back to a Python value after HDF5 load."""
+    if s == "":
+        return None
+    try:
+        parsed = json.loads(s)
+        if isinstance(parsed, (list, dict)):
+            return parsed
+        # Plain JSON scalars (numbers) that were originally strings stay as strings
+        return s
+    except (json.JSONDecodeError, ValueError):
+        return s
+
+
+# NOTE: How are the internals of the hdf5 particle stack being handled? Are they just a
+#       pass through for the DataFrame type backed class (don't want this). Need to
+#       implement things at the base class level somehow.
+def _write_df_to_hdf5_group(f: h5py.File, df: pd.DataFrame) -> None:
+    """Write a DataFrame's columns to ``f[_HDF5_PARTICLES_GROUP]``.
+
+    Numeric columns are stored as float64 datasets.  String / object columns
+    (including path columns, Zernike coefficient arrays, etc.) are serialized
+    to variable-length UTF-8 strings via ``_value_to_str``.
+
+    The dataset names match the DataFrame column names.  ``particle_id``
+    (which may be the DataFrame index) is always written as an explicit
+    dataset and listed first in ``attrs["columns"]``.
+    """
+    grp = f.create_group(_HDF5_PARTICLES_GROUP)
+
+    # Build the list of columns to write, ensuring particle_id comes first.
+    if df.index.name == "particle_id":
+        particle_ids = df.index.tolist()
+        col_names = ["particle_id", *list(df.columns)]
+    else:
+        # particle_id may be an ordinary column
+        particle_ids = df["particle_id"].tolist() if "particle_id" in df.columns else []
+        col_names = list(df.columns)
+
+    grp.attrs["columns"] = col_names
+
+    # Write particle_id dataset
+    if particle_ids:
+        grp.create_dataset(
+            "particle_id",
+            data=np.array([str(v) for v in particle_ids], dtype=object),
+            dtype=_HDF5_STRING_DTYPE,
+        )
+
+    for col in df.columns:
+        if col == "particle_id":
+            # Already written above (or will be skipped if index)
+            if df.index.name != "particle_id":
+                continue
+        series = df[col]
+        if pd.api.types.is_float_dtype(series) or pd.api.types.is_integer_dtype(series):
+            grp.create_dataset(col, data=series.to_numpy(dtype=np.float64))
+        else:
+            str_data = [_value_to_str(v) for v in series]
+            grp.create_dataset(
+                col,
+                data=np.array(str_data, dtype=object),
+                dtype=_HDF5_STRING_DTYPE,
+            )
+
+
+def _read_df_from_hdf5_group(f: h5py.File) -> pd.DataFrame:
+    """Reconstruct a DataFrame from ``f[_HDF5_PARTICLES_GROUP]``.
+
+    ``particle_id`` is restored as the pandas ``Index``.
+    """
+    grp = f[_HDF5_PARTICLES_GROUP]
+    columns: list[str] = list(grp.attrs["columns"])
+
+    data: dict[str, Any] = {}
+    for col in columns:
+        if col not in grp:
+            continue
+        raw = grp[col][:]
+        if raw.dtype.kind in ("O", "S", "U"):
+            decoded = [s.decode() if isinstance(s, bytes) else s for s in raw]
+            data[col] = [_str_to_value(s) for s in decoded]
+        else:
+            data[col] = raw
+
+    df = pd.DataFrame(data)
+
+    if "particle_id" in df.columns:
+        df = df.set_index("particle_id")
+        df.index.name = "particle_id"
+
+    return df
+
+
+# ---------------------------------------------------------------------------
+# Stand-alone image-extraction helpers (unchanged from original module)
+# ---------------------------------------------------------------------------
 
 
 def get_cropped_image_regions(
@@ -130,8 +304,6 @@ def get_cropped_image_regions(
     if isinstance(box_size, int):
         box_size = (box_size, box_size)
 
-    # The underlying numpy/torch functions only operate on the top-left corner
-    # reference, so shift the position half a box height/width if using center.
     if pos_reference == "center":
         pos_y = pos_y - box_size[0] // 2
         pos_x = pos_x - box_size[1] // 2
@@ -198,7 +370,6 @@ def _get_cropped_image_regions_numpy(
 
     regions = []
     for y, x in zip(pos_y, pos_x):
-        # Check bounds and raise error if out of bounds
         if (
             y < 0
             or x < 0
@@ -251,12 +422,10 @@ def _get_cropped_image_regions_torch(
 
     regions = []
     for y, x in zip(pos_y, pos_x):
-        # Convert to Python ints for comparison
         y = int(y.item() if hasattr(y, "item") else y)
         x = int(x.item() if hasattr(x, "item") else x)
         original_y, original_x = y, x
 
-        # Check bounds
         if (
             y < 0
             or x < 0
@@ -269,7 +438,6 @@ def _get_cropped_image_regions_torch(
                     f"{original_x}:{original_x + box_size[1]}] exceed "
                     f"image dimensions {image.shape}"
                 )
-            # For "pad" mode, warn and clamp coordinates
             warnings.warn(
                 f"Region bounds [{original_y}:{original_y + box_size[0]}, "
                 f"{original_x}:{original_x + box_size[1]}] exceed "
@@ -277,130 +445,300 @@ def _get_cropped_image_regions_torch(
                 UserWarning,
                 stacklevel=2,
             )
-            # Clamp coordinates to keep region within image bounds
             y = max(0, min(y, image.shape[0] - box_size[0]))
             x = max(0, min(x, image.shape[1] - box_size[1]))
 
         regions.append(image[y : y + box_size[0], x : x + box_size[1]])
 
-    # Stack all regions
     cropped_images = torch.stack(regions)
 
     return cropped_images
 
 
-class ParticleStack(BaseModel2DTM):
-    """Pydantic model for dealing with particle stack data.
+# ---------------------------------------------------------------------------
+# Base class
+# ---------------------------------------------------------------------------
+
+
+# pylint: disable=too-many-instance-attributes
+class _ParticleStackBase(BaseModel2DTM):
+    """Base class holding particle stack data, preprocessing state, and compute methods.
+
+    Not intended to be instantiated directly — use ``ParticleStackCSV`` or
+    ``ParticleStackHDF5`` depending on the desired storage back-end.
 
     Attributes
     ----------
-    df_path : str
-        Path to the DataFrame containing the particle data. The DataFrame must have
-        the following columns (see the documentation for further information):
-
-          - mip
-          - scaled_mip
-          - correlation_mean
-          - correlation_variance
-          - total_correlations
-          - pos_x
-          - pos_y
-          - pos_x_img
-          - pos_y_img
-          - pos_x_img_angstrom
-          - pos_y_img_angstrom
-          - psi
-          - theta
-          - phi
-          - relative_defocus
-          - refined_relative_defocus
-          - defocus_u
-          - defocus_v
-          - astigmatism_angle
-          - pixel_size
-          - refined_pixel_size
-          - voltage
-          - spherical_aberration
-          - amplitude_contrast_ratio
-          - phase_shift
-          - ctf_B_factor
-          - micrograph_path
-          - template_path
-          - mip_path
-          - scaled_mip_path
-          - psi_path
-          - theta_path
-          - phi_path
-          - defocus_path
-          - correlation_average_path
-          - correlation_variance_path
-
+    leopard_em_version : str
+        Version of Leopard-EM that created this particle stack.  Auto-populated
+        from installed package metadata; preserved as-recorded when loading from
+        a file.
     extracted_box_size : tuple[int, int]
-        The size of the extracted particle boxes in pixels in units of pixels.
+        Size of extracted particle boxes in pixels (height, width).
     original_template_size : tuple[int, int]
-        The original size of the template used during the matching process. Should be
-        smaller than the extracted box size.
+        Size of the template used during template matching (height, width).
+        Must be smaller than or equal to ``extracted_box_size``.
+    global_whitening_applied : bool
+        True if whitening was computed from and applied to the full micrograph
+        before particle extraction.
+    local_whitening_applied : bool
+        True if whitening was computed from and applied to each individual
+        extracted particle box.
+    global_normalization_applied : bool
+        True if normalization was computed from the full micrograph before
+        extraction.
+    local_normalization_applied : bool
+        True if normalization was computed from and applied to each extracted
+        particle box.
     image_stack : ExcludedTensor
-        The stack of images extracted from the micrographs. Is effectively a pytorch
-        Tensor with shape (N, H, W) where N is the number of particles and (H, W) is
-        the extracted box size.
+        Stack of extracted particle images, shape ``(N, box_h, box_w)``.
+        Not serialized to YAML/JSON.
+    local_stats : ExcludedTensorDict
+        Per-particle local statistic maps, keyed by the ``*_path`` DataFrame column they
+        were derived from (e.g. ``"mip_path"``, ``"correlation_average_path"``). Each
+        value has shape ``(N, valid_h, valid_w)`` where
+        ``valid_h = extracted_box_size[0] - original_template_size[0] + 1`` and
+        ``valid_w = extracted_box_size[1] - original_template_size[1] + 1``.
+        Populated on demand via :meth:`get_local_stat_maps` -- assign its return value
+        (or a subset of it) here to make those maps available for
+        :meth:`_stored_local_stat_map` lookups and, for ``ParticleStackHDF5``, for
+        ``to_hdf5(include_local_stats=True)``.
+        Not serialized to YAML/JSON.
     """
 
     model_config: ClassVar = ConfigDict(arbitrary_types_allowed=True)
 
-    # Serialized fields
-    df_path: str
+    leopard_em_version: str = Field(default_factory=_leopard_em_version)
     extracted_box_size: tuple[int, int]
     original_template_size: tuple[int, int]
 
-    # Imported tabular data (not serialized)
+    # Pre-processing state flags
+    global_whitening_applied: bool = False
+    local_whitening_applied: bool = False
+    global_normalization_applied: bool = False
+    local_normalization_applied: bool = False
+
+    # Private: tabular data (not part of Pydantic schema)
+    # TODO: Move away from having a df-backed implementation in favor of either
+    #       getter/setter methods OR private fields for the relevant data.
     _df: pd.DataFrame
 
-    # Cropped out view of the particles from images
+    # Image and statistics tensors (excluded from YAML/JSON serialization)
     image_stack: ExcludedTensor
+    local_stats: ExcludedTensorDict
 
-    def __init__(self, skip_df_load: bool = False, **data: dict[str, Any]):
-        """Initialize the ParticleStack object.
+    def __init__(self, skip_df_load: bool = False, **data: Any):
+        """Initialize the particle stack.
 
         Parameters
         ----------
         skip_df_load : bool, optional
-            Whether to skip loading the DataFrame, by default False and the dataframe
-            is loaded automatically.
+            When True the subclass ``load_df`` is not called automatically.
+            Use this when constructing an empty instance before populating
+            ``_df`` manually (e.g., during ``from_hdf5``).
         data : dict[str, Any]
-            The data to initialize the object with.
+            Fields forwarded to the Pydantic constructor.
         """
         super().__init__(**data)
-
         if not skip_df_load:
             self.load_df()
 
     def load_df(self) -> None:
-        """Load the DataFrame from the specified path.
+        """Load the particle DataFrame from the backing store.
 
-        Raises
-        ------
-        ValueError
-            If the DataFrame is missing required columns.
+        Subclasses must override this method.
         """
-        tmp_df = pd.read_csv(self.df_path)
+        raise NotImplementedError("Subclasses must implement load_df()")
 
-        # Validate the DataFrame columns
-        missing_columns = [
-            col for col in MATCH_TEMPLATE_DF_COLUMN_ORDER if col not in tmp_df.columns
-        ]
-        if missing_columns:
-            raise ValueError(
-                f"Missing the following columns in DataFrame: {missing_columns}"
-            )
-
-        self._df = tmp_df
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
 
     def _get_position_reference_columns(self) -> tuple[str, str]:
-        """Get the position reference columns based on the DataFrame."""
+        """Return the y/x position column names to use (refined preferred)."""
         y_col = "refined_pos_y" if "refined_pos_y" in self._df.columns else "pos_y"
         x_col = "refined_pos_x" if "refined_pos_x" in self._df.columns else "pos_x"
         return y_col, x_col
+
+    # ------------------------------------------------------------------
+    # Properties
+    # ------------------------------------------------------------------
+
+    @property
+    def df_columns(self) -> list[str]:
+        """Column names of the underlying DataFrame."""
+        return list(self._df.columns.tolist())
+
+    @property
+    def num_particles(self) -> int:
+        """Number of particles in the stack."""
+        return len(self._df)
+
+    # ------------------------------------------------------------------
+    # DataFrame accessor / mutator helpers
+    # ------------------------------------------------------------------
+
+    def __getitem__(self, key: str) -> Any:
+        """Get a column from the underlying DataFrame."""
+        try:
+            return self._df[key]
+        except KeyError as err:
+            raise KeyError(f"Key '{key}' not found in underlying DataFrame.") from err
+
+    def set_column(self, column_name: str, value: Any) -> None:
+        """Set a column in the underlying DataFrame.
+
+        Parameters
+        ----------
+        column_name : str
+            The column name to set.
+        value : Any
+            The value(s) to assign.
+        """
+        self._df.loc[:, column_name] = value
+
+    def get_dataframe_copy(self) -> pd.DataFrame:
+        """Return a copy of the underlying DataFrame.
+
+        Returns
+        -------
+        pd.DataFrame
+        """
+        return self._df.copy()
+
+    # ------------------------------------------------------------------
+    # CTF / orientation accessors
+    # ------------------------------------------------------------------
+
+    def get_relative_defocus(
+        self,
+        prefer_refined_defocus: bool = True,
+    ) -> torch.Tensor:
+        """Get the relative defocus values for each particle.
+
+        Parameters
+        ----------
+        prefer_refined_defocus : bool, optional
+            Whether to use the refined defocus values, by default True.
+
+        Returns
+        -------
+        torch.Tensor
+        """
+        rel_defocus_col = "relative_defocus"
+        if prefer_refined_defocus:
+            if "refined_relative_defocus" not in self._df.columns:
+                warnings.warn(
+                    "Refined defocus values not found in DataFrame, using original "
+                    "defocus values...",
+                    stacklevel=2,
+                )
+            elif _any_nan_or_inf(self._df["refined_relative_defocus"]):
+                warnings.warn(
+                    "Refined defocus values contain NaN or inf values, using original "
+                    "defocus values...",
+                    stacklevel=2,
+                )
+            else:
+                rel_defocus_col = "refined_relative_defocus"
+
+        return torch.tensor(self._df[rel_defocus_col].to_numpy().copy())
+
+    def get_absolute_defocus(
+        self, prefer_refined_defocus: bool = True
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Get the absolute defocus (u, v) values for each particle.
+
+        Parameters
+        ----------
+        prefer_refined_defocus : bool, optional
+            Whether to use refined defocus, by default True.
+
+        Returns
+        -------
+        tuple[torch.Tensor, torch.Tensor]
+            ``(defocus_u, defocus_v)`` tensors in Angstroms.
+        """
+        particle_defocus = self.get_relative_defocus(prefer_refined_defocus)
+        defocus_u = torch.tensor(self._df["defocus_u"].to_numpy().copy())
+        defocus_v = torch.tensor(self._df["defocus_v"].to_numpy().copy())
+        defocus_u = defocus_u + particle_defocus
+        defocus_v = defocus_v + particle_defocus
+        return defocus_u, defocus_v
+
+    def get_pixel_size(
+        self,
+        prefer_refined_pixel_size: bool = True,
+    ) -> torch.Tensor:
+        """Get the pixel size for each particle.
+
+        Parameters
+        ----------
+        prefer_refined_pixel_size : bool, optional
+            Whether to use the refined pixel size, by default True.
+
+        Returns
+        -------
+        torch.Tensor
+        """
+        pixel_size_col = "pixel_size"
+        if prefer_refined_pixel_size:
+            if "refined_pixel_size" not in self._df.columns:
+                warnings.warn(
+                    "Refined pixel size not found in DataFrame, using original"
+                    " pixel size values...",
+                    stacklevel=2,
+                )
+            elif _any_nan_or_inf(self._df["refined_pixel_size"]):
+                warnings.warn(
+                    "Refined pixel size contain NaN or inf values, using original"
+                    " pixel size values...",
+                    stacklevel=2,
+                )
+            else:
+                pixel_size_col = "refined_pixel_size"
+
+        return torch.tensor(self._df[pixel_size_col].to_numpy().copy())
+
+    def get_euler_angles(self, prefer_refined_angles: bool = True) -> torch.Tensor:
+        """Return the Euler angles (phi, theta, psi) of all particles as a tensor.
+
+        Parameters
+        ----------
+        prefer_refined_angles : bool, optional
+            When true, refined angles are used if present, by default True.
+
+        Returns
+        -------
+        torch.Tensor
+            Shape ``(N, 3)`` — columns correspond to (phi, theta, psi) in ZYZ.
+        """
+        phi_col = "phi"
+        theta_col = "theta"
+        psi_col = "psi"
+        if prefer_refined_angles:
+            if not all(
+                x in self._df.columns
+                for x in ["refined_phi", "refined_theta", "refined_psi"]
+            ):
+                warnings.warn(
+                    "Refined angles not found in DataFrame, using original angles...",
+                    stacklevel=2,
+                )
+            else:
+                phi_col = "refined_phi"
+                theta_col = "refined_theta"
+                psi_col = "refined_psi"
+
+        phi = torch.tensor(self._df[phi_col].to_numpy().copy())
+        theta = torch.tensor(self._df[theta_col].to_numpy().copy())
+        psi = torch.tensor(self._df[psi_col].to_numpy().copy())
+
+        return torch.stack((phi, theta, psi), dim=-1)
+
+    # ------------------------------------------------------------------
+    # Image-stack construction
+    # ------------------------------------------------------------------
 
     def load_images_grouped_by_column(
         self, column_name: str
@@ -424,7 +762,6 @@ class ParticleStack(BaseModel2DTM):
         if column_name not in self._df.columns:
             raise ValueError(f"Column '{column_name}' not found in the DataFrame.")
 
-        # Find the indexes in the DataFrame that correspond to each unique image
         image_index_groups = self._df.groupby(column_name).groups
         images_list = []
         indices = []
@@ -433,11 +770,93 @@ class ParticleStack(BaseModel2DTM):
             images_list.append(img)
             indices.append(indexes)
 
-        # Stack images into a tensor (N, H, W)
         images_tensor = torch.stack(images_list, dim=0)
         return images_tensor, indices
 
-    def construct_image_stack(
+    def _stored_local_stat_map(self, column: str) -> torch.Tensor | None:
+        """Return an already-computed local stat map for ``column``, if any.
+
+        Parameters
+        ----------
+        column : str
+            Path column name (e.g. ``"correlation_average_path"``).
+
+        Returns
+        -------
+        torch.Tensor | None
+            The stored ``(num_particles, valid_h, valid_w)`` map, or None if it
+            must be derived from the referenced result file.
+        """
+        return self.local_stats.get(column)
+
+    def get_local_stat_maps(
+        self,
+        columns: list[str] | None = None,
+        device: torch.device | str = "cpu",
+        valid_size: tuple[int, int] | None = None,
+        padding_value: float = 0.0,
+    ) -> dict[str, torch.Tensor]:
+        """Extract per-particle local sub-images for arbitrary result-map columns.
+
+        Generalizes the correlation-statistics extraction to any full-micrograph result
+        map exposed as a ``*_path`` column. Returned regions are cropped to the valid
+        cross-correlation region based on extracted box size and original template size,
+        unless ``valid_size`` is explicitly provided.
+
+        Parameters
+        ----------
+        columns : list[str] | None
+            Path columns to extract. Defaults to the six standard 2DTM statistic
+            maps (``mip``, ``scaled_mip``, ``psi``, ``theta``, ``phi``, ``defocus``).
+        device : torch.device | str
+            Target device for the returned tensors. Defaults to ``"cpu"``.
+        valid_size : tuple[int, int] | None
+            Extraction size ``(height, width)``. Defaults to the valid
+            cross-correlation region
+            ``extracted_box_size - original_template_size + 1``.
+        padding_value : float
+            Constant pad value for out-of-bounds regions. Defaults to ``0.0``.
+
+        Returns
+        -------
+        dict[str, torch.Tensor]
+            Maps each requested column name to its
+            ``(num_particles, valid_h, valid_w)`` sub-image stack on ``device``.
+        """
+        if columns is None:
+            columns = list(_DEFAULT_LOCAL_STAT_COLUMNS)
+
+        use_default_valid_size = valid_size is None
+        if valid_size is None:
+            box_h, box_w = self.extracted_box_size
+            h, w = self.original_template_size
+            valid_size = (box_h - h + 1, box_w - w + 1)
+
+        device = torch.device(device)
+
+        stat_maps: dict[str, torch.Tensor] = {}
+        for column in columns:
+            stored = (
+                self._stored_local_stat_map(column) if use_default_valid_size else None
+            )
+            if stored is not None:
+                stat_maps[column] = stored.to(device)
+                continue
+
+            images, indices = self.load_images_grouped_by_column(column)
+            stat_maps[column] = self._crop_particle_regions(
+                images=images,
+                indices=indices,
+                extraction_size=valid_size,
+                pos_reference="top-left",
+                handle_bounds="pad",
+                padding_mode="constant",
+                padding_value=padding_value,
+            ).to(device)
+
+        return stat_maps
+
+    def _crop_particle_regions(
         self,
         images: torch.Tensor,
         indices: list[pd.Index],
@@ -447,7 +866,7 @@ class ParticleStack(BaseModel2DTM):
         padding_mode: Literal["constant", "reflect", "replicate"] = "constant",
         padding_value: float = 0.0,
     ) -> torch.Tensor:
-        """Construct stack of images from the DataFrame (updates image_stack in-place).
+        """Crop a per-particle sub-image from each source image, read-only.
 
         This method preferentially selects refined position columns by default
         (refined_pos_x, refined_pos_y) if they are present in the DataFrame, falling
@@ -493,86 +912,55 @@ class ParticleStack(BaseModel2DTM):
         Parameters
         ----------
         images : torch.Tensor
-            A tensor of loaded images with shape (N, H, W) where N is the number of
-            images and (H, W) is the image size.
+            A tensor of loaded images with shape (N, H, W).
         indices : list[pd.Index]
-            A list of pandas Index objects containing the row indexes for particles
-            from each corresponding image. Should be the same length as the first
-            dimension of `images`.
+            Row indexes for particles from each corresponding image.
         extraction_size : tuple[int, int]
-            The size of the extracted boxes in pixels (height, width).
+            Size of the extracted boxes in pixels (height, width).
         pos_reference : Literal["center", "top-left"], optional
-            The reference point for the positions, by default "top-left". If "center",
-            the boxes extracted will be
-            image[y - box_size // 2 : y + box_size // 2, ...].
-            Columns in the dataframe which are used as position references are always
-            pos_x and pos_y, or refined_pos_x and refined_pos_y if available.
-            If "top-left", the boxes will be image[y : y + box_size, ...].
-            Leopard-EM uses the "top-left" reference position, and unless you know data
-            was processed in a different way you should not change this value.
-        handle_bounds : Literal["pad", "clip", "error"], optional
-            How to handle the bounds of the image, by default "pad". If "pad", the image
-            will be padded with the padding value based on the padding mode. If "error",
-            an error will be raised if any region exceeds the image bounds. NOTE:
-            clipping is not supported since returned stack may have inhomogeneous sizes.
+            Reference point for the positions, by default "top-left".
+        handle_bounds : Literal["pad", "error"], optional
+            How to handle out-of-bounds regions, by default "pad".
         padding_mode : Literal["constant", "reflect", "replicate"], optional
-            The padding mode to use when padding the image, by default "constant".
-            "constant" pads with the value `padding_value`, "reflect" pads with the
-            reflection of the image at the edge, and "replicate" pads with the last
-            pixel of the image. These match the modes available in
-            `torch.nn.functional.pad`.
+            Padding mode when ``handle_bounds="pad"``, by default "constant".
         padding_value : float, optional
-            The value to use for padding when `padding_mode` is "constant", by default
-            0.0.
+            Constant padding value, by default 0.0.
 
         Returns
         -------
         torch.Tensor
-            The stack of images, this is the internal 'image_stack' attribute.
+            Stack of extracted images ``(N, extraction_h, extraction_w)``.
         """
-        # Determine which position columns to use (refined if available)
         y_col, x_col = self._get_position_reference_columns()
 
-        # Create an empty tensor to store the image stack on the same device as images
         h, w = self.original_template_size
         box_h, box_w = self.extracted_box_size
         device = images.device
-        image_stack = torch.zeros((self.num_particles, *extraction_size), device=device)
+        region_stack = torch.zeros(
+            (self.num_particles, *extraction_size), device=device
+        )
 
-        # Verify that the number of images matches the number of indices
         if images.shape[0] != len(indices):
             raise ValueError(
                 f"Number of images ({images.shape[0]}) does not match the number of "
                 f"indices ({len(indices)})."
             )
 
-        # Loop over each image and its corresponding indexes
         for i, indexes in enumerate(indices):
             img = images[i]
-            # Get the positions as numpy arrays for indexing
             pos_y = self._df.loc[indexes, y_col].to_numpy().copy()
             pos_x = self._df.loc[indexes, x_col].to_numpy().copy()
 
-            # If the position reference is "center", shift (x, y) by half the original
-            # template width/height so reference is now the top-left corner
             if pos_reference == "center":
                 pos_y = pos_y - h // 2
                 pos_x = pos_x - w // 2
 
-            # Our reference is now a top-left corner of a box of the original template
-            # shape, BUT we want a slightly larger box of extraction_size AND this
-            # box to be centered around the particle. Therefore, need to shift the
-            # position half the difference between the original template size and
-            # the extraction size.
             pos_y = pos_y - (box_h - h) // 2
             pos_x = pos_x - (box_w - w) // 2
 
             pos_y = torch.tensor(pos_y, device=img.device)
             pos_x = torch.tensor(pos_x, device=img.device)
 
-            # Code logic is simplified by only using the top-left reference position
-            # in the `get_cropped_image_regions` function. Relative referencing handled
-            # by the ParticleStack class.
             cropped_images = get_cropped_image_regions(
                 img,
                 pos_y,
@@ -583,8 +971,58 @@ class ParticleStack(BaseModel2DTM):
                 padding_mode=padding_mode,
                 padding_value=padding_value,
             )
-            image_stack[indexes] = cropped_images
+            # ``indexes`` holds DataFrame index *labels* (string ``particle_id`` for
+            # HDF5-backed stacks); ``region_stack`` is positional, so map labels to
+            # 0-based row positions. For a RangeIndex (CSV-backed stacks) this is an
+            # identity map.
+            positions = self._df.index.get_indexer(indexes)
+            region_stack[positions] = cropped_images
 
+        return region_stack
+
+    def construct_image_stack(
+        self,
+        images: torch.Tensor,
+        indices: list[pd.Index],
+        extraction_size: tuple[int, int],
+        pos_reference: Literal["center", "top-left"] = "top-left",
+        handle_bounds: Literal["pad", "error"] = "pad",
+        padding_mode: Literal["constant", "reflect", "replicate"] = "constant",
+        padding_value: float = 0.0,
+    ) -> torch.Tensor:
+        """Construct stack of particle images from the DataFrame.
+
+        Parameters
+        ----------
+        images : torch.Tensor
+            A tensor of loaded images with shape (N, H, W).
+        indices : list[pd.Index]
+            Row indexes for particles from each corresponding image.
+        extraction_size : tuple[int, int]
+            Size of the extracted boxes in pixels (height, width).
+        pos_reference : Literal["center", "top-left"], optional
+            Reference point for the positions, by default "top-left".
+        handle_bounds : Literal["pad", "error"], optional
+            How to handle out-of-bounds regions, by default "pad".
+        padding_mode : Literal["constant", "reflect", "replicate"], optional
+            Padding mode when ``handle_bounds="pad"``, by default "constant".
+        padding_value : float, optional
+            Constant padding value, by default 0.0.
+
+        Returns
+        -------
+        torch.Tensor
+            Stack of extracted images ``(N, extraction_h, extraction_w)``.
+        """
+        image_stack = self._crop_particle_regions(
+            images=images,
+            indices=indices,
+            extraction_size=extraction_size,
+            pos_reference=pos_reference,
+            handle_bounds=handle_bounds,
+            padding_mode=padding_mode,
+            padding_value=padding_value,
+        )
         self.image_stack = image_stack
 
         return image_stack
@@ -621,7 +1059,6 @@ class ParticleStack(BaseModel2DTM):
         num_images = images_dft.shape[0]
         filter_stack = torch.zeros((num_images, *output_shape), device=device)
 
-        # Loop over each image and compute the filter
         for i in range(num_images):
             img_dft = images_dft[i]
             cumulative_filter = preprocess_filters.get_combined_filter(
@@ -653,30 +1090,23 @@ class ParticleStack(BaseModel2DTM):
         output_shape : tuple[int, int]
             What shape along the last two dimensions the filters should be.
         images_dft : torch.Tensor
-            A tensor of micrograph images in Fourier space with shape (N, H, W) where N
-            is the number of unique micrographs and (H, W) is the Fourier space size.
+            A tensor of micrograph images in Fourier space with shape (N, H, W).
         indices : list[pd.Index]
-            A list of pandas Index objects containing the row indexes for particles
-            from each corresponding micrograph. Should be the same length as the first
-            dimension of `images_dft`.
+            Row indexes for particles from each corresponding micrograph.
 
         Returns
         -------
         torch.Tensor
-            The stack of filters with shape (M, h, w) where M is the number of particles
-            and (h, w) is the output shape.
+            Filter stack of shape ``(M, h, w)`` where M is the number of particles.
         """
-        # Create an empty tensor to store the filter stack
         device = images_dft.device
         filter_stack = torch.zeros((self.num_particles, *output_shape), device=device)
-        # Verify that the number of images matches the number of indices
         if images_dft.shape[0] != len(indices):
             raise ValueError(
                 f"Number of images ({images_dft.shape[0]}) does not match "
                 f"the number of indices ({len(indices)})."
             )
 
-        # Loop over each micrograph and its corresponding indexes
         for i, indexes in enumerate(indices):
             img_dft = images_dft[i]
             cumulative_filter = preprocess_filters.get_combined_filter(
@@ -687,199 +1117,6 @@ class ParticleStack(BaseModel2DTM):
             filter_stack[indexes] = cumulative_filter
 
         return filter_stack
-
-    @property
-    def df_columns(self) -> list[str]:
-        """Get the columns of the DataFrame."""
-        return list(self._df.columns.tolist())
-
-    @property
-    def num_particles(self) -> int:
-        """Get the number of particles in the stack."""
-        return len(self._df)
-
-    def get_relative_defocus(
-        self,
-        prefer_refined_defocus: bool = True,
-    ) -> torch.Tensor:
-        """Get the relative defocus values for each particle.
-
-        Parameters
-        ----------
-        prefer_refined_defocus : bool, optional
-            Whether to use the refined defocus values (columns prefixed with 'refined_')
-            or not, by default True.
-
-        Returns
-        -------
-        torch.Tensor
-            The relative defocus values for each particle.
-
-        Warnings
-        --------
-            Warns if NaN values or no column present for either
-            'refined_relative_defocus' or 'relative_defocus'.
-            Falls back to the unrefined values.
-        """
-        rel_defocus_col = "relative_defocus"
-        # Both refined columns must be present AND no values can be NaN or inf
-        if prefer_refined_defocus:
-            if "refined_relative_defocus" not in self._df.columns:
-                warnings.warn(
-                    "Refined defocus values not found in DataFrame, using original "
-                    "defocus values...",
-                    stacklevel=2,
-                )
-            elif _any_nan_or_inf(self._df["refined_relative_defocus"]):
-                warnings.warn(
-                    "Refined defocus values contain NaN or inf values, using original "
-                    "defocus values...",
-                    stacklevel=2,
-                )
-            else:
-                rel_defocus_col = "refined_relative_defocus"
-
-        return torch.tensor(self._df[rel_defocus_col].to_numpy().copy())
-
-    def get_absolute_defocus(
-        self, prefer_refined_defocus: bool = True
-    ) -> tuple[torch.Tensor, torch.Tensor]:
-        """Get the absolute defocus values for each particle.
-
-        NOTE: If the refined defocus values are requested but not present in the
-        DataFrame (either no column or any NaN values), a user warning is raised
-        and the original defocus values are returned instead.
-
-        Parameters
-        ----------
-        prefer_refined_defocus : bool, optional
-            Whether to use the refined defocus values
-            (columns prefixed with 'refined_') or not, by default True.
-
-        Returns
-        -------
-        tuple[torch.Tensor, torch.Tensor]
-            A tuple of two tensors containing the absolute defocus values along the
-            major (defocus_u) and minor axes (defocus_v), respectively in units of
-            Angstroms.
-        """
-        particle_defocus = self.get_relative_defocus(prefer_refined_defocus)
-        defocus_u = torch.tensor(self._df["defocus_u"].to_numpy().copy())
-        defocus_v = torch.tensor(self._df["defocus_v"].to_numpy().copy())
-        defocus_u = defocus_u + particle_defocus
-        defocus_v = defocus_v + particle_defocus
-
-        return defocus_u, defocus_v
-
-    def get_pixel_size(
-        self,
-        prefer_refined_pixel_size: bool = True,
-    ) -> torch.Tensor:
-        """Get the relative pixel size values for each particle.
-
-        Parameters
-        ----------
-        prefer_refined_pixel_size : bool, optional
-            Whether to use the refined pixel size values
-            (columns prefixed with 'refined_') or not, by default True.
-
-        Returns
-        -------
-        torch.Tensor
-            The relative pixel size values for each particle.
-
-        Warnings
-        --------
-            Warns if NaN values or no column present for either 'refined_pixel_size'
-            or 'pixel_size'. Falls back to the unrefined values.
-        """
-        pixel_size_col = "pixel_size"
-        if prefer_refined_pixel_size:
-            if "refined_pixel_size" not in self._df.columns:
-                warnings.warn(
-                    "Refined pixel size not found in DataFrame, using original"
-                    " pixel size values...",
-                    stacklevel=2,
-                )
-            elif _any_nan_or_inf(self._df["refined_pixel_size"]):
-                warnings.warn(
-                    "Refined pixel size contain NaN or inf values, using original"
-                    " pixel size values...",
-                    stacklevel=2,
-                )
-            else:
-                pixel_size_col = "refined_pixel_size"
-
-        return torch.tensor(self._df[pixel_size_col].to_numpy().copy())
-
-    def get_euler_angles(self, prefer_refined_angles: bool = True) -> torch.Tensor:
-        """Return the Euler angles (phi, theta, psi) of all particles as a tensor.
-
-        Parameters
-        ----------
-        prefer_refined_angles : bool, optional
-            When true, the refined Euler angles are used (columns prefixed with
-            'refined_'), otherwise the original angles are used, by default True.
-
-        Returns
-        -------
-        torch.Tensor
-            A tensor of shape (N, 3) where N is the number of particles and the columns
-            correspond to (phi, theta, psi) in ZYZ format.
-        """
-        # Ensure all three refined columns are present, warning if not
-        phi_col = "phi"
-        theta_col = "theta"
-        psi_col = "psi"
-        if prefer_refined_angles:
-            if not all(
-                x in self._df.columns
-                for x in ["refined_phi", "refined_theta", "refined_psi"]
-            ):
-                warnings.warn(
-                    "Refined angles not found in DataFrame, using original angles...",
-                    stacklevel=2,
-                )
-            else:
-                phi_col = "refined_phi"
-                theta_col = "refined_theta"
-                psi_col = "refined_psi"
-
-        # Get the angles from the DataFrame
-        phi = torch.tensor(self._df[phi_col].to_numpy().copy())
-        theta = torch.tensor(self._df[theta_col].to_numpy().copy())
-        psi = torch.tensor(self._df[psi_col].to_numpy().copy())
-
-        return torch.stack((phi, theta, psi), dim=-1)
-
-    def __getitem__(self, key: str) -> Any:
-        """Get an item from the DataFrame."""
-        try:
-            return self._df[key]
-        except KeyError as err:
-            raise KeyError(f"Key '{key}' not found in underlying DataFrame.") from err
-
-    def set_column(self, column_name: str, value: Any) -> None:
-        """Set a column in the underlying DataFrame.
-
-        Parameters
-        ----------
-        column_name : str
-            The name of the column to set
-        value : Any
-            The value to set the column to
-        """
-        self._df.loc[:, column_name] = value
-
-    def get_dataframe_copy(self) -> pd.DataFrame:
-        """Return a copy of the underlying DataFrame.
-
-        Returns
-        -------
-        pd.DataFrame
-        A copy of the underlying DataFrame
-        """
-        return self._df.copy()
 
     @staticmethod
     # pylint: disable=too-many-arguments
@@ -894,33 +1131,30 @@ class ParticleStack(BaseModel2DTM):
         padding_mode: Literal["constant", "reflect", "replicate"],
         padding_value: float,
     ) -> torch.Tensor:
-        """
-        Process a single frame using *precomputed particle shifts*.
+        """Process a single frame using precomputed particle shifts.
 
-        This function is safe for gradient checkpointing and contains no
-        deformation-field evaluation.
+        Safe for gradient checkpointing; contains no deformation-field evaluation.
 
         Parameters
         ----------
         movie_frame : torch.Tensor
-            Single movie frame (H, W)
+            Single movie frame (H, W).
         shifts : torch.Tensor
-            Per-particle shifts with shape (N, 2) as (dy, dx)
+            Per-particle shifts with shape (N, 2) as (dy, dx).
         pos_y, pos_x : torch.Tensor
-            Top-left extraction positions
+            Top-left extraction positions.
         extracted_box_size : tuple[int, int]
-            (box_h, box_w)
+            ``(box_h, box_w)``.
         handle_bounds, padding_mode, padding_value
-            Passed through to cropping
+            Passed through to cropping.
 
         Returns
         -------
         torch.Tensor
-            Shifted FFTs with shape (N, box_h, box_w//2 + 1)
+            Shifted FFTs with shape ``(N, box_h, box_w//2 + 1)``.
         """
         box_h, box_w = extracted_box_size
 
-        # Extract particle images
         cropped_images = get_cropped_image_regions(
             movie_frame,
             pos_y,
@@ -932,12 +1166,10 @@ class ParticleStack(BaseModel2DTM):
             padding_value=padding_value,
         )
 
-        # FFT
         cropped_images_dft = torch.fft.rfftn(  # pylint: disable=not-callable
             cropped_images, dim=(-2, -1)
         )
 
-        # Fourier shift
         shifted_fft = fourier_shift_dft_2d(
             dft=cropped_images_dft,
             image_shape=(box_h, box_w),
@@ -951,7 +1183,7 @@ class ParticleStack(BaseModel2DTM):
     def compute_frame_particle_shifts_from_deformation(
         self,
         movie_frame: torch.Tensor,
-        deformation_field: CubicCatmullRomGrid3d,
+        deformation_field: DeformationField,
         normalized_t_value: torch.Tensor,
         pixel_grid: torch.Tensor,
         pixel_spacing: float,
@@ -960,38 +1192,36 @@ class ParticleStack(BaseModel2DTM):
         gh: int,
         gw: int,
     ) -> torch.Tensor:
-        """
-        Compute per-particle shifts for a single frame from a deformation field.
+        """Compute per-particle shifts for a single frame from a deformation field.
 
         Parameters
         ----------
         movie_frame : torch.Tensor
-            Single movie frame (H, W)
+            Single movie frame (H, W).
         deformation_field : CubicCatmullRomGrid3d
             The deformation field grid.
         normalized_t_value : torch.Tensor
-            The normalized time value for the frame.
+            Normalized time value for the frame.
         pixel_grid : torch.Tensor
             The pixel grid tensor.
         pixel_spacing : float
             The pixel spacing.
         pos_y_center : torch.Tensor
-            The center y position.
+            Center y positions.
         pos_x_center : torch.Tensor
-            The center x position.
+            Center x positions.
         gh : int
-            The height of the deformation field grid.
+            Height of the deformation field grid.
         gw : int
-            The width of the deformation field grid.
+            Width of the deformation field grid.
 
         Returns
         -------
         torch.Tensor
-            Shifts with shape (N, 2) as (dy, dx)
+            Shifts with shape ``(N, 2)`` as (dy, dx).
         """
-        frame_deformation_field = evaluate_deformation_field_at_t(
-            deformation_field=deformation_field,
-            t=normalized_t_value.item(),
+        frame_deformation_field = deformation_field.evaluate_at_t(
+            t=float(normalized_t_value.item()),
             grid_shape=(10 * gh, 10 * gw),
         )
 
@@ -1011,78 +1241,76 @@ class ParticleStack(BaseModel2DTM):
     # pylint: disable=too-many-positional-arguments
     # pylint: disable=too-many-statements
     # pylint: disable=too-many-branches
-    def construct_image_stack_from_movie(
+    def _construct_particle_movie_rfft_stack(
         self,
         movie: torch.Tensor,
-        deformation_field: CubicCatmullRomGrid3d | None = None,
+        deformation_field: DeformationField | None = None,
         particle_shifts: torch.Tensor | None = None,
         pos_reference: Literal["center", "top-left"] = "top-left",
         handle_bounds: Literal["pad", "error"] = "pad",
         padding_mode: Literal["constant", "reflect", "replicate"] = "constant",
         padding_value: float = 0.0,
-        pre_exposure: float = 0.0,
-        fluence_per_frame: float = 0.0,
         use_gradient_checkpointing: bool = True,
         particle_indices: list[int] | None = None,
-    ) -> torch.Tensor:
-        """Construct a stack of images from a movie file.
+        require_motion_source: bool = True,
+        normalized_t_values: torch.Tensor | None = None,
+    ) -> tuple[torch.Tensor, list[Any]]:
+        """Construct per-particle movie frame DFTs after optional motion shifts.
 
         Parameters
         ----------
         movie : torch.Tensor
             The movie tensor.
-        deformation_field : CubicCatmullRomGrid3d | None, optional
+        deformation_field : DeformationField | None, optional
             The deformation field grid.
         particle_shifts : torch.Tensor | None, optional
-            The particle shifts to apply to the movie. If None, the particle shifts
-            are computed from the deformation field. If provided, the particle shifts
-            are used to shift the movie. One must be provided.
-            Shape is (T, N, 2) where T = number of frames, N = number of particles,
+            Per-particle shifts, shape ``(T, N, 2)``.  Exactly one of
+            ``deformation_field`` and ``particle_shifts`` must be provided.
         pos_reference : Literal["center", "top-left"], optional
-            The reference point for the positions, by default "top-left". If "center",
-            the boxes extracted are image[y - box_size // 2 : y + box_size // 2, ...].
-            If "top-left", the boxes will be image[y : y + box_size, ...].
+            Position reference for extraction, by default "top-left".
         handle_bounds : Literal["pad", "error"], optional
-            How to handle the bounds of the image, by default "pad". If "pad", the image
-            will be padded with the padding value based on the padding mode.
-            If "error", an error will be raised if any region exceeds the image bounds.
-            Note clipping is not supported
-            since returned stack may have inhomogeneous sizes.
+            How to handle out-of-bounds regions, by default "pad".
         padding_mode : Literal["constant", "reflect", "replicate"], optional
-            The padding mode to use when padding the image, by default "constant".
-            "constant" pads with the value `padding_value`, "reflect" pads with the
-            reflection of the image, and "replicate" pads with the last pixel
-            of the image. These match the modes available in `torch.nn.functional.pad`.
+            Padding mode, by default "constant".
         padding_value : float, optional
-            The value to use for padding when `padding_mode` is "constant",
-            by default 0.0.
+            Constant padding value, by default 0.0.
         pre_exposure : float, optional
-            The pre-exposure time in seconds, by default 0.0.
+            Pre-exposure in electrons per pixel, by default 0.0.
         fluence_per_frame : float, optional
-            The dose per frame in electrons per pixel, by default 0.0.
+            Dose per frame in electrons per pixel, by default 0.0.
         use_gradient_checkpointing : bool, optional
-            Whether to use gradient checkpointing to save memory during frame
-            processing. Checkpointing trades compute time for memory by not
-            storing intermediate activations. Defaults to True.
+            Trade compute for memory during frame processing, by default True.
         particle_indices : list[int] | None, optional
-            Indices of particles to process from the dataframe. If None,
-            processes all particles. Use this to batch particles for memory
-            efficiency during gradient-based optimization. Defaults to None.
+            Subset of particles to process.  If None, all particles are used.
+        require_motion_source : bool, optional
+            If True, raises an error if neither ``deformation_field`` nor
+            ``particle_shifts`` is provided.  If False, assumes the movie is already
+            aligned and extracts each frame without shifts.
+        normalized_t_values : torch.Tensor | None, optional
+            Normalized time values for each frame, shape ``(t,)``.  If None, a linear
+            ramp from 0 to 1 is constructed and used.
 
         Returns
         -------
         torch.Tensor
-            The stack of images with shape (N, H, W) where N is the number of particles
-            and (H, W) is the extracted box size.
+            Image stack of shape ``(N, box_h, box_w)``.
         """
-        if (deformation_field is None) == (particle_shifts is None):
+        if deformation_field is not None and particle_shifts is not None:
             raise ValueError(
-                "One of `deformation_field` or `particle_shifts` must be provided."
+                "Only one of `deformation_field` or `particle_shifts` can be provided."
+            )
+        if deformation_field is None and particle_shifts is None:
+            if require_motion_source:
+                raise ValueError(
+                    "One of `deformation_field` or `particle_shifts` must be provided."
+                )
+            warnings.warn(
+                "No deformation field or particle shifts were provided. Assuming the "
+                "movie is already aligned and extracting each frame without shifts.",
+                stacklevel=2,
             )
         pixel_sizes = self.get_pixel_size()
-        # Determine which position columns to use (refined if available)
         y_col, x_col = self._get_position_reference_columns()
-        # Create an empty tensor to store the image stack
         h, w = self.original_template_size
         box_h, box_w = self.extracted_box_size
         t, img_h, img_w = movie.shape
@@ -1090,23 +1318,29 @@ class ParticleStack(BaseModel2DTM):
             _, _, gh, gw = deformation_field.data.shape
         else:
             gh = gw = 0
-        normalized_t = torch.linspace(0, 1, steps=t, device=movie.device)
+        if normalized_t_values is None:
+            normalized_t = torch.linspace(0, 1, steps=t, device=movie.device)
+        else:
+            if normalized_t_values.numel() != t:
+                raise ValueError(
+                    "normalized_t_values must have one entry per movie frame."
+                )
+            normalized_t = normalized_t_values.to(device=movie.device).reshape(t)
         pixel_grid = coordinate_grid(
             image_shape=(img_h, img_w),
             device=movie.device,
         )
-        # Find the indexes in the DataFrame that correspond to each unique image
         if particle_indices is not None:
             # Use provided subset of particles
-            paticle_indexes = [self._df.index[i] for i in particle_indices]
+            particle_indexes = [self._df.index[i] for i in particle_indices]
             num_particles_to_process = len(particle_indices)
         else:
             # Use all particles
-            paticle_indexes = self._df.index.tolist()
+            particle_indexes = self._df.index.tolist()
             num_particles_to_process = self.num_particles
 
-        pos_y = self._df.loc[paticle_indexes, y_col].to_numpy()
-        pos_x = self._df.loc[paticle_indexes, x_col].to_numpy()
+        pos_y = self._df.loc[particle_indexes, y_col].to_numpy().copy()
+        pos_x = self._df.loc[particle_indexes, x_col].to_numpy().copy()
         # If the position reference is "top-left", shift (x, y) by half the original
         # template width/height so reference is now in the center
         if pos_reference == "center":
@@ -1127,15 +1361,19 @@ class ParticleStack(BaseModel2DTM):
             dtype=torch.complex64,
             device=movie.device,
         )
-        # set frames mean zero
         movie = movie - torch.mean(movie, dim=(-2, -1), keepdim=True)
 
         for frame_index, movie_frame in enumerate(movie):
-            # ------------------------------------------------------------
-            # Obtain shifts (dy, dx) for this frame
-            # ------------------------------------------------------------
             if particle_shifts is not None:
                 frame_shifts = particle_shifts[frame_index]  # (N, 2)
+                if particle_indices is not None:
+                    frame_shifts = frame_shifts[particle_indices]
+            elif deformation_field is None:
+                frame_shifts = torch.zeros(
+                    (num_particles_to_process, 2),
+                    dtype=movie.dtype,
+                    device=movie.device,
+                )
             else:
                 frame_shifts = self.compute_frame_particle_shifts_from_deformation(
                     movie_frame=movie_frame,
@@ -1149,9 +1387,6 @@ class ParticleStack(BaseModel2DTM):
                     gw=gw,
                 )
 
-            # ------------------------------------------------------------
-            # Apply shifts + FFT (checkpointed)
-            # ------------------------------------------------------------
             if use_gradient_checkpointing:
                 shifted_fft = checkpoint(
                     self._process_single_frame_with_shifts_checkpoint,
@@ -1177,12 +1412,99 @@ class ParticleStack(BaseModel2DTM):
                     padding_value=padding_value,
                 )
 
-            # Store the shifted FFTs
             aligned_particle_movies_rfft[:, frame_index] = shifted_fft
 
-            # Clear cache periodically to help with memory
             if frame_index % 10 == 0 and frame_index > 0:
                 torch.cuda.empty_cache()
+        return aligned_particle_movies_rfft, particle_indexes
+
+    # pylint: disable=too-many-arguments
+    # pylint: disable=too-many-positional-arguments
+    def construct_particle_movie_stack(
+        self,
+        movie: torch.Tensor,
+        deformation_field: DeformationField | None = None,
+        particle_shifts: torch.Tensor | None = None,
+        pos_reference: Literal["center", "top-left"] = "top-left",
+        handle_bounds: Literal["pad", "error"] = "pad",
+        padding_mode: Literal["constant", "reflect", "replicate"] = "constant",
+        padding_value: float = 0.0,
+        use_gradient_checkpointing: bool = True,
+        particle_indices: list[int] | None = None,
+        normalized_t_values: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        """Construct per-frame particle images from a movie without dose summing.
+
+        If neither ``deformation_field`` nor ``particle_shifts`` is provided, the
+        movie is assumed to already be aligned and frames are extracted directly.
+
+        Returns
+        -------
+        torch.Tensor
+            Real-space particle movie stack with shape ``(T, N, H, W)``.
+        """
+        particle_movie_rfft, _ = self._construct_particle_movie_rfft_stack(
+            movie=movie,
+            deformation_field=deformation_field,
+            particle_shifts=particle_shifts,
+            pos_reference=pos_reference,
+            handle_bounds=handle_bounds,
+            padding_mode=padding_mode,
+            padding_value=padding_value,
+            use_gradient_checkpointing=use_gradient_checkpointing,
+            particle_indices=particle_indices,
+            require_motion_source=False,
+            normalized_t_values=normalized_t_values,
+        )
+        particle_movie = torch.fft.irfftn(  # pylint: disable=not-callable
+            particle_movie_rfft,
+            s=self.extracted_box_size,
+            dim=(-2, -1),
+        )
+        return particle_movie.permute(1, 0, 2, 3).contiguous()
+
+    # pylint: disable=too-many-arguments
+    # pylint: disable=too-many-positional-arguments
+    def construct_image_stack_from_movie(
+        self,
+        movie: torch.Tensor,
+        deformation_field: DeformationField | None = None,
+        particle_shifts: torch.Tensor | None = None,
+        pos_reference: Literal["center", "top-left"] = "top-left",
+        handle_bounds: Literal["pad", "error"] = "pad",
+        padding_mode: Literal["constant", "reflect", "replicate"] = "constant",
+        padding_value: float = 0.0,
+        pre_exposure: float = 0.0,
+        fluence_per_frame: float = 0.0,
+        use_gradient_checkpointing: bool = True,
+        particle_indices: list[int] | None = None,
+    ) -> torch.Tensor:
+        """Construct a dose-weighted particle image stack from a movie file.
+
+        Returns
+        -------
+        torch.Tensor
+            The stack of images with shape (N, H, W) where N is the number of
+            particles and (H, W) is the extracted box size.
+        """
+        pixel_sizes = self.get_pixel_size()
+        box_h, box_w = self.extracted_box_size
+        aligned_particle_movies_rfft, particle_indexes = (
+            self._construct_particle_movie_rfft_stack(
+                movie=movie,
+                deformation_field=deformation_field,
+                particle_shifts=particle_shifts,
+                pos_reference=pos_reference,
+                handle_bounds=handle_bounds,
+                padding_mode=padding_mode,
+                padding_value=padding_value,
+                use_gradient_checkpointing=use_gradient_checkpointing,
+                particle_indices=particle_indices,
+                require_motion_source=True,
+            )
+        )
+        num_particles_to_process = aligned_particle_movies_rfft.shape[0]
+
         # Dose weight the aligned particle images
         aligned_particle_images = torch.zeros(
             (num_particles_to_process, box_h, box_w),
@@ -1192,19 +1514,520 @@ class ParticleStack(BaseModel2DTM):
             particle_dft = aligned_particle_movies_rfft[particle_index]
 
             # Get the actual dataframe index for this particle
-            df_idx = paticle_indexes[particle_index]
+            df_idx = particle_indexes[particle_index]
             df_loc = self._df.index.get_loc(df_idx)
 
             dw_sum = dose_weight_movie_to_micrograph(
                 movie_fft=particle_dft,
-                pixel_size=pixel_sizes[df_loc],
+                pixel_size=float(pixel_sizes[df_loc].item()),
                 pre_exposure=pre_exposure,
                 fluence_per_frame=fluence_per_frame,
                 voltage=self._df["voltage"].to_numpy()[df_loc],
-            )  # (box_h, box_w)
+            )
             aligned_particle_images[particle_index] = dw_sum
 
-        # Only update self.image_stack if processing all particles
         if particle_indices is None:
             self.image_stack = aligned_particle_images
         return aligned_particle_images
+
+
+# ---------------------------------------------------------------------------
+# CSV-backed subclass
+# ---------------------------------------------------------------------------
+
+
+class ParticleStackCSV(_ParticleStackBase):
+    """Particle stack whose tabular data is loaded from a CSV file.
+
+    Particle images are extracted from the micrograph paths referenced in the
+    CSV at run time.  This is the original ``ParticleStack`` behavior.
+
+    Attributes
+    ----------
+    df_path : str
+        Path to the CSV file containing the particle data.
+    """
+
+    df_path: str
+
+    def load_df(self) -> None:
+        """Load and validate the particle DataFrame from ``df_path``.
+
+        Raises
+        ------
+        ValueError
+            If required columns are missing from the CSV.
+        """
+        tmp_df = pd.read_csv(self.df_path)
+
+        missing_columns = [
+            col for col in MATCH_TEMPLATE_DF_COLUMN_ORDER if col not in tmp_df.columns
+        ]
+        if missing_columns:
+            raise ValueError(
+                f"Missing the following columns in DataFrame: {missing_columns}"
+            )
+
+        self._df = tmp_df
+
+    # ---------------------------------------------------------------------------
+    # I/O methods
+    # ---------------------------------------------------------------------------
+
+    def export_results(self, allow_file_overwrite: bool = False) -> None:
+        """Write the particle table to ``df_path`` as CSV.
+
+        Parameters
+        ----------
+        allow_file_overwrite : bool
+            Whether to overwrite an existing file at ``df_path``. Default is
+            False.
+
+        Raises
+        ------
+        ValueError
+            If the parent directory is not writable, or ``df_path`` already
+            exists and ``allow_file_overwrite`` is False.
+        """
+        _check_output_path(self.df_path, allow_file_overwrite)
+        self._df.to_csv(self.df_path)
+
+    def to_hdf5(
+        self,
+        hdf5_path: str,
+        allow_file_overwrite: bool = False,
+        include_image_stack: bool = False,
+        include_local_stats: bool = False,
+    ) -> "ParticleStackHDF5":
+        """Convert this CSV-backed stack to an HDF5-backed stack and write to disk.
+
+        Parameters
+        ----------
+        hdf5_path : str
+            Destination path for the HDF5 file.
+        allow_file_overwrite : bool, optional
+            Whether to overwrite an existing file, by default False.
+        include_image_stack : bool, optional
+            Write ``image_stack`` to the HDF5 file, by default False.
+            Raises ``ValueError`` if the image stack has not been loaded.
+        include_local_stats : bool, optional
+            Write every entry currently in :attr:`local_stats` to the HDF5 file, by
+            default False. Raises ``ValueError`` if :attr:`local_stats` is empty.
+
+        Returns
+        -------
+        ParticleStackHDF5
+            The new HDF5-backed stack instance pointing at ``hdf5_path``.
+        """
+        # Generate particle_id for each row and add to the copied DataFrame
+        df = self._df.copy()
+        particle_ids = _generate_particle_ids(df)
+        df.insert(0, "particle_id", particle_ids)
+        df = df.set_index("particle_id")
+        df.index.name = "particle_id"
+
+        hdf5_stack = ParticleStackHDF5(
+            hdf5_path=hdf5_path,
+            allow_file_overwrite=allow_file_overwrite,
+            extracted_box_size=self.extracted_box_size,
+            original_template_size=self.original_template_size,
+            leopard_em_version=self.leopard_em_version,
+            global_whitening_applied=self.global_whitening_applied,
+            local_whitening_applied=self.local_whitening_applied,
+            global_normalization_applied=self.global_normalization_applied,
+            local_normalization_applied=self.local_normalization_applied,
+            image_stack=self.image_stack if include_image_stack else None,
+            local_stats=self.local_stats if include_local_stats else {},
+            skip_df_load=True,
+        )
+        hdf5_stack._df = df  # pylint: disable=protected-access
+        hdf5_stack.to_hdf5(
+            include_image_stack=include_image_stack,
+            include_local_stats=include_local_stats,
+        )
+        return hdf5_stack
+
+
+# ---------------------------------------------------------------------------
+# HDF5-backed subclass
+# ---------------------------------------------------------------------------
+
+
+class ParticleStackHDF5(_ParticleStackBase):
+    """Particle stack stored entirely within a single HDF5 file.
+
+    The particle table, optional image stack, and optional per-particle local statistic
+    maps are all held in one ``.h5`` file.  Two loading modes are supported — choose
+    one. Mixing them raises errors:
+
+    * **Load from referenced files**: ``image_stack`` and ``local_stats`` are
+      computed from the paths stored in the particle table.  The HDF5 file
+      stores only the particle table (``image_stack_stored=False``).
+    * **Load from HDF5**: ``image_stack`` and ``local_stats`` are read
+      directly from the HDF5 datasets (``image_stack_stored=True`` and/or
+      ``local_stats_stored=True``).
+
+    Any subset of the ``*_path`` statistic-map columns can be stored as ``local_stats``
+    -- not just correlation average/variance. Populate ``self.local_stats`` (e.g. via
+    ``self.local_stats.update(self.get_local_stat_maps())``) before calling
+    ``to_hdf5(include_local_stats=True)``, and every entry present at that point is
+    written, each to its own dataset under ``/local_stats`` named after its column
+    (e.g. ``mip_path``, ``correlation_average_path``).
+
+    HDF5 file layout
+    ----------------
+
+    ::
+
+        / (root)
+        │  attrs: leopard_em_version, extracted_box_size, original_template_size,
+        │         image_stack_stored, local_stats_stored,
+        │         global_whitening_applied, local_whitening_applied,
+        │         global_normalization_applied, local_normalization_applied
+        ├─ particles/
+        │      particle_id            (N,)   variable-length str  "{mic_stem}_{idx:05d}"
+        │      <column>               (N,)   float64 or variable-length str
+        │      ...
+        ├─ image_stack                (N, box_h, box_w)             float32  [optional]
+        └─ local_stats/                                                      [optional]
+               <column>                (N, valid_h, valid_w)         float32
+               ...                                     -- one dataset per entry in
+                                                           `local_stats` at write time,
+                                                           e.g. `mip_path`,
+                                                           `correlation_average_path`
+
+    where ``valid_h = extracted_box_size[0] - original_template_size[0] + 1``
+    and   ``valid_w = extracted_box_size[1] - original_template_size[1] + 1``.
+
+    Attributes
+    ----------
+    hdf5_path : str
+        Path to the HDF5 file.
+    allow_file_overwrite : bool
+        Whether to permit overwriting an existing file, by default False.
+    image_stack_stored : bool
+        True when ``/image_stack`` is present in the HDF5 file.
+    local_stats_stored : bool
+        True when ``/local_stats`` group is present in the HDF5 file.
+    """
+
+    hdf5_path: str
+    allow_file_overwrite: bool = False
+    image_stack_stored: bool = False
+    local_stats_stored: bool = False
+
+    ###########################
+    ### Pydantic Validators ###
+    ###########################
+
+    @model_validator(mode="after")  # type: ignore
+    def _validate_hdf5_path(self) -> Self:
+        """Validate that the HDF5 path is writable and the overwrite policy is met.
+
+        Returns
+        -------
+        Self
+
+        Raises
+        ------
+        ValueError
+            If the path is not writable or the file exists and overwrite is
+            disabled.
+        """
+        _check_output_path(self.hdf5_path, self.allow_file_overwrite)
+        return self
+
+    ###########################
+    ### Data loading        ###
+    ###########################
+
+    def load_df(self) -> None:
+        """Load the particle DataFrame from the HDF5 file at ``hdf5_path``.
+
+        Raises
+        ------
+        FileNotFoundError
+            If ``hdf5_path`` does not exist.
+        """
+        if not os.path.exists(self.hdf5_path):
+            raise FileNotFoundError(
+                f"HDF5 file '{self.hdf5_path}' does not exist. "
+                "Pass skip_df_load=True if you intend to write a new file."
+            )
+        with h5py.File(self.hdf5_path, "r") as f:
+            self._df = _read_df_from_hdf5_group(f)
+
+    ###########################
+    ### I/O methods         ###
+    ###########################
+
+    def export_results(
+        self,
+        include_image_stack: bool = False,
+        include_local_stats: bool = False,
+    ) -> None:
+        """Write the particle table (and optional tensors) to ``hdf5_path``.
+
+        Alias for ``to_hdf5``, kept for API symmetry with ``ParticleStackCSV``.
+        """
+        self.to_hdf5(
+            include_image_stack=include_image_stack,
+            include_local_stats=include_local_stats,
+        )
+
+    def to_hdf5(
+        self,
+        include_image_stack: bool = False,
+        include_local_stats: bool = False,
+    ) -> None:
+        """Write the particle table and optional tensors to ``hdf5_path``.
+
+        Parameters
+        ----------
+        include_image_stack : bool, optional
+            Write ``image_stack`` to ``/image_stack``, by default False.
+            Raises ``ValueError`` if ``image_stack`` is None.
+        include_local_stats : bool, optional
+            Write every entry currently in :attr:`local_stats` to its own
+            dataset under ``/local_stats``, by default False.
+        """
+        with h5py.File(self.hdf5_path, "w") as f:
+            # Root attributes — metadata
+            f.attrs["leopard_em_version"] = self.leopard_em_version
+            f.attrs["extracted_box_size"] = list(self.extracted_box_size)
+            f.attrs["original_template_size"] = list(self.original_template_size)
+            f.attrs["global_whitening_applied"] = self.global_whitening_applied
+            f.attrs["local_whitening_applied"] = self.local_whitening_applied
+            f.attrs["global_normalization_applied"] = self.global_normalization_applied
+            f.attrs["local_normalization_applied"] = self.local_normalization_applied
+
+            # Particle table
+            _write_df_to_hdf5_group(f, self._df)
+
+            # Optional image stack
+            if include_image_stack:
+                if self.image_stack is None:
+                    raise ValueError(
+                        "image_stack is None; cannot write to HDF5. "
+                        "Call construct_image_stack() first."
+                    )
+                f.create_dataset(
+                    _HDF5_IMAGE_STACK_DATASET,
+                    data=self.image_stack.cpu().to(torch.float32).numpy(),
+                )
+                self.image_stack_stored = True
+
+            f.attrs["image_stack_stored"] = self.image_stack_stored
+
+            # Optional per-particle local stat maps -- every column currently held in
+            # `local_stats` is written, whatever it is (correlation average/variance,
+            # MIP, orientations, defocus, ...).
+            if include_local_stats:
+                if not self.local_stats:
+                    raise ValueError(
+                        "local_stats is empty; cannot write to HDF5. Populate it "
+                        "first, e.g. "
+                        "self.local_stats.update(self.get_local_stat_maps())."
+                    )
+                local_grp = f.create_group(_HDF5_LOCAL_STATS_GROUP)
+                for column, stat_map in self.local_stats.items():
+                    local_grp.create_dataset(
+                        column,
+                        data=stat_map.cpu().to(torch.float32).numpy(),
+                    )
+                self.local_stats_stored = True
+
+            f.attrs["local_stats_stored"] = self.local_stats_stored
+
+    @classmethod
+    def from_hdf5(
+        cls,
+        path: str,
+        allow_file_overwrite: bool = True,
+    ) -> "ParticleStackHDF5":
+        """Load a ``ParticleStackHDF5`` from an existing HDF5 file.
+
+        Parameters
+        ----------
+        path : str
+            Path to the HDF5 file written by ``to_hdf5``.
+        allow_file_overwrite : bool, optional
+            Passed to the constructor so that the model validator does not
+            reject the path of the file being loaded, by default True.
+
+        Returns
+        -------
+        ParticleStackHDF5
+        """
+        with h5py.File(path, "r") as f:
+            leopard_em_version = str(f.attrs.get("leopard_em_version", "unknown"))
+            # pylint: disable=not-an-iterable
+            extracted_box_size = tuple(int(v) for v in f.attrs["extracted_box_size"])
+            original_template_size = tuple(
+                int(v) for v in f.attrs["original_template_size"]
+            )
+            # pylint: enable=not-an-iterable
+            global_whitening_applied = bool(
+                f.attrs.get("global_whitening_applied", False)
+            )
+            local_whitening_applied = bool(
+                f.attrs.get("local_whitening_applied", False)
+            )
+            global_normalization_applied = bool(
+                f.attrs.get("global_normalization_applied", False)
+            )
+            local_normalization_applied = bool(
+                f.attrs.get("local_normalization_applied", False)
+            )
+            image_stack_stored = bool(f.attrs.get("image_stack_stored", False))
+            local_stats_stored = bool(f.attrs.get("local_stats_stored", False))
+
+            df = _read_df_from_hdf5_group(f)
+
+            image_stack: torch.Tensor | None = None
+            if image_stack_stored:
+                if _HDF5_IMAGE_STACK_DATASET not in f:
+                    raise ValueError(
+                        f"'image_stack_stored' is True but dataset "
+                        f"'{_HDF5_IMAGE_STACK_DATASET}' is absent in '{path}'."
+                    )
+                image_stack = torch.from_numpy(f[_HDF5_IMAGE_STACK_DATASET][:])
+
+            local_stats: dict[str, torch.Tensor] = {}
+            if local_stats_stored:
+                if _HDF5_LOCAL_STATS_GROUP not in f:
+                    raise ValueError(
+                        f"'local_stats_stored' is True but group "
+                        f"'{_HDF5_LOCAL_STATS_GROUP}' is absent in '{path}'."
+                    )
+                local_grp = f[_HDF5_LOCAL_STATS_GROUP]
+                local_stats = {
+                    column: torch.from_numpy(local_grp[column][:])
+                    for column in local_grp
+                }
+
+        instance = cls(
+            hdf5_path=str(path),
+            allow_file_overwrite=allow_file_overwrite,
+            extracted_box_size=extracted_box_size,
+            original_template_size=original_template_size,
+            leopard_em_version=leopard_em_version,
+            global_whitening_applied=global_whitening_applied,
+            local_whitening_applied=local_whitening_applied,
+            global_normalization_applied=global_normalization_applied,
+            local_normalization_applied=local_normalization_applied,
+            image_stack_stored=image_stack_stored,
+            local_stats_stored=local_stats_stored,
+            image_stack=image_stack,
+            local_stats=local_stats,
+            skip_df_load=True,
+        )
+        instance._df = df
+        return instance
+
+
+# ---------------------------------------------------------------------------
+# Shared result-export helper
+# ---------------------------------------------------------------------------
+
+
+def export_particle_stack(
+    df: pd.DataFrame,
+    output_path: str,
+    source_particle_stack: "_ParticleStackBase",
+    output_format: Literal["csv", "hdf5"] | None = None,
+    allow_file_overwrite: bool = False,
+) -> "ParticleStackCSV | ParticleStackHDF5":
+    """Wrap a particle-result DataFrame in a ParticleStack and write it to disk.
+
+    Notes
+    -----
+    Used by the refine/optimize/constrained-search managers so that their output back-
+    end matches the back-end of the input particle stack by default, while still
+    allowing an explicit override. The DataFrame is only an intermediate — the returned
+    object is the actual particle stack, reusable directly (e.g. fed into the next
+    program) without re-reading from disk.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        The particle table to write (e.g. a refined result table). Must be a superset of
+        the columns a `ParticleStackCSV`/`ParticleStackHDF5` expects; extra columns
+        (e.g. `refined_*`) are preserved as-is.
+    output_path : str
+        Destination file path.
+    source_particle_stack : _ParticleStackBase
+        The particle stack `df` was derived from. Supplies the default output format
+        (matches its own back-end) and the shared box-size/pre-processing metadata to
+        carry over to the new instance.
+    output_format : Literal["csv", "hdf5"] | None
+        Explicit output back-end. If None (default), inferred from
+        ``type(source_particle_stack)``: ``ParticleStackHDF5`` -> "hdf5", otherwise
+        "csv".
+    allow_file_overwrite : bool
+        Whether to overwrite an existing file at ``output_path``. Default is False.
+
+    Returns
+    -------
+    ParticleStackCSV | ParticleStackHDF5
+        The newly constructed particle stack, already written to
+        ``output_path``.
+
+    Raises
+    ------
+    ValueError
+        If ``output_format`` is not one of "csv" or "hdf5".
+    """
+    if output_format is None:
+        output_format = (
+            "hdf5" if isinstance(source_particle_stack, ParticleStackHDF5) else "csv"
+        )
+
+    spc = source_particle_stack
+    shared_kwargs: dict[str, Any] = {
+        "extracted_box_size": spc.extracted_box_size,
+        "original_template_size": spc.original_template_size,
+        "leopard_em_version": spc.leopard_em_version,
+        "global_whitening_applied": spc.global_whitening_applied,
+        "local_whitening_applied": spc.local_whitening_applied,
+        "global_normalization_applied": (spc.global_normalization_applied),
+        "local_normalization_applied": spc.local_normalization_applied,
+        "skip_df_load": True,
+    }
+
+    if output_format == "csv":
+        csv_stack = ParticleStackCSV(df_path=output_path, **shared_kwargs)
+        csv_stack._df = df  # pylint: disable=protected-access
+        csv_stack.export_results(allow_file_overwrite=allow_file_overwrite)
+        return csv_stack
+
+    if output_format != "hdf5":
+        raise ValueError(
+            f"Unknown output_format '{output_format}'; expected 'csv' or 'hdf5'."
+        )
+
+    df_out = df
+    if df_out.index.name != "particle_id" and "particle_id" not in df_out.columns:
+        df_out = df_out.copy()
+        particle_ids = _generate_particle_ids(df_out)
+        df_out.insert(0, "particle_id", particle_ids)
+        df_out = df_out.set_index("particle_id")
+        df_out.index.name = "particle_id"
+
+    hdf5_stack = ParticleStackHDF5(
+        hdf5_path=output_path,
+        allow_file_overwrite=allow_file_overwrite,
+        **shared_kwargs,
+    )
+    hdf5_stack._df = df_out  # pylint: disable=protected-access
+    hdf5_stack.export_results()
+    return hdf5_stack
+
+
+# ---------------------------------------------------------------------------
+# Backward-compatibility alias
+# ---------------------------------------------------------------------------
+
+# Existing code that imports `ParticleStack` continues to receive
+# `ParticleStackCSV` unchanged.
+ParticleStack = ParticleStackCSV

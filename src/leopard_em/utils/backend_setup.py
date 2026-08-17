@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 import torch
-from torch_cubic_spline_grids import CubicCatmullRomGrid3d
+from torch_motion_correction.deformation_field import DeformationField
 
 from leopard_em.utils.ctf_utils import _setup_ctf_kwargs_from_particle_stack
 from leopard_em.utils.image_processing import (
@@ -17,18 +17,25 @@ if TYPE_CHECKING:
     from leopard_em.pydantic_models.config.correlation_filters import (
         PreprocessingFilters,
     )
-    from leopard_em.pydantic_models.data_structures.particle_stack import ParticleStack
+    from leopard_em.pydantic_models.data_structures.particle_stack import (
+        ParticleStackCSV,
+        ParticleStackHDF5,
+    )
 
 
 # pylint: disable=too-many-locals
 # pylint: disable=too-many-arguments
 def _process_particle_images_for_filters(
-    particle_stack: "ParticleStack",
+    particle_stack: "ParticleStackCSV | ParticleStackHDF5",
     preprocessing_filters: "PreprocessingFilters",
     template: torch.Tensor,
     particle_images: torch.Tensor,
     apply_global_filtering: bool,
-    projective_filters: torch.Tensor | None,
+    fixed_image_filters: torch.Tensor | None,
+    fixed_projective_filters: torch.Tensor | None,
+    full_image_shape: tuple[int, int] | None = None,
+    extracted_box_shape: tuple[int, int] | None = None,
+    fixed_normalization_factor: torch.Tensor | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Process particle images and compute filters.
 
@@ -36,7 +43,7 @@ def _process_particle_images_for_filters(
 
     Parameters
     ----------
-    particle_stack : ParticleStack
+    particle_stack : ParticleStackCSV | ParticleStackHDF5
         The particle stack containing images to process.
     preprocessing_filters : PreprocessingFilters
         Filters to apply to the particle images.
@@ -46,8 +53,21 @@ def _process_particle_images_for_filters(
         The particle images to process.
     apply_global_filtering : bool
         Whether global filtering was applied.
-    projective_filters : torch.Tensor | None
-        Pre-computed projective filters (if global filtering was used).
+    fixed_image_filters : torch.Tensor | None
+        Optional per-particle Fourier filters matching ``particle_images`` RFFT shape,
+        applied when whitening particle images (same convention as
+        ``construct_image_filters(..., output_shape=images_dft.shape[-2:])``).
+    fixed_projective_filters : torch.Tensor | None
+        Optional per-particle filters at template RFFT resolution for the correlation
+        backend (same convention as historical ``construct_image_filters`` /
+        ``construct_projective_filters`` template ``output_shape``).
+    full_image_shape : tuple[int, int] | None
+        Optional full image shape used for normalization scaling.
+    extracted_box_shape : tuple[int, int] | None
+        Optional extracted box shape used for normalization scaling.
+    fixed_normalization_factor : torch.Tensor | None
+        Optional precomputed per-particle normalization factors to reuse for
+        each frame (old-style frame normalization).
 
     Returns
     -------
@@ -55,32 +75,69 @@ def _process_particle_images_for_filters(
         A tuple containing:
         - particle_images_dft: The particle images in Fourier space
         - template_dft: The Fourier transformed template
-        - projective_filters: Filters applied to the template
+        - projective_filters: Filters applied to template projections (backend)
     """
     device = template.device
     box_h, box_w = particle_stack.extracted_box_size
+    filter_full_shape = full_image_shape or (box_h, box_w)
+    filter_extracted_shape = extracted_box_shape or (box_h, box_w)
 
     if not apply_global_filtering:
         particle_images_dft = torch.fft.rfftn(particle_images, dim=(-2, -1))  # pylint: disable=not-callable
         particle_images_dft[..., 0, 0] = 0.0 + 0.0j  # Zero out DC component
+        raw_particle_dft = particle_images_dft.detach()
 
-        # Compute filters without gradient tracking (filters are just preprocessing)
-        with torch.no_grad():
-            projective_filters = particle_stack.construct_image_filters(
-                preprocessing_filters,
-                output_shape=(template.shape[-2], template.shape[-1] // 2 + 1),
-                images_dft=particle_images_dft.detach(),
-            ).to(device)
+        image_filters = fixed_image_filters
+        if image_filters is None:
+            with torch.no_grad():
+                image_filters = particle_stack.construct_image_filters(
+                    preprocessing_filters,
+                    output_shape=particle_images_dft.shape[-2:],
+                    images_dft=raw_particle_dft,
+                ).to(device)
+
         particle_images_dft = apply_image_filtering(
             particle_stack,
             preprocessing_filters,
             particle_images_dft,
-            full_image_shape=(box_h, box_w),
-            extracted_box_shape=(box_h, box_w),
+            full_image_shape=filter_full_shape,
+            extracted_box_shape=filter_extracted_shape,
+            precomputed_filter_stack=image_filters,
+            precomputed_normalization_factor=fixed_normalization_factor,
         )
+
+        projective_filters = fixed_projective_filters
+        if projective_filters is None:
+            with torch.no_grad():
+                projective_filters = particle_stack.construct_image_filters(
+                    preprocessing_filters,
+                    output_shape=(template.shape[-2], template.shape[-1] // 2 + 1),
+                    images_dft=raw_particle_dft,
+                ).to(device)
     else:
         particle_images_dft = torch.fft.rfftn(particle_images, dim=(-2, -1))  # pylint: disable=not-callable
+        particle_images_dft[..., 0, 0] = 0.0 + 0.0j
+        if fixed_image_filters is not None and fixed_normalization_factor is not None:
+            particle_images_dft = apply_image_filtering(
+                particle_stack,
+                preprocessing_filters,
+                particle_images_dft,
+                full_image_shape=filter_full_shape,
+                extracted_box_shape=filter_extracted_shape,
+                precomputed_filter_stack=fixed_image_filters,
+                precomputed_normalization_factor=fixed_normalization_factor,
+            )
 
+        projective_filters = fixed_projective_filters
+        if projective_filters is None:
+            projective_filters = torch.ones(
+                (
+                    particle_images.shape[0],
+                    template.shape[-2],
+                    template.shape[-1] // 2 + 1,
+                ),
+                device=device,
+            )
     template_dft = volume_to_rfft_fourier_slice(template)
 
     return (
@@ -90,16 +147,48 @@ def _process_particle_images_for_filters(
     )
 
 
+# pylint: disable=too-many-arguments
+def setup_frame_filters_particle_stack(
+    particle_stack: "ParticleStackCSV | ParticleStackHDF5",
+    preprocessing_filters: "PreprocessingFilters",
+    template: torch.Tensor,
+    particle_images: torch.Tensor,
+    apply_global_filtering: bool = False,
+    fixed_image_filters: torch.Tensor | None = None,
+    fixed_projective_filters: torch.Tensor | None = None,
+    fixed_normalization_factor: torch.Tensor | None = None,
+    full_image_shape: tuple[int, int] | None = None,
+    extracted_box_shape: tuple[int, int] | None = None,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Prepare backend image/template inputs for a per-frame particle stack.
+
+    The frame-correlation path already extracts particles for a single movie frame,
+    so this helper only handles particle-local filtering and template DFT setup.
+    """
+    return _process_particle_images_for_filters(
+        particle_stack=particle_stack,
+        preprocessing_filters=preprocessing_filters,
+        template=template,
+        particle_images=particle_images,
+        apply_global_filtering=apply_global_filtering,
+        fixed_image_filters=fixed_image_filters,
+        fixed_projective_filters=fixed_projective_filters,
+        full_image_shape=full_image_shape,
+        extracted_box_shape=extracted_box_shape,
+        fixed_normalization_factor=fixed_normalization_factor,
+    )
+
+
 # pylint: disable=too-many-locals
 # pylint: disable=too-many-arguments
 # pylint: disable=too-many-positional-arguments
 def _setup_images_filters_from_micrographs(
-    particle_stack: "ParticleStack",
+    particle_stack: "ParticleStackCSV | ParticleStackHDF5",
     preprocessing_filters: "PreprocessingFilters",
     template: torch.Tensor,
     apply_global_filtering: bool,
     movie: torch.Tensor | None,
-    deformation_field: CubicCatmullRomGrid3d | None,
+    deformation_field: DeformationField | None,
     particle_shifts: torch.Tensor | None,
     pre_exposure: float,
     fluence_per_frame: float,
@@ -112,7 +201,7 @@ def _setup_images_filters_from_micrographs(
 
     Parameters
     ----------
-    particle_stack : ParticleStack
+    particle_stack : ParticleStackCSV | ParticleStackHDF5
         The particle stack containing images to process.
     preprocessing_filters : PreprocessingFilters
         Filters to apply to the particle images.
@@ -122,7 +211,7 @@ def _setup_images_filters_from_micrographs(
         If True, apply filtering to the full micrograph before particle extraction.
     movie: torch.Tensor | None
         The movie tensor.
-    deformation_field: CubicCatmullRomGrid3d | None
+    deformation_field: DeformationField | None
         The deformation field tensor.
     particle_shifts: torch.Tensor | None
         The particle shifts tensor. If provided, takes precedence over
@@ -224,13 +313,14 @@ def _setup_images_filters_from_micrographs(
         template=template,
         particle_images=particle_images,
         apply_global_filtering=apply_global_filtering,
-        projective_filters=projective_filters,
+        fixed_image_filters=None,
+        fixed_projective_filters=projective_filters,
     )
 
 
 # pylint: disable=too-many-arguments
 def _setup_images_filters_from_particles(
-    particle_stack: "ParticleStack",
+    particle_stack: "ParticleStackCSV | ParticleStackHDF5",
     preprocessing_filters: "PreprocessingFilters",
     template: torch.Tensor,
     apply_global_filtering: bool,
@@ -242,7 +332,7 @@ def _setup_images_filters_from_particles(
 
     Parameters
     ----------
-    particle_stack : ParticleStack
+    particle_stack : ParticleStackCSV | ParticleStackHDF5
         The particle stack containing images to process.
     preprocessing_filters : PreprocessingFilters
         Filters to apply to the particle images.
@@ -270,19 +360,20 @@ def _setup_images_filters_from_particles(
         template=template,
         particle_images=particle_images,
         apply_global_filtering=apply_global_filtering,
-        projective_filters=None,
+        fixed_image_filters=None,
+        fixed_projective_filters=None,
     )
 
 
 # pylint: disable=too-many-arguments
 # pylint: disable=too-many-positional-arguments
 def setup_images_filters_particle_stack(
-    particle_stack: "ParticleStack",
+    particle_stack: "ParticleStackCSV | ParticleStackHDF5",
     preprocessing_filters: "PreprocessingFilters",
     template: torch.Tensor,
     apply_global_filtering: bool = True,
     movie: torch.Tensor | None = None,
-    deformation_field: CubicCatmullRomGrid3d | None = None,
+    deformation_field: DeformationField | None = None,
     particle_shifts: torch.Tensor | None = None,
     pre_exposure: float = 0.0,
     fluence_per_frame: float = 1.0,
@@ -297,7 +388,7 @@ def setup_images_filters_particle_stack(
 
     Parameters
     ----------
-    particle_stack : ParticleStack
+    particle_stack : ParticleStackCSV | ParticleStackHDF5
         The particle stack containing images to process.
     preprocessing_filters : PreprocessingFilters
         Filters to apply to the particle images.
@@ -309,7 +400,7 @@ def setup_images_filters_particle_stack(
         Default is True.
     movie: torch.Tensor | None
         The movie tensor.
-    deformation_field: CubicCatmullRomGrid3d | None
+    deformation_field: DeformationField | None
         The deformation field tensor.
     particle_shifts: torch.Tensor | None
         The particle shifts tensor. If provided, takes precedence over
@@ -362,7 +453,7 @@ def setup_images_filters_particle_stack(
 
 # pylint: disable=too-many-arguments
 def _setup_correlation_stacks_from_micrographs(
-    particle_stack: "ParticleStack",
+    particle_stack: "ParticleStackCSV | ParticleStackHDF5",
     mean_stack: torch.Tensor | None,
     std_stack: torch.Tensor | None,
     particle_indices: list[pd.Index] | None,
@@ -373,7 +464,7 @@ def _setup_correlation_stacks_from_micrographs(
 
     Parameters
     ----------
-    particle_stack : ParticleStack
+    particle_stack : ParticleStackCSV | ParticleStackHDF5
         The particle stack containing images to process.
     mean_stack : torch.Tensor | None
         Pre-loaded mean stack tensor.
@@ -491,11 +582,125 @@ def _setup_correlation_stacks_from_particles(
     return mean_stack, corr_std_stack
 
 
+def astigmatism_angle_tensor(
+    particle_stack: "ParticleStackCSV | ParticleStackHDF5",
+    device: torch.device,
+) -> torch.Tensor:
+    """Return the per-particle astigmatism angle as a tensor on ``device``."""
+    return torch.tensor(particle_stack["astigmatism_angle"], device=device)
+
+
+# pylint: disable=too-many-locals
+# pylint: disable=too-many-arguments
+# pylint: disable=too-many-positional-arguments
+def setup_static_particle_kwargs(
+    particle_stack: "ParticleStackCSV | ParticleStackHDF5",
+    template: torch.Tensor,
+    euler_angles: torch.Tensor,
+    euler_angle_offsets: torch.Tensor,
+    defocus_offsets: torch.Tensor,
+    pixel_size_offsets: torch.Tensor,
+    device_list: list,
+    mean_stack: torch.Tensor | None = None,
+    std_stack: torch.Tensor | None = None,
+    particle_indices: list[pd.Index] | None = None,
+    images_are_particles: bool = False,
+) -> dict[str, Any]:
+    """Build the image-independent half of the backend kwargs.
+
+    These are the per-particle inputs that do not depend on per-image filtering:
+    Euler angles/offsets, defocus values, correlation mean/std stacks, CTF kwargs,
+    and the magnification matrix. They are shared by the standard particle path
+    (:func:`setup_particle_backend_kwargs`) and the per-frame inspection path, which
+    recomputes image filters separately for each frame.
+
+    Parameters
+    ----------
+    particle_stack : ParticleStackCSV | ParticleStackHDF5
+        The particle stack containing images to process.
+    template : torch.Tensor
+        The 3D template volume (used for device and CTF output shape).
+    euler_angles : torch.Tensor
+        The set of Euler angles to use.
+    euler_angle_offsets : torch.Tensor
+        The relative Euler angle offsets to search over.
+    defocus_offsets : torch.Tensor
+        The relative defocus values to search over.
+    pixel_size_offsets : torch.Tensor
+        The relative pixel size values to search over.
+    device_list : list
+        List of computational devices to use.
+    mean_stack : torch.Tensor | None
+        The mean stack tensor.
+    std_stack : torch.Tensor | None
+        The std stack tensor.
+    particle_indices : list[pd.Index] | None
+        The particle indices to process.
+    images_are_particles : bool
+        Whether the images are particles or not. Defaults to False.
+
+    Returns
+    -------
+    dict[str, Any]
+        Dictionary of the image-independent backend keyword arguments.
+    """
+    device = template.device
+    h, w = particle_stack.original_template_size
+    box_h, box_w = particle_stack.extracted_box_size
+    extracted_box_size = (box_h - h + 1, box_w - w + 1)
+
+    # Setup correlation stacks
+    if images_are_particles:
+        corr_mean_stack, corr_std_stack = _setup_correlation_stacks_from_particles(
+            mean_stack=mean_stack,
+            std_stack=std_stack,
+            particle_indices=particle_indices,
+        )
+    else:
+        corr_mean_stack, corr_std_stack = _setup_correlation_stacks_from_micrographs(
+            particle_stack=particle_stack,
+            mean_stack=mean_stack,
+            std_stack=std_stack,
+            particle_indices=particle_indices,
+            extracted_box_size=extracted_box_size,
+            device=device,
+        )
+
+    # The best defocus values for each particle (+ astigmatism)
+    defocus_u, defocus_v = particle_stack.get_absolute_defocus()
+    defocus_u = defocus_u.to(device)
+    defocus_v = defocus_v.to(device)
+    defocus_angle = astigmatism_angle_tensor(particle_stack, device)
+
+    ctf_kwargs = _setup_ctf_kwargs_from_particle_stack(
+        particle_stack, (template.shape[-2], template.shape[-1])
+    )
+
+    # Extract mag_matrix from particle stack and convert to 2x2 tensor.
+    # All particles should have the same mag_matrix value.
+    mag_matrix_tensor = ctf_kwargs["mag_matrix"]
+
+    return {
+        "euler_angles": euler_angles,
+        "euler_angle_offsets": euler_angle_offsets,
+        "defocus_u": defocus_u,
+        "defocus_v": defocus_v,
+        "defocus_angle": defocus_angle,
+        "defocus_offsets": defocus_offsets,
+        "pixel_size_offsets": pixel_size_offsets,
+        "corr_mean": corr_mean_stack,
+        "corr_std": corr_std_stack,
+        "ctf_kwargs": ctf_kwargs,
+        "device": device_list,
+        "mag_matrix": mag_matrix_tensor,
+    }
+
+
 # pylint: disable=too-many-locals
 # pylint: disable=too-many-arguments
 # pylint: disable=too-many-positional-arguments
 def setup_particle_backend_kwargs(
-    particle_stack: "ParticleStack",
+    particle_stack: "ParticleStackCSV | ParticleStackHDF5",
     template: torch.Tensor,
     preprocessing_filters: "PreprocessingFilters",
     euler_angles: torch.Tensor,
@@ -505,7 +710,7 @@ def setup_particle_backend_kwargs(
     apply_global_filtering: bool,
     device_list: list,
     movie: torch.Tensor | None = None,
-    deformation_field: CubicCatmullRomGrid3d | None = None,
+    deformation_field: DeformationField | None = None,
     particle_shifts: torch.Tensor | None = None,
     pre_exposure: float = 0.0,
     fluence_per_frame: float = 1.0,
@@ -522,7 +727,7 @@ def setup_particle_backend_kwargs(
 
     Parameters
     ----------
-    particle_stack : ParticleStack
+    particle_stack : ParticleStackCSV | ParticleStackHDF5
         The particle stack containing images to process.
     template : torch.Tensor
         The 3D template volume.
@@ -543,7 +748,7 @@ def setup_particle_backend_kwargs(
         List of computational devices to use.
     movie: torch.Tensor | None
         The movie tensor.
-    deformation_field: CubicCatmullRomGrid3d | None
+    deformation_field: DeformationField | None
         The deformation field tensor.
     particle_shifts: torch.Tensor | None
         The particle shifts tensor. If provided, takes precedence over
@@ -568,27 +773,19 @@ def setup_particle_backend_kwargs(
     dict[str, Any]
         Dictionary of keyword arguments for backend functions.
     """
-    device = template.device
-    h, w = particle_stack.original_template_size
-    box_h, box_w = particle_stack.extracted_box_size
-    extracted_box_size = (box_h - h + 1, box_w - w + 1)
-
-    # Setup correlation stacks
-    if images_are_particles:
-        corr_mean_stack, corr_std_stack = _setup_correlation_stacks_from_particles(
-            mean_stack=mean_stack,
-            std_stack=std_stack,
-            particle_indices=particle_indices,
-        )
-    else:
-        corr_mean_stack, corr_std_stack = _setup_correlation_stacks_from_micrographs(
-            particle_stack=particle_stack,
-            mean_stack=mean_stack,
-            std_stack=std_stack,
-            particle_indices=particle_indices,
-            extracted_box_size=extracted_box_size,
-            device=device,
-        )
+    static_kwargs = setup_static_particle_kwargs(
+        particle_stack=particle_stack,
+        template=template,
+        euler_angles=euler_angles,
+        euler_angle_offsets=euler_angle_offsets,
+        defocus_offsets=defocus_offsets,
+        pixel_size_offsets=pixel_size_offsets,
+        device_list=device_list,
+        mean_stack=mean_stack,
+        std_stack=std_stack,
+        particle_indices=particle_indices,
+        images_are_particles=images_are_particles,
+    )
 
     (
         particle_images_dft,
@@ -609,34 +806,9 @@ def setup_particle_backend_kwargs(
         images_are_particles=images_are_particles,
     )
 
-    # The best defocus values for each particle (+ astigmatism)
-    defocus_u, defocus_v = particle_stack.get_absolute_defocus()
-    defocus_u = defocus_u.to(device)
-    defocus_v = defocus_v.to(device)
-    defocus_angle = torch.tensor(particle_stack["astigmatism_angle"], device=device)
-
-    ctf_kwargs = _setup_ctf_kwargs_from_particle_stack(
-        particle_stack, (template.shape[-2], template.shape[-1])
-    )
-
-    # Extract mag_matrix from particle stack and convert to 2x2 tensor
-    # All particles should have the same mag_matrix value
-    mag_matrix_tensor = ctf_kwargs["mag_matrix"]
-
     return {
+        **static_kwargs,
         "particle_stack_dft": particle_images_dft,
         "template_dft": template_dft,
-        "euler_angles": euler_angles,
-        "euler_angle_offsets": euler_angle_offsets,
-        "defocus_u": defocus_u,
-        "defocus_v": defocus_v,
-        "defocus_angle": defocus_angle,
-        "defocus_offsets": defocus_offsets,
-        "pixel_size_offsets": pixel_size_offsets,
-        "corr_mean": corr_mean_stack,
-        "corr_std": corr_std_stack,
-        "ctf_kwargs": ctf_kwargs,
         "projective_filters": projective_filters,
-        "device": device_list,
-        "mag_matrix": mag_matrix_tensor,
     }

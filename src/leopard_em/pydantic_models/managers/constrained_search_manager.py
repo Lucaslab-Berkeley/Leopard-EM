@@ -1,7 +1,8 @@
 # pylint: disable=duplicate-code
 """Pydantic model for running the constrained search program."""
 
-from typing import Any, ClassVar
+import os
+from typing import Any, ClassVar, Literal
 
 import numpy as np
 import pandas as pd
@@ -18,7 +19,11 @@ from leopard_em.pydantic_models.config import (
     PreprocessingFilters,
 )
 from leopard_em.pydantic_models.custom_types import BaseModel2DTM, ExcludedTensor
-from leopard_em.pydantic_models.data_structures import ParticleStack
+from leopard_em.pydantic_models.data_structures import (
+    ParticleStackCSV,
+    ParticleStackHDF5,
+    export_particle_stack,
+)
 from leopard_em.pydantic_models.formats import CONSTRAINED_DF_COLUMN_ORDER
 from leopard_em.utils.backend_setup import (
     _setup_correlation_stacks_from_micrographs,
@@ -42,9 +47,12 @@ class ConstrainedSearchManager(BaseModel2DTM):
         Path to the template volume MRC file.
     center_vector : list[float]
         The centre vector of the template volume.
-    particle_stack_reference : ParticleStack
-        Particle stack object containing particle data reference particles.
-    particle_stack_constrained : ParticleStack
+    particle_stack_reference : ParticleStackCSV | ParticleStackHDF5
+        Particle stack object containing particle data reference particles. Use
+        ``ParticleStackCSV`` for a CSV-backed particle table or
+        ``ParticleStackHDF5`` for an HDF5-backed one. Both expose the same in-memory
+        API.
+    particle_stack_constrained : ParticleStackCSV | ParticleStackHDF5
         Particle stack object containing particle data constrained particles.
     defocus_refinement_config : DefocusSearchConfig
         Configuration for defocus refinement.
@@ -68,6 +76,13 @@ class ConstrainedSearchManager(BaseModel2DTM):
         Create the kwargs for the backend refine_template core function.
     run_constrained_search(self, orientation_batch_size: int = 64) -> None
         Run the constrained search program.
+    refine_result_to_dataframe(self, result) -> pd.DataFrame
+        Build the refined particle DataFrame from a backend result (no I/O).
+    export_results(self, output_dataframe_path: str, result, ...) -> None
+        Build the refined DataFrame and write it (plus CSV parameter/
+        above-threshold siblings) to disk, matching the input
+        particle_stack_reference's back-end by default (override with
+        `output_format`).
     """
 
     model_config: ClassVar = ConfigDict(arbitrary_types_allowed=True)
@@ -75,8 +90,8 @@ class ConstrainedSearchManager(BaseModel2DTM):
     template_volume_path: str  # In df per-particle, but ensure only one reference
     center_vector: list[float] = Field(default=[0.0, 0.0, 0.0])
 
-    particle_stack_reference: ParticleStack
-    particle_stack_constrained: ParticleStack
+    particle_stack_reference: ParticleStackCSV | ParticleStackHDF5
+    particle_stack_constrained: ParticleStackCSV | ParticleStackHDF5
     defocus_refinement_config: DefocusSearchConfig
     orientation_refinement_config: ConstrainedOrientationConfig
     preprocessing_filters: PreprocessingFilters
@@ -209,8 +224,10 @@ class ConstrainedSearchManager(BaseModel2DTM):
         output_dataframe_path: str,
         false_positives: float = 0.005,
         orientation_batch_size: int = 64,
+        output_format: Literal["csv", "hdf5"] | None = None,
+        allow_file_overwrite: bool = False,
     ) -> None:
-        """Run the constrained search program and saves the resultant DataFrame to csv.
+        """Run the constrained search program and export the resultant DataFrame.
 
         Parameters
         ----------
@@ -220,15 +237,26 @@ class ConstrainedSearchManager(BaseModel2DTM):
             The number of false positives to allow per particle.
         orientation_batch_size : int
             Number of orientations to process at once. Defaults to 64.
+        output_format : Literal["csv", "hdf5"] | None
+            Output back-end for the main refined table. Defaults to None, which matches
+            the back-end of ``self.particle_stack_reference`` (CSV in, CSV out; HDF5 in,
+            HDF5 out). Pass "csv" or "hdf5" to override. The accompanying "_parameters"
+            and "_above_threshold" sibling tables are always written as CSV regardless
+            of this setting.
+        allow_file_overwrite : bool
+            Whether to overwrite an existing file at ``output_dataframe_path``. Defaults
+            to False.
         """
         backend_kwargs = self.make_backend_core_function_kwargs()
 
         result = self.get_refine_result(backend_kwargs, orientation_batch_size)
 
-        self.refine_result_to_dataframe(
+        self.export_results(
             output_dataframe_path=output_dataframe_path,
             result=result,
             false_positives=false_positives,
+            output_format=output_format,
+            allow_file_overwrite=allow_file_overwrite,
         )
 
     def get_refine_result(
@@ -269,20 +297,20 @@ class ConstrainedSearchManager(BaseModel2DTM):
     # pylint: disable=too-many-locals
     def refine_result_to_dataframe(
         self,
-        output_dataframe_path: str,
         result: dict[str, np.ndarray],
-        false_positives: float = 0.005,
-    ) -> None:
-        """Convert refine template result to dataframe.
+    ) -> pd.DataFrame:
+        """Convert constrained search result to a DataFrame.
 
         Parameters
         ----------
-        output_dataframe_path : str
-            Path to save the refined particle data.
         result : dict[str, np.ndarray]
-            The result of the refine template program.
-        false_positives : float
-            The number of false positives to allow per particle.
+            The result of the constrained search program.
+
+        Returns
+        -------
+        pd.DataFrame
+            The refined particle data. Not written to disk; use ``export_results`` to do
+            both in one call.
         """
         df_refined = self.particle_stack_reference.get_dataframe_copy()
 
@@ -338,8 +366,51 @@ class ConstrainedSearchManager(BaseModel2DTM):
         # Reorder the columns
         df_refined = df_refined.reindex(columns=CONSTRAINED_DF_COLUMN_ORDER)
 
-        # Save the refined DataFrame to disk
-        df_refined.to_csv(output_dataframe_path)
+        return df_refined
+
+    # pylint: disable=too-many-locals
+    def export_results(
+        self,
+        output_dataframe_path: str,
+        result: dict[str, np.ndarray],
+        false_positives: float = 0.005,
+        output_format: Literal["csv", "hdf5"] | None = None,
+        allow_file_overwrite: bool = False,
+    ) -> ParticleStackCSV | ParticleStackHDF5:
+        """Build the refined DataFrame and write it, plus two CSV siblings, to disk.
+
+        Parameters
+        ----------
+        output_dataframe_path : str
+            Path to save the refined particle data.
+        result : dict[str, np.ndarray]
+            The result of the constrained search program.
+        false_positives : float
+            The number of false positives to allow per particle.
+        output_format : Literal["csv", "hdf5"] | None
+            Output back-end for the main refined table. Defaults to None,
+            which matches the back-end of ``self.particle_stack_reference``.
+            Pass "csv" or "hdf5" to override.
+        allow_file_overwrite : bool
+            Whether to overwrite an existing file at ``output_dataframe_path``.
+            Defaults to False.
+
+        Returns
+        -------
+        ParticleStackCSV | ParticleStackHDF5
+            The refined particle stack (main table only), already written to
+            ``output_dataframe_path``.
+        """
+        df_refined = self.refine_result_to_dataframe(result=result)
+
+        # Save the main refined DataFrame, matching the input back-end by default
+        result_stack = export_particle_stack(
+            df=df_refined,
+            output_path=output_dataframe_path,
+            source_particle_stack=self.particle_stack_reference,
+            output_format=output_format,
+            allow_file_overwrite=allow_file_overwrite,
+        )
 
         # Save a second dataframe
         # I also want the original user input offsets back somewhere
@@ -362,6 +433,13 @@ class ConstrainedSearchManager(BaseModel2DTM):
             num_correlations, float(false_positives)
         )
 
+        # The "_parameters" and "_above_threshold" siblings are always CSV,
+        # named from the base of output_dataframe_path regardless of its
+        # extension (which may be .h5 when output_format is "hdf5").
+        output_base, _ = os.path.splitext(output_dataframe_path)
+        parameters_path = f"{output_base}_parameters.csv"
+        above_threshold_path = f"{output_base}_above_threshold.csv"
+
         # Save all parameters to CSV including false-positives
         params_df = pd.DataFrame(
             {
@@ -372,7 +450,7 @@ class ConstrainedSearchManager(BaseModel2DTM):
                 "threshold": [threshold],
             }
         )
-        params_df.to_csv(output_dataframe_path.replace(".csv", "_parameters.csv"))
+        params_df.to_csv(parameters_path)
 
         print(
             f"Threshold: {threshold} which gives {false_positives} "
@@ -389,10 +467,7 @@ class ConstrainedSearchManager(BaseModel2DTM):
             df_refined_above_threshold["refined_scaled_mip"] != np.nan
         ]
         # Save the above threshold dataframe
-        print(
-            f"Saving above threshold dataframe to "
-            f"{output_dataframe_path.replace('.csv', '_above_threshold.csv')}"
-        )
-        df_refined_above_threshold.to_csv(
-            output_dataframe_path.replace(".csv", "_above_threshold.csv")
-        )
+        print(f"Saving above threshold dataframe to {above_threshold_path}")
+        df_refined_above_threshold.to_csv(above_threshold_path)
+
+        return result_stack
