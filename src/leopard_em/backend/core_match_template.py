@@ -485,6 +485,7 @@ def core_match_template(
 # pylint: disable=too-many-locals
 # pylint: disable=too-many-arguments
 # pylint: disable=too-many-positional-arguments
+# pylint: disable=too-many-branches
 def _core_match_template_single_gpu(
     rank: int,
     index_queue: MultiprocessWorkIndexQueue,
