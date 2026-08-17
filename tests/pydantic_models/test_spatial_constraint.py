@@ -133,3 +133,98 @@ def test_num_ccg_and_peaks_outside_box():
     assert len(peaks.pos_y) == 1
     assert int(peaks.pos_y[0]) == 4
     assert int(peaks.pos_x[0]) == 4
+
+
+def test_expand_defocus_min_max_against_grid():
+    maps = rasterize_rectangle((6, 6), box=(2.0, 2.0, 4.0, 4.0), n_orientations=4)
+    maps.defocus_min = np.full((6, 6), -50.0, dtype=np.float32)
+    maps.defocus_max = np.full((6, 6), 50.0, dtype=np.float32)
+    maps.expand_defocus_against_grid(np.array([-200.0, 0.0, 200.0]))
+
+    assert maps.defocus_eligible is not None
+    assert maps.defocus_eligible.shape == (3, 6, 6)
+    assert int(maps.n_defocus[3, 3]) == 1
+    assert int(maps.n_defocus[0, 0]) == 0
+    assert maps.defocus_eligible[1, 3, 3] == 1
+    assert maps.defocus_eligible[0, 3, 3] == 0
+    assert maps.allowed_num_ccg() == int(maps.eligible.sum()) * 4 * 1
+
+
+def test_missing_defocus_maps_keep_full_grid():
+    maps = rasterize_rectangle((4, 4), box=(1.0, 1.0, 2.0, 2.0), n_orientations=3)
+    maps.expand_defocus_against_grid(np.array([-100.0, 0.0, 100.0]))
+    assert maps.defocus_eligible is None
+    assert int(maps.n_defocus[1, 1]) == 3
+    assert int(maps.n_defocus[0, 0]) == 0
+    assert maps.allowed_num_ccg(n_defocus=3) == int(maps.eligible.sum()) * 3 * 3
+
+
+def test_region_table_defocus_bounds():
+    maps = rasterize_rectangle((5, 5), box=(1.0, 1.0, 3.0, 3.0), n_orientations=2)
+    maps.regions[0]["defocus_min"] = -10.0
+    maps.regions[0]["defocus_max"] = 10.0
+    maps.expand_defocus_against_grid(np.array([-100.0, 0.0, 100.0]))
+    assert maps.defocus_eligible[1, 2, 2] == 1
+    assert maps.defocus_eligible[0, 2, 2] == 0
+    assert int(maps.n_defocus[2, 2]) == 1
+
+
+def test_hdf5_roundtrip_defocus_maps(tmp_path: Path):
+    maps = rasterize_rectangle((5, 5), box=(1.0, 1.0, 3.0, 3.0), n_orientations=2)
+    maps.defocus_min = np.full((5, 5), -80.0, dtype=np.float32)
+    maps.defocus_max = np.full((5, 5), 80.0, dtype=np.float32)
+    maps.regions[0]["defocus_min"] = -80.0
+    maps.regions[0]["defocus_max"] = 80.0
+    path = tmp_path / "defocus_constraint.h5"
+    write_spatial_constraint_hdf5(str(path), maps)
+    loaded = read_spatial_constraint_hdf5(str(path))
+    np.testing.assert_allclose(loaded.defocus_min, maps.defocus_min)
+    np.testing.assert_allclose(loaded.defocus_max, maps.defocus_max)
+    assert loaded.regions[0]["defocus_min"] == -80.0
+    loaded.expand_defocus_against_grid(np.array([-100.0, 0.0, 100.0]))
+    assert int(loaded.n_defocus[2, 2]) == 1
+
+
+def test_defocus_maps_to_stats_map_coords():
+    maps = rasterize_rectangle((10, 10), box=(4.0, 4.0, 6.0, 6.0), n_orientations=3)
+    maps.defocus_min = np.full((10, 10), -20.0, dtype=np.float32)
+    maps.defocus_max = np.full((10, 10), 20.0, dtype=np.float32)
+    stats = maps.to_stats_map_coords(half_template_width=2, stats_shape=(7, 7))
+    assert stats.defocus_min.shape == (7, 7)
+    stats.expand_defocus_against_grid(np.array([-100.0, 0.0, 100.0]))
+    assert stats.eligible[2, 2] == 1
+    assert int(stats.n_defocus[2, 2]) == 1
+    assert int(stats.n_defocus[0, 0]) == 0
+
+
+def test_num_ccg_uses_per_pixel_defocus():
+    height, width = 8, 8
+    scaled = torch.zeros((height, width))
+    scaled[1, 1] = 20.0
+    scaled[4, 4] = 19.0
+    mip = scaled.clone()
+    dummy = torch.zeros((height, width))
+    n_orients = torch.zeros((height, width), dtype=torch.int32)
+    n_orients[3:6, 3:6] = 10
+    n_def = torch.zeros((height, width), dtype=torch.int32)
+    n_def[3:6, 3:6] = 2
+
+    peaks = extract_peaks_and_statistics_zscore(
+        mip=mip,
+        scaled_mip=scaled,
+        best_psi=dummy,
+        best_theta=dummy,
+        best_phi=dummy,
+        best_defocus=dummy,
+        correlation_average=dummy,
+        correlation_variance=torch.ones((height, width)),
+        total_correlation_positions=100,
+        n_orientations_map=n_orients,
+        n_defocus_map=n_def,
+        n_cs=1,
+        z_score_cutoff=1.0,
+        mask_radius=1.0,
+    )
+    assert len(peaks.pos_y) == 1
+    assert int(peaks.pos_y[0]) == 4
+    assert int(peaks.pos_x[0]) == 4

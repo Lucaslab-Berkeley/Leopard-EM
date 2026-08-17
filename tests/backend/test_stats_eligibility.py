@@ -48,7 +48,7 @@ def test_mask_before_max_skips_ineligible_pixels():
         needs_valid_cropping=False,
         compute_correlation_table=False,
         eligible_pixels=pixel_ok,
-        stats_from_valid_orientations=False,
+        stats_from_valid_orientations_defocus=False,
     )
 
     assert mip[0, 0] == -float("inf")
@@ -57,7 +57,7 @@ def test_mask_before_max_skips_ineligible_pixels():
     assert corr_sum[1, 1] == pytest.approx(3.0)
 
 
-def test_stats_from_valid_orientations_masks_sums():
+def test_stats_from_valid_orientations_defocus_masks_sums():
     height, width = 2, 2
     cc = torch.zeros((2, height, width), dtype=torch.float32)
     cc[0, 0, 0] = 4.0
@@ -85,7 +85,7 @@ def test_stats_from_valid_orientations_masks_sums():
         needs_valid_cropping=False,
         compute_correlation_table=False,
         eligible_pixels=pixel_ok,
-        stats_from_valid_orientations=True,
+        stats_from_valid_orientations_defocus=True,
         correlation_count=corr_count,
     )
 
@@ -95,3 +95,79 @@ def test_stats_from_valid_orientations_masks_sums():
     assert corr_count[0, 0] == pytest.approx(0.0)
     assert mip[0, 0] == -float("inf")
     assert mip[0, 1] == pytest.approx(5.0)
+
+
+def test_mask_before_max_skips_ineligible_defocus():
+    height, width = 2, 2
+    n_orient = 1
+    n_defocus = 2
+    cc = torch.zeros((n_defocus, height, width), dtype=torch.float32)
+    cc[0, 0, 0] = 9.0  # defocus 0, illegal at this pixel
+    cc[1, 0, 0] = 3.0  # defocus 1, allowed
+    current_indexes = torch.tensor([0, 1], dtype=torch.int32)
+    mip = torch.full((height, width), -float("inf"))
+    best = torch.full((height, width), -1, dtype=torch.int32)
+    corr_sum = torch.zeros((height, width))
+    corr_sq = torch.zeros((height, width))
+    defocus_ok = torch.zeros((n_defocus, height, width), dtype=torch.bool)
+    defocus_ok[1, 0, 0] = True
+
+    do_iteration_and_correlation_table_updates(
+        cross_correlation=cc,
+        current_indexes=current_indexes,
+        correlation_table=_empty_table(),
+        mip=mip,
+        best_global_index=best,
+        correlation_sum=corr_sum,
+        correlation_squared_sum=corr_sq,
+        threshold=5.5,
+        valid_shape_h=height,
+        valid_shape_w=width,
+        needs_valid_cropping=False,
+        compute_correlation_table=False,
+        defocus_eligible=defocus_ok,
+        n_orientations=n_orient,
+        stats_from_valid_orientations_defocus=False,
+    )
+
+    assert mip[0, 0] == pytest.approx(3.0)
+    assert int(best[0, 0]) == 1
+    assert corr_sum[0, 0] == pytest.approx(12.0)
+
+
+def test_stats_from_valid_orientations_defocus_masks_illegal_defocus():
+    height, width = 1, 1
+    n_orient = 1
+    n_defocus = 2
+    cc = torch.tensor([[[4.0]], [[5.0]]], dtype=torch.float32)
+    current_indexes = torch.tensor([0, 1], dtype=torch.int32)
+    mip = torch.full((height, width), -float("inf"))
+    best = torch.full((height, width), -1, dtype=torch.int32)
+    corr_sum = torch.zeros((height, width))
+    corr_sq = torch.zeros((height, width))
+    corr_count = torch.zeros((height, width))
+    defocus_ok = torch.zeros((n_defocus, height, width), dtype=torch.bool)
+    defocus_ok[1, 0, 0] = True
+
+    do_iteration_and_correlation_table_updates(
+        cross_correlation=cc,
+        current_indexes=current_indexes,
+        correlation_table=_empty_table(),
+        mip=mip,
+        best_global_index=best,
+        correlation_sum=corr_sum,
+        correlation_squared_sum=corr_sq,
+        threshold=5.5,
+        valid_shape_h=height,
+        valid_shape_w=width,
+        needs_valid_cropping=False,
+        compute_correlation_table=False,
+        defocus_eligible=defocus_ok,
+        n_orientations=n_orient,
+        stats_from_valid_orientations_defocus=True,
+        correlation_count=corr_count,
+    )
+
+    assert mip[0, 0] == pytest.approx(5.0)
+    assert corr_sum[0, 0] == pytest.approx(5.0)
+    assert corr_count[0, 0] == pytest.approx(1.0)

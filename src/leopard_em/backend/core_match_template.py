@@ -166,7 +166,8 @@ def core_match_template(
     compute_correlation_table: bool = True,
     eligible_pixels: torch.Tensor | None = None,
     allowed_search_mask: torch.Tensor | None = None,
-    stats_from_valid_orientations: bool = False,
+    defocus_eligible: torch.Tensor | None = None,
+    stats_from_valid_orientations_defocus: bool = False,
 ) -> dict[str, torch.Tensor | dict | int]:
     """Core function for performing the whole-orientation search.
 
@@ -233,9 +234,12 @@ def core_match_template(
     allowed_search_mask : torch.Tensor, optional
         Boolean mask indexed by global search index. If None, every searched
         index in this run is allowed.
-    stats_from_valid_orientations : bool, optional
-        If True, mean and variance use only eligible (pixel, orientation) pairs
-        and a per-pixel count divisor. Default is False.
+    defocus_eligible : torch.Tensor, optional
+        Boolean ``(n_defocus, H, W)`` mask of allowed defocus values per pixel.
+        If None, every defocus in this run is allowed.
+    stats_from_valid_orientations_defocus : bool, optional
+        If True, mean and variance use only eligible (pixel, orientation,
+        defocus) tuples and a per-pixel count divisor. Default is False.
 
     Returns
     -------
@@ -295,6 +299,8 @@ def core_match_template(
         eligible_pixels = eligible_pixels.cpu()
     if allowed_search_mask is not None:
         allowed_search_mask = allowed_search_mask.cpu()
+    if defocus_eligible is not None:
+        defocus_eligible = defocus_eligible.cpu()
 
     ##############################################################
     ### Pre-multiply the whitening filter with the CTF filters ###
@@ -348,7 +354,10 @@ def core_match_template(
             "compute_correlation_table": compute_correlation_table,
             "eligible_pixels": eligible_pixels,
             "allowed_search_mask": allowed_search_mask,
-            "stats_from_valid_orientations": stats_from_valid_orientations,
+            "defocus_eligible": defocus_eligible,
+            "stats_from_valid_orientations_defocus": (
+                stats_from_valid_orientations_defocus
+            ),
         }
 
         kwargs_per_device.append(kwargs)
@@ -374,12 +383,12 @@ def core_match_template(
 
     mip_scaled = torch.empty_like(mip)
     scale_divisor: int | torch.Tensor = total_projections
-    if stats_from_valid_orientations:
+    if stats_from_valid_orientations_defocus:
         correlation_count = aggregated_results.get("correlation_count")
         if correlation_count is None:
             raise RuntimeError(
-                "stats_from_valid_orientations=True but no correlation_count map "
-                "was returned from the search."
+                "stats_from_valid_orientations_defocus=True but no "
+                "correlation_count map was returned from the search."
             )
         scale_divisor = correlation_count
     mip, mip_scaled, correlation_mean, correlation_variance = scale_mip(
@@ -434,7 +443,8 @@ def _core_match_template_single_gpu(
     compute_correlation_table: bool = True,
     eligible_pixels: torch.Tensor | None = None,
     allowed_search_mask: torch.Tensor | None = None,
-    stats_from_valid_orientations: bool = False,
+    defocus_eligible: torch.Tensor | None = None,
+    stats_from_valid_orientations_defocus: bool = False,
 ) -> tuple[
     torch.Tensor,
     torch.Tensor,
@@ -493,8 +503,12 @@ def _core_match_template_single_gpu(
     allowed_search_mask : torch.Tensor, optional
         Boolean mask indexed by global search index. If None, every searched
         index in this run is allowed.
-    stats_from_valid_orientations : bool, optional
-        If True, running sums use only eligible pairs. Default is False.
+    defocus_eligible : torch.Tensor, optional
+        Boolean ``(n_defocus, H, W)`` mask of allowed defocus values per pixel.
+        If None, every defocus in this run is allowed.
+    stats_from_valid_orientations_defocus : bool, optional
+        If True, running sums use only eligible (pixel, orientation, defocus)
+        tuples. Default is False.
 
     Returns
     -------
@@ -608,6 +622,15 @@ def _core_match_template_single_gpu(
             )
     if allowed_search_mask is not None:
         allowed_search_mask = allowed_search_mask.to(device=device, dtype=torch.bool)
+    if defocus_eligible is not None:
+        defocus_eligible = defocus_eligible.to(device=device, dtype=torch.bool)
+        expected_defocus_shape = (num_defocus, *valid_correlation_shape)
+        if tuple(defocus_eligible.shape) != expected_defocus_shape:
+            raise ValueError(
+                "defocus_eligible shape "
+                f"{tuple(defocus_eligible.shape)} does not match "
+                f"{expected_defocus_shape}."
+            )
     if backend == "zipfft":
         # NOTE: zipFFT expects a pre-transformed, pre-transposed input image FFT
         # Transpose the 'image_dft' along last two dimensions into contiguous layout
@@ -694,7 +717,11 @@ def _core_match_template_single_gpu(
                     compute_correlation_table=compute_correlation_table,
                     eligible_pixels=eligible_pixels,
                     allowed_search_mask=allowed_search_mask,
-                    stats_from_valid_orientations=stats_from_valid_orientations,
+                    defocus_eligible=defocus_eligible,
+                    n_orientations=num_orientations,
+                    stats_from_valid_orientations_defocus=(
+                        stats_from_valid_orientations_defocus
+                    ),
                     correlation_count=correlation_count,
                 )
 

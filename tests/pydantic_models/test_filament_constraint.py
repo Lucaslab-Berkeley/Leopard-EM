@@ -203,3 +203,16 @@ def test_generated_config_is_valid_for_euler_angles():
 
     assert float(theta.min()) >= 80.0 - 1e-3
     assert float(theta.max()) <= 100.0 + 1e-3
+
+
+def test_stats_flag_accepts_legacy_yaml_key():
+    legacy = FilamentConstraint(
+        filament_angle_deg=0.0,
+        stats_from_valid_orientations=True,
+    )
+    assert legacy.stats_from_valid_orientations_defocus is True
+    current = FilamentConstraint(
+        filament_angle_deg=0.0,
+        stats_from_valid_orientations_defocus=True,
+    )
+    assert current.stats_from_valid_orientations_defocus is True

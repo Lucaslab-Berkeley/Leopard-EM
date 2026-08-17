@@ -6,6 +6,10 @@ HDF5 layout::
     maps/eligible          uint8  (H, W)
     maps/region_id         int16  (H, W)
     maps/n_orientations    int32  (H, W)
+    maps/n_defocus         int32  (H, W)            # optional
+    maps/defocus_min       float32 (H, W)           # optional, relative Å
+    maps/defocus_max       float32 (H, W)           # optional, relative Å
+    maps/defocus_eligible  uint8  (n_defocus, H, W) # optional, kernel-ready
     regions/0001/...
 """
 
@@ -67,6 +71,14 @@ class SpatialConstraintMaps:
         Display metadata.
     regions : list[dict]
         Region table (Euler-box parameters, geometry, orientation configs).
+    n_defocus : np.ndarray, optional
+        ``int32`` allowed defocus steps at each pixel.
+    defocus_min : np.ndarray, optional
+        Per-pixel relative-defocus lower bound, Angstroms.
+    defocus_max : np.ndarray, optional
+        Per-pixel relative-defocus upper bound, Angstroms.
+    defocus_eligible : np.ndarray, optional
+        ``uint8`` kernel-ready mask of shape ``(n_defocus, H, W)``.
     """
 
     eligible: np.ndarray
@@ -76,12 +88,87 @@ class SpatialConstraintMaps:
     coordinate_frame: str = _COORDINATE_FRAME
     pixel_size_angstrom: float | None = None
     regions: list[dict[str, Any]] = field(default_factory=list)
+    n_defocus: np.ndarray | None = None
+    defocus_min: np.ndarray | None = None
+    defocus_max: np.ndarray | None = None
+    defocus_eligible: np.ndarray | None = None
 
     def fill_n_orientations(self, n_orient: int) -> None:
         """Set ``n_orientations`` to ``n_orient`` inside the eligible mask."""
-        self.n_orientations = np.where(
-            self.eligible > 0, int(n_orient), 0
-        ).astype(np.int32)
+        self.n_orientations = np.where(self.eligible > 0, int(n_orient), 0).astype(
+            np.int32
+        )
+
+    def expand_defocus_against_grid(self, defocus_values: Any) -> None:
+        """Build ``defocus_eligible`` / ``n_defocus`` against this run's grid.
+
+        The YAML defocus grid is the source of allowed values. HDF5 maps only
+        subset that grid. Missing datasets mean every in-play pixel keeps the
+        full list; in that case ``defocus_eligible`` stays ``None`` so the
+        kernel does not allocate a 3-D mask.
+
+        Precedence: ``defocus_eligible`` as stored, else per-pixel
+        ``defocus_min`` / ``defocus_max``, else region-table bounds.
+        """
+        if hasattr(defocus_values, "detach"):
+            values = np.asarray(
+                defocus_values.detach().cpu(), dtype=np.float64
+            ).reshape(-1)
+        else:
+            values = np.asarray(defocus_values, dtype=np.float64).reshape(-1)
+        n_grid = int(values.size)
+        if n_grid == 0:
+            raise ValueError("defocus_values must contain at least one sample.")
+        eligible = self.eligible > 0
+
+        if self.defocus_eligible is not None:
+            ok = np.asarray(self.defocus_eligible, dtype=bool)
+            if ok.shape != (n_grid, *self.eligible.shape):
+                raise ValueError(
+                    "maps/defocus_eligible shape "
+                    f"{tuple(ok.shape)} does not match this run's defocus grid "
+                    f"({n_grid}, {self.eligible.shape[0]}, {self.eligible.shape[1]}). "
+                    "Store defocus_min/defocus_max instead if the grid can change."
+                )
+            ok = ok & eligible[None, :, :]
+        elif self.defocus_min is not None and self.defocus_max is not None:
+            ok = (
+                values[:, None, None] >= np.asarray(self.defocus_min, dtype=np.float64)
+            ) & (
+                values[:, None, None] <= np.asarray(self.defocus_max, dtype=np.float64)
+            )
+            ok = ok & eligible[None, :, :]
+        else:
+            ok = self._defocus_ok_from_regions(values)
+            if ok is None:
+                self.n_defocus = np.where(eligible, n_grid, 0).astype(np.int32)
+                self.defocus_eligible = None
+                return
+            ok = ok & eligible[None, :, :]
+
+        self.defocus_eligible = ok.astype(np.uint8)
+        self.n_defocus = ok.sum(axis=0).astype(np.int32)
+
+    def _defocus_ok_from_regions(self, values: np.ndarray) -> np.ndarray | None:
+        """Piecewise-constant defocus bounds from the region table, if any."""
+        bounded = [
+            region
+            for region in self.regions
+            if region.get("defocus_min") is not None
+            and region.get("defocus_max") is not None
+        ]
+        if not bounded:
+            return None
+
+        ok = np.ones((values.size, *self.eligible.shape), dtype=bool)
+        for region in bounded:
+            rid = int(region.get("region_id", 1))
+            pixel_mask = self.region_id == rid
+            allowed = (values >= float(region["defocus_min"])) & (
+                values <= float(region["defocus_max"])
+            )
+            ok[:, pixel_mask] = allowed[:, np.newaxis]
+        return ok
 
     def to_stats_map_coords(
         self,
@@ -105,17 +192,30 @@ class SpatialConstraintMaps:
         xs = np.clip(xs, 0, img_w - 1)
         yy, xx = np.meshgrid(ys, xs, indexing="ij")
 
-        eligible = self.eligible[yy, xx]
-        region_id = self.region_id[yy, xx]
-        n_orientations = self.n_orientations[yy, xx]
-        # Pixels whose center would fall outside the micrograph are ineligible.
-        in_bounds = (
-            (np.arange(height)[:, None] + half_template_width < img_h)
-            & (np.arange(width)[None, :] + half_template_width < img_w)
+        in_bounds = (np.arange(height)[:, None] + half_template_width < img_h) & (
+            np.arange(width)[None, :] + half_template_width < img_w
         )
-        eligible = np.where(in_bounds, eligible, 0).astype(np.uint8)
-        region_id = np.where(in_bounds, region_id, 0).astype(np.int16)
-        n_orientations = np.where(in_bounds, n_orientations, 0).astype(np.int32)
+
+        eligible = _sample_and_mask(self.eligible, yy, xx, in_bounds, 0).astype(
+            np.uint8
+        )
+        region_id = _sample_and_mask(self.region_id, yy, xx, in_bounds, 0).astype(
+            np.int16
+        )
+        n_orientations = _sample_and_mask(
+            self.n_orientations, yy, xx, in_bounds, 0
+        ).astype(np.int32)
+        n_defocus = _sample_optional_map(self.n_defocus, yy, xx, in_bounds, 0)
+        if n_defocus is not None:
+            n_defocus = n_defocus.astype(np.int32)
+        defocus_min = _sample_optional_map(self.defocus_min, yy, xx, in_bounds, 0.0)
+        defocus_max = _sample_optional_map(self.defocus_max, yy, xx, in_bounds, 0.0)
+        defocus_eligible = None
+        if self.defocus_eligible is not None:
+            sampled = self.defocus_eligible[:, yy, xx]
+            defocus_eligible = np.where(in_bounds[None, :, :], sampled, 0).astype(
+                np.uint8
+            )
 
         return SpatialConstraintMaps(
             eligible=eligible,
@@ -125,15 +225,25 @@ class SpatialConstraintMaps:
             coordinate_frame="pos_xy",
             pixel_size_angstrom=self.pixel_size_angstrom,
             regions=self.regions,
+            n_defocus=n_defocus,
+            defocus_min=defocus_min,
+            defocus_max=defocus_max,
+            defocus_eligible=defocus_eligible,
         )
 
-    def allowed_num_ccg(self, n_defocus: int, n_cs: int = 1) -> int:
-        """Return ``sum(n_orientations) * n_defocus * n_cs``."""
-        return (
-            int(self.n_orientations.astype(np.int64).sum())
-            * int(n_defocus)
-            * int(n_cs)
-        )
+    def allowed_num_ccg(self, n_defocus: int | None = None, n_cs: int = 1) -> int:
+        """Return the number of allowed (pixel, orientation, defocus, Cs) tuples.
+
+        Uses ``sum(n_orientations * n_defocus_map) * n_cs`` when a per-pixel
+        defocus count is present, otherwise ``sum(n_orientations) * n_defocus * n_cs``.
+        """
+        n_orients = self.n_orientations.astype(np.int64)
+        if self.n_defocus is not None:
+            n_def = self.n_defocus.astype(np.int64)
+            return int((n_orients * n_def).sum()) * int(n_cs)
+        if n_defocus is None:
+            raise ValueError("n_defocus is required when maps.n_defocus is not set.")
+        return int(n_orients.sum()) * int(n_defocus) * int(n_cs)
 
 
 def rasterize_rectangle(
@@ -214,6 +324,30 @@ def write_spatial_constraint_hdf5(
             data=np.asarray(maps.n_orientations, dtype=np.int32),
             **compression_kwargs,
         )
+        if maps.n_defocus is not None:
+            maps_group.create_dataset(
+                "n_defocus",
+                data=np.asarray(maps.n_defocus, dtype=np.int32),
+                **compression_kwargs,
+            )
+        if maps.defocus_min is not None:
+            maps_group.create_dataset(
+                "defocus_min",
+                data=np.asarray(maps.defocus_min, dtype=np.float32),
+                **compression_kwargs,
+            )
+        if maps.defocus_max is not None:
+            maps_group.create_dataset(
+                "defocus_max",
+                data=np.asarray(maps.defocus_max, dtype=np.float32),
+                **compression_kwargs,
+            )
+        if maps.defocus_eligible is not None:
+            maps_group.create_dataset(
+                "defocus_eligible",
+                data=np.asarray(maps.defocus_eligible, dtype=np.uint8),
+                **compression_kwargs,
+            )
 
         regions_group = handle.create_group(_REGIONS_GROUP)
         for index, region in enumerate(maps.regions, start=1):
@@ -230,6 +364,12 @@ def read_spatial_constraint_hdf5(path: str) -> SpatialConstraintMaps:
         eligible = np.asarray(maps_group["eligible"][:], dtype=np.uint8)
         region_id = np.asarray(maps_group["region_id"][:], dtype=np.int16)
         n_orientations = np.asarray(maps_group["n_orientations"][:], dtype=np.int32)
+        n_defocus = _read_optional_dataset(maps_group, "n_defocus", np.int32)
+        defocus_min = _read_optional_dataset(maps_group, "defocus_min", np.float32)
+        defocus_max = _read_optional_dataset(maps_group, "defocus_max", np.float32)
+        defocus_eligible = _read_optional_dataset(
+            maps_group, "defocus_eligible", np.uint8
+        )
         if shape_attr is None:
             micrograph_shape = (int(eligible.shape[0]), int(eligible.shape[1]))
         else:
@@ -251,7 +391,42 @@ def read_spatial_constraint_hdf5(path: str) -> SpatialConstraintMaps:
         coordinate_frame=coordinate_frame,
         pixel_size_angstrom=pixel_size_angstrom,
         regions=regions,
+        n_defocus=n_defocus,
+        defocus_min=defocus_min,
+        defocus_max=defocus_max,
+        defocus_eligible=defocus_eligible,
     )
+
+
+def _read_optional_dataset(
+    group: h5py.Group, name: str, dtype: Any
+) -> np.ndarray | None:
+    if name not in group:
+        return None
+    return np.asarray(group[name][:], dtype=dtype)
+
+
+def _sample_and_mask(
+    array: np.ndarray,
+    yy: np.ndarray,
+    xx: np.ndarray,
+    in_bounds: np.ndarray,
+    fill: float,
+) -> np.ndarray:
+    return np.where(in_bounds, array[yy, xx], fill)
+
+
+def _sample_optional_map(
+    array: np.ndarray | None,
+    yy: np.ndarray,
+    xx: np.ndarray,
+    in_bounds: np.ndarray,
+    fill: float,
+) -> np.ndarray | None:
+    if array is None:
+        return None
+    sampled = _sample_and_mask(array, yy, xx, in_bounds, fill)
+    return np.asarray(sampled, dtype=array.dtype)
 
 
 def _write_region_group(grp: h5py.Group, region: dict[str, Any]) -> None:
@@ -264,6 +439,8 @@ def _write_region_group(grp: h5py.Group, region: dict[str, Any]) -> None:
         "theta_step",
         "region_id",
         "base_grid_method",
+        "defocus_min",
+        "defocus_max",
     ):
         if key in region and region[key] is not None:
             grp.attrs[key] = region[key]

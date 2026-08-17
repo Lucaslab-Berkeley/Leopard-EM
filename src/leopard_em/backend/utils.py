@@ -206,7 +206,8 @@ def _stats_and_table_core(
     apply_eligibility: bool = False,
     pixel_ok: torch.Tensor | None = None,
     orient_ok: torch.Tensor | None = None,
-    stats_from_valid_orientations: bool = False,
+    defocus_ok: torch.Tensor | None = None,
+    stats_from_valid_orientations_defocus: bool = False,
 ) -> tuple[
     torch.Tensor,
     torch.Tensor,
@@ -252,14 +253,18 @@ def _stats_and_table_core(
     compute_correlation_table : bool, optional
         Whether to find and return threshold exceedances for the correlation table.
     apply_eligibility : bool, optional
-        If True, mask illegal (pixel, orientation) pairs before taking the MIP max.
+        If True, mask illegal (pixel, orientation, defocus) tuples before
+        taking the MIP max.
     pixel_ok : torch.Tensor, optional
         Boolean mask of shape (H, W). True where the pixel is in play.
     orient_ok : torch.Tensor, optional
         Boolean mask of shape (B,) for the current batch of search indexes.
-    stats_from_valid_orientations : bool, optional
-        If True, running sums use only eligible pairs. Default False uses all
-        searched angles.
+    defocus_ok : torch.Tensor, optional
+        Boolean mask of shape (B, H, W). True where this batch index's defocus
+        is allowed at that pixel.
+    stats_from_valid_orientations_defocus : bool, optional
+        If True, running sums use only eligible (pixel, orientation, defocus)
+        tuples. Default False uses all searched angles and defocus values.
     """
     # create cropped view as in existing functions
     if needs_valid_cropping:
@@ -283,12 +288,14 @@ def _stats_and_table_core(
         assert pixel_ok is not None
         assert orient_ok is not None
         eligible = orient_ok[:, None, None] & pixel_ok[None, :, :]
+        if defocus_ok is not None:
+            eligible = eligible & defocus_ok
         neg_inf = torch.finfo(cc_reshaped.dtype).min
         cc_for_mip = torch.where(eligible, cc_reshaped, neg_inf)
         max_values, max_indices = torch.max(cc_for_mip, dim=0)
         any_allowed = eligible.any(dim=0)
         update_mask = (max_values > mip) & any_allowed
-        if stats_from_valid_orientations:
+        if stats_from_valid_orientations_defocus:
             cc_for_stats = torch.where(eligible, cc_reshaped, 0)
             corr_count = eligible.to(cc_reshaped.dtype).sum(dim=0)
         else:
@@ -362,7 +369,9 @@ def do_iteration_and_correlation_table_updates(
     compute_correlation_table: bool = True,
     eligible_pixels: torch.Tensor | None = None,
     allowed_search_mask: torch.Tensor | None = None,
-    stats_from_valid_orientations: bool = False,
+    defocus_eligible: torch.Tensor | None = None,
+    n_orientations: int = 1,
+    stats_from_valid_orientations_defocus: bool = False,
     correlation_count: torch.Tensor | None = None,
 ) -> None:
     """Helper function for updating maxima, tracked statistics, and correlation table.
@@ -410,25 +419,50 @@ def do_iteration_and_correlation_table_updates(
     allowed_search_mask : torch.Tensor, optional
         Boolean mask indexed by global search index. If None, every searched
         index in this run is allowed.
-    stats_from_valid_orientations : bool, optional
-        If True, accumulate sums and a per-pixel count over eligible pairs only.
+    defocus_eligible : torch.Tensor, optional
+        Boolean ``(n_defocus, H, W)`` mask. If None, every defocus in this run
+        is allowed at every pixel.
+    n_orientations : int, optional
+        Number of orientations in the global search. Used to decode the defocus
+        index from ``current_indexes``. Default 1.
+    stats_from_valid_orientations_defocus : bool, optional
+        If True, accumulate sums and a per-pixel count over eligible
+        (pixel, orientation, defocus) tuples only.
     correlation_count : torch.Tensor, optional
-        Running eligible-pair count per pixel. Updated when
-        ``stats_from_valid_orientations`` is True.
+        Running eligible-tuple count per pixel. Updated when
+        ``stats_from_valid_orientations_defocus`` is True.
     """
-    apply_eligibility = eligible_pixels is not None
+    apply_eligibility = (
+        eligible_pixels is not None
+        or allowed_search_mask is not None
+        or defocus_eligible is not None
+    )
+    device = cross_correlation.device
     pixel_ok = eligible_pixels
+    if apply_eligibility and pixel_ok is None:
+        pixel_ok = torch.ones(
+            (valid_shape_h, valid_shape_w),
+            dtype=torch.bool,
+            device=device,
+        )
     if apply_eligibility:
         if allowed_search_mask is None:
             orient_ok = torch.ones(
                 current_indexes.numel(),
                 dtype=torch.bool,
-                device=cross_correlation.device,
+                device=device,
             )
         else:
             orient_ok = allowed_search_mask[current_indexes]
     else:
         orient_ok = None
+
+    defocus_ok = None
+    if defocus_eligible is not None:
+        n_defocus = int(defocus_eligible.shape[0])
+        n_orient = max(int(n_orientations), 1)
+        defocus_idx = (current_indexes % (n_defocus * n_orient)) // n_orient
+        defocus_ok = defocus_eligible[defocus_idx]
 
     (
         new_mip,
@@ -453,7 +487,8 @@ def do_iteration_and_correlation_table_updates(
         apply_eligibility=apply_eligibility,
         pixel_ok=pixel_ok,
         orient_ok=orient_ok,
-        stats_from_valid_orientations=stats_from_valid_orientations,
+        defocus_ok=defocus_ok,
+        stats_from_valid_orientations_defocus=stats_from_valid_orientations_defocus,
     )
 
     # update inplace the statistics tensors
@@ -462,7 +497,7 @@ def do_iteration_and_correlation_table_updates(
 
     correlation_sum += corr_sum
     correlation_squared_sum += corr_sq_sum
-    if correlation_count is not None and stats_from_valid_orientations:
+    if correlation_count is not None and stats_from_valid_orientations_defocus:
         correlation_count += corr_count
 
     # update correlation_table (tensordict operations not compiled)

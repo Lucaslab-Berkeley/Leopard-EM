@@ -464,8 +464,8 @@ def dump_constraint_yaml(payload: dict) -> str:
             "spatial_constraint_path: "
             f"{_yaml_scalar(payload['spatial_constraint_path'])}"
         )
-    if payload.get("stats_from_valid_orientations"):
-        lines.append("stats_from_valid_orientations: true")
+    if payload.get("stats_from_valid_orientations_defocus"):
+        lines.append("stats_from_valid_orientations_defocus: true")
     line = payload["line"]
     lines.append("line:")
     for key in ("y0", "x0", "y1", "x1"):

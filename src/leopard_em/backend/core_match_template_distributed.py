@@ -520,8 +520,9 @@ def core_match_template_distributed(
         compute_correlation_table=compute_correlation_table,
         eligible_pixels=kwargs.get("eligible_pixels"),  # type: ignore[arg-type]
         allowed_search_mask=kwargs.get("allowed_search_mask"),  # type: ignore[arg-type]
-        stats_from_valid_orientations=bool(
-            kwargs.get("stats_from_valid_orientations", False)
+        defocus_eligible=kwargs.get("defocus_eligible"),  # type: ignore[arg-type]
+        stats_from_valid_orientations_defocus=bool(
+            kwargs.get("stats_from_valid_orientations_defocus", False)
         ),
     )
     dist.barrier()
@@ -626,12 +627,12 @@ def core_match_template_distributed(
 
     mip_scaled = torch.empty_like(mip)
     scale_divisor: int | torch.Tensor = total_projections
-    if kwargs.get("stats_from_valid_orientations"):
+    if kwargs.get("stats_from_valid_orientations_defocus"):
         correlation_count = aggregated_results.get("correlation_count")
         if correlation_count is None:
             raise RuntimeError(
-                "stats_from_valid_orientations=True but no correlation_count map "
-                "was returned from the search."
+                "stats_from_valid_orientations_defocus=True but no "
+                "correlation_count map was returned from the search."
             )
         scale_divisor = correlation_count.cpu()
     mip, mip_scaled, correlation_mean, correlation_variance = scale_mip(

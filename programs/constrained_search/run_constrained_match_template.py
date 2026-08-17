@@ -31,29 +31,31 @@ ORIENTATION_BATCH_SIZE = 8
 
 # How mean and variance (the z-score background) are accumulated.
 #
-# The MIP is always the best *allowed* (pixel, orientation) pair: angles
-# outside the Euler box, and pixels outside the spatial box, cannot win.
+# The MIP is always the best *allowed* (pixel, orientation, defocus) tuple:
+# angles outside the Euler box, pixels outside the spatial box, and defocus
+# values outside the per-pixel HDF5 range cannot win.
 #
 # Mean / variance are separate. They answer "what does a typical correlation
 # look like at this pixel?" and are the divisor for scaled_mip =
 # (mip - mean) / std.
 #
-#   False (default): use every orientation this run actually searched.
-#       Today that is the Euler box (not full SO(3)). This matches a normal
-#       match-template run, where mean/std come from the whole search grid.
-#       Pixels outside the spatial box still contribute to the running sums,
-#       but they are not used as peaks.
+#   False (default): use every orientation and defocus this run actually
+#       searched. Today that is the Euler box times the YAML defocus grid
+#       (not full SO(3), not a per-pixel defocus subset). This matches a
+#       normal match-template run, where mean/std come from the whole
+#       search grid. Pixels outside the spatial box still contribute to
+#       the running sums, but they are not used as peaks.
 #
-#   True: use only allowed (pixel, orientation) pairs, and divide by a
-#       per-pixel count. Outside the spatial box, count is 0 so mean/std
-#       are 0. This only differs from False once the search grid is larger
-#       than the allowed set (e.g. a future full-SO(3) search with a
-#       per-pixel Euler box). With the current Euler-box search, True and
-#       False agree inside the spatial box.
+#   True: use only allowed (pixel, orientation, defocus) tuples, and
+#       divide by a per-pixel count. Outside the spatial box, or where
+#       n_defocus is 0, count is 0 so mean/std are 0. This differs from
+#       False when the search grid is larger than the allowed set (a
+#       per-pixel defocus range, or a future full-SO(3) search with a
+#       per-pixel Euler box).
 #
 # Peak cutoff (num_ccg) always uses the sum of allowed tests, independent of
-# this flag: n_box_pixels * n_orientations * n_defocus.
-STATS_FROM_VALID_ORIENTATIONS = False
+# this flag: sum over pixels of n_orientations[y, x] * n_defocus[y, x].
+STATS_FROM_VALID_ORIENTATIONS_DEFOCUS = False
 
 ##############################################################
 ### Main function called to run the match template program ###
@@ -66,22 +68,24 @@ def main() -> None:
 
     if CONSTRAINT_YAML_PATH:
         constraint = FilamentConstraint.from_yaml(CONSTRAINT_YAML_PATH)
-        constraint.stats_from_valid_orientations = STATS_FROM_VALID_ORIENTATIONS
+        constraint.stats_from_valid_orientations_defocus = (
+            STATS_FROM_VALID_ORIENTATIONS_DEFOCUS
+        )
         mt_manager.apply_filament_constraint(constraint)
         n_orient = int(mt_manager.orientation_search_config.euler_angles.shape[0])
         print(constraint.preview_text())
         print(f"Using filament constraint with {n_orient} orientations.")
         if constraint.spatial_constraint_path:
             print(f"Spatial constraint: {constraint.spatial_constraint_path}")
-        if STATS_FROM_VALID_ORIENTATIONS:
+        if STATS_FROM_VALID_ORIENTATIONS_DEFOCUS:
             print(
-                "Mean/variance: allowed (pixel, orientation) pairs only "
-                "(per-pixel count)."
+                "Mean/variance: allowed (pixel, orientation, defocus) tuples "
+                "only (per-pixel count)."
             )
         else:
             print(
-                "Mean/variance: all orientations searched in this run "
-                "(MIP still restricted to the spatial/Euler box)."
+                "Mean/variance: all orientations and defocus searched in this "
+                "run (MIP still restricted to allowed tuples)."
             )
     else:
         n_orient = int(mt_manager.orientation_search_config.euler_angles.shape[0])

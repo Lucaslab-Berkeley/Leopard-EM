@@ -113,7 +113,9 @@ class MatchTemplateManager(BaseModel2DTM):
     template_volume: ExcludedTensor
     eligible_pixels: ExcludedTensor = None
     n_orientations_map: ExcludedTensor = None
-    stats_from_valid_orientations: bool = False
+    n_defocus_map: ExcludedTensor = None
+    defocus_eligible: ExcludedTensor = None
+    stats_from_valid_orientations_defocus: bool = False
 
     ###########################
     ### Pydantic Validators ###
@@ -146,14 +148,24 @@ class MatchTemplateManager(BaseModel2DTM):
     def apply_spatial_constraint(
         self,
         maps: SpatialConstraintMaps,
-        stats_from_valid_orientations: bool = False,
+        stats_from_valid_orientations_defocus: bool = False,
     ) -> None:
         """Install stats-map-coordinate spatial masks for the next search."""
         self.eligible_pixels = torch.from_numpy(maps.eligible.astype(bool))
-        self.n_orientations_map = torch.from_numpy(
-            maps.n_orientations.astype("int32")
+        self.n_orientations_map = torch.from_numpy(maps.n_orientations.astype("int32"))
+        self.n_defocus_map = (
+            None
+            if maps.n_defocus is None
+            else torch.from_numpy(maps.n_defocus.astype("int32"))
         )
-        self.stats_from_valid_orientations = stats_from_valid_orientations
+        self.defocus_eligible = (
+            None
+            if maps.defocus_eligible is None
+            else torch.from_numpy(maps.defocus_eligible.astype(bool))
+        )
+        self.stats_from_valid_orientations_defocus = (
+            stats_from_valid_orientations_defocus
+        )
 
     def apply_filament_constraint(self, constraint: FilamentConstraint) -> None:
         """Replace orientation search and optional spatial maps from a sidecar."""
@@ -163,11 +175,17 @@ class MatchTemplateManager(BaseModel2DTM):
         image = self.micrograph
         image_shape = (int(image.shape[-2]), int(image.shape[-1]))
         template_width = int(mrcfile.open(self.template_volume_path).header.nx)
-        maps = constraint.stats_maps_for_template(image_shape, template_width)
+        maps = constraint.stats_maps_for_template(
+            image_shape,
+            template_width,
+            defocus_values=self.defocus_search_config.defocus_values,
+        )
         if maps is not None:
             self.apply_spatial_constraint(
                 maps,
-                stats_from_valid_orientations=constraint.stats_from_valid_orientations,
+                stats_from_valid_orientations_defocus=(
+                    constraint.stats_from_valid_orientations_defocus
+                ),
             )
 
     ############################################
@@ -261,7 +279,14 @@ class MatchTemplateManager(BaseModel2DTM):
                 if self.eligible_pixels is None
                 else torch.as_tensor(self.eligible_pixels, dtype=torch.bool)
             ),
-            "stats_from_valid_orientations": self.stats_from_valid_orientations,
+            "defocus_eligible": (
+                None
+                if self.defocus_eligible is None
+                else torch.as_tensor(self.defocus_eligible, dtype=torch.bool)
+            ),
+            "stats_from_valid_orientations_defocus": (
+                self.stats_from_valid_orientations_defocus
+            ),
         }
 
     def run_match_template(
@@ -484,6 +509,11 @@ class MatchTemplateManager(BaseModel2DTM):
             locate_kwargs.setdefault(
                 "n_defocus", int(self.match_template_result.total_defocus) or 1
             )
+            if self.n_defocus_map is not None:
+                n_def_map = self.n_defocus_map
+                if not isinstance(n_def_map, torch.Tensor):
+                    n_def_map = torch.as_tensor(n_def_map)
+                locate_kwargs.setdefault("n_defocus_map", n_def_map)
             n_cs = 1
             total_orient = int(self.match_template_result.total_orientations) or 1
             total_proj = int(self.match_template_result.total_projections)

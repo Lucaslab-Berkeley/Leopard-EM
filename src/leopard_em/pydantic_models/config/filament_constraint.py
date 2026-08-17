@@ -18,7 +18,7 @@ import math
 from typing import Annotated, Any, ClassVar, Literal
 
 import yaml
-from pydantic import ConfigDict, Field
+from pydantic import AliasChoices, ConfigDict, Field
 
 from leopard_em.pydantic_models.custom_types import BaseModel2DTM
 
@@ -76,13 +76,15 @@ class FilamentConstraint(BaseModel2DTM):
     spatial_box : SpatialBox, optional
         Image-space rectangle (particle-center coordinates). Stored for
         round-trip; the HDF5 is authoritative at runtime.
-    stats_from_valid_orientations : bool
-        If True, mean/variance use only eligible (pixel, orientation) pairs.
-        Default False keeps mean/variance from all searched angles.
+    stats_from_valid_orientations_defocus : bool
+        If True, mean/variance use only eligible (pixel, orientation, defocus)
+        tuples. Default False keeps mean/variance from all searched angles and
+        defocus values. The older YAML key
+        ``stats_from_valid_orientations`` is still accepted.
     """
 
     # Sidecar YAML may also contain a generated orientation_search_config block.
-    model_config: ClassVar = ConfigDict(extra="ignore")
+    model_config: ClassVar = ConfigDict(extra="ignore", populate_by_name=True)
 
     filament_angle_deg: float
     cone_half_angle_deg: Annotated[float, Field(gt=0.0, le=180.0)] = 10.0
@@ -96,7 +98,13 @@ class FilamentConstraint(BaseModel2DTM):
     micrograph_path: str | None = None
     spatial_constraint_path: str | None = None
     spatial_box: SpatialBox | None = None
-    stats_from_valid_orientations: bool = False
+    stats_from_valid_orientations_defocus: bool = Field(
+        default=False,
+        validation_alias=AliasChoices(
+            "stats_from_valid_orientations_defocus",
+            "stats_from_valid_orientations",
+        ),
+    )
 
     @classmethod
     def from_line(
@@ -206,8 +214,13 @@ class FilamentConstraint(BaseModel2DTM):
         self,
         image_shape: tuple[int, int],
         template_width: int,
+        defocus_values: Any | None = None,
     ) -> SpatialConstraintMaps | None:
-        """Return maps in stats-map (``pos_xy``) coordinates, or None."""
+        """Return maps in stats-map (``pos_xy``) coordinates, or None.
+
+        If ``defocus_values`` is given, optional HDF5 defocus bounds are expanded
+        against that grid (relative Å, same as ``DefocusSearchConfig``).
+        """
         maps = self.load_spatial_maps()
         if maps is None:
             return None
@@ -221,7 +234,10 @@ class FilamentConstraint(BaseModel2DTM):
                 "Template is larger than the micrograph; cannot convert "
                 "spatial constraint maps to stats-map coordinates."
             )
-        return maps.to_stats_map_coords(half_width, stats_shape)
+        maps = maps.to_stats_map_coords(half_width, stats_shape)
+        if defocus_values is not None:
+            maps.expand_defocus_against_grid(defocus_values)
+        return maps
 
     def write_spatial_hdf5(
         self,
@@ -267,9 +283,7 @@ class FilamentConstraint(BaseModel2DTM):
                 ],
             }
         ]
-        write_spatial_constraint_hdf5(
-            path, maps, leopard_em_version=leopard_em_version
-        )
+        write_spatial_constraint_hdf5(path, maps, leopard_em_version=leopard_em_version)
         return maps
 
     def _make_orientation_config(
