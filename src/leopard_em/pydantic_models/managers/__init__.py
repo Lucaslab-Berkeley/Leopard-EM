@@ -6,6 +6,7 @@ from .match_template_manager import MatchTemplateManager
 from .optimize_template_manager import OptimizeTemplateManager
 from .peak_inspection_manager import PeakInspectionManager
 from .refine_template_manager import RefineTemplateManager
+from .spatial_ctf_match_template_manager import SpatialCtfMatchTemplateManager
 
 __all__ = [
     "ConstrainedSearchManager",
@@ -14,4 +15,5 @@ __all__ = [
     "OptimizeTemplateManager",
     "PeakInspectionManager",
     "RefineTemplateManager",
+    "SpatialCtfMatchTemplateManager",
 ]

@@ -9,7 +9,11 @@ import pandas as pd
 import torch
 from pydantic import ConfigDict, field_validator
 
-from leopard_em.backend.core_match_template import core_match_template
+from leopard_em.backend.core_match_template import (
+    core_match_template,
+    resolve_match_template_backend,
+    validate_orientation_eligible_for_match_template,
+)
 from leopard_em.backend.core_match_template_distributed import (
     core_match_template_distributed,
 )
@@ -65,6 +69,11 @@ class MatchTemplateManager(BaseModel2DTM):
         all tensors into a single HDF5 file.
     computational_config : ComputationalConfigMatch
         Parameters for controlling computational resources.
+    orientation_eligible_for_mip : ExcludedTensor, optional
+        Per-orientation mask for MIP / best-angle selection when
+        ``computational_config`` uses ``streamed_masked_mip`` or
+        ``batched_masked_mip``. Must be ``None`` for
+        other backends. Not serialized.
 
     Methods
     -------
@@ -80,6 +89,9 @@ class MatchTemplateManager(BaseModel2DTM):
         Generates the keyword arguments for backend 'core_match_template' call from
         held parameters. Does the necessary pre-processing steps to filter the image
         and template.
+    make_backend_core_function_kwargs_with_image(image, *, defocus_values=None)
+        Same as ``make_backend_core_function_kwargs`` but uses a provided real-space
+        image tensor instead of ``self.micrograph``.
     run_match_template(orientation_batch_size: int = 1, do_result_export: bool = True)
         Runs the base match template program in PyTorch.
     results_to_dataframe(
@@ -105,10 +117,12 @@ class MatchTemplateManager(BaseModel2DTM):
     preprocessing_filters: PreprocessingFilters
     match_template_result: MatchTemplateResultMRC | MatchTemplateResultHDF5
     computational_config: ComputationalConfigMatch
+    ctf_premultiplied: bool = False
+    orientation_eligible_for_mip: ExcludedTensor = None
 
     # Non-serialized large array-like attributes
-    micrograph: ExcludedTensor
-    template_volume: ExcludedTensor
+    micrograph: ExcludedTensor = None
+    template_volume: ExcludedTensor = None
 
     ###########################
     ### Pydantic Validators ###
@@ -142,28 +156,50 @@ class MatchTemplateManager(BaseModel2DTM):
     ### Functional (data processing) methods ###
     ############################################
 
-    def make_backend_core_function_kwargs(self) -> dict[str, Any]:
-        """Generates the keyword arguments for backend call from held parameters."""
-        # Ensure the micrograph and template are loaded and in the correct format
-        if self.micrograph is None:
-            self.micrograph = load_mrc_image(self.micrograph_path)
+    def _make_backend_core_kwargs_from_image_tensor(
+        self,
+        image: torch.Tensor,
+        *,
+        defocus_values: torch.Tensor,
+        whitening_ref_image: torch.Tensor | None = None,
+    ) -> dict[str, Any]:
+        """Shared ``core_match_template`` kwargs from a real-space image tensor.
+
+        Parameters
+        ----------
+        image
+            Real-space micrograph used for the search (RFFT + preprocessing).
+        defocus_values
+            Defocus offsets for the CTF filter stack.
+        whitening_ref_image
+            Optional real-space image whose power spectrum is used to build the
+            whitening (and other cumulative Fourier) filters. Defaults to ``image``.
+            Spatial CTF uses the unconvolved micrograph here so the filter matches
+            a normal match-template run.
+        """
+        # Ensure the micrograph and template are both Tensors before proceeding
+        if not isinstance(image, torch.Tensor):
+            image = torch.from_numpy(image)
+        image = image.to(dtype=torch.float32)
+
         if self.template_volume is None:
             self.template_volume = load_mrc_volume(self.template_volume_path)
-
-        # Ensure the micrograph and template are both Tensors before proceeding
-        if not isinstance(self.micrograph, torch.Tensor):
-            image = torch.from_numpy(self.micrograph)
-        else:
-            image = self.micrograph
-
-        if not isinstance(self.template_volume, torch.Tensor):
-            template = torch.from_numpy(self.template_volume)
-        else:
-            template = self.template_volume
+        template = self.template_volume
+        if not isinstance(template, torch.Tensor):
+            template = torch.from_numpy(template)
 
         # Fourier transform the image (RFFT, unshifted)
         image_dft = torch.fft.rfftn(image)  # pylint: disable=E1102
         image_dft[0, 0] = 0 + 0j  # zero out the constant term
+
+        if whitening_ref_image is None:
+            ref_dft = image_dft
+        else:
+            if not isinstance(whitening_ref_image, torch.Tensor):
+                whitening_ref_image = torch.from_numpy(whitening_ref_image)
+            whitening_ref_image = whitening_ref_image.to(dtype=torch.float32)
+            ref_dft = torch.fft.rfftn(whitening_ref_image)  # pylint: disable=E1102
+            ref_dft[0, 0] = 0 + 0j
 
         # Get the bandpass filter individually
         bp_config = self.preprocessing_filters.bandpass_filter
@@ -173,7 +209,7 @@ class MatchTemplateManager(BaseModel2DTM):
         # NOTE: We don't want to do random fourier masking on the image, so skip the
         # dropout mask for the image-side filter (without mutating the config).
         cumulative_filter_image = self.preprocessing_filters.get_combined_filter(
-            ref_img_rfft=image_dft,
+            ref_img_rfft=ref_dft,
             output_shape=image_dft.shape,
             apply_random_dropout=False,
         )
@@ -181,7 +217,7 @@ class MatchTemplateManager(BaseModel2DTM):
         # NOTE: Here, manually accounting for the RFFT in output shape since we have not
         # RFFT'd the template volume yet. Also, this is 2-dimensional, not 3-dimensional
         cumulative_filter_template = self.preprocessing_filters.get_combined_filter(
-            ref_img_rfft=image_dft,
+            ref_img_rfft=ref_dft,
             output_shape=(template.shape[-2], template.shape[-1] // 2 + 1),
         )
 
@@ -192,11 +228,12 @@ class MatchTemplateManager(BaseModel2DTM):
             bandpass_filter=bandpass_filter,
             full_image_shape=(image.shape[-2], image.shape[-1]),
             extracted_box_shape=(image.shape[-2], image.shape[-1]),
+            normalization_ref_rfft=(
+                ref_dft if whitening_ref_image is not None else None
+            ),
         )
 
         # Calculate the CTF filters at each defocus value
-        defocus_values = self.defocus_search_config.defocus_values
-
         # set pixel search to 0.0 for match template
         pixel_size_offsets = torch.tensor([0.0], dtype=torch.float32)
 
@@ -207,14 +244,22 @@ class MatchTemplateManager(BaseModel2DTM):
             pixel_size_offsets=pixel_size_offsets,
         )
 
+        # set ctf to 1 if pre-multiplied
+        if self.ctf_premultiplied:
+            ctf_filters = torch.ones_like(ctf_filters)
+
         # Grab the Euler angles from the orientation search configuration
         # (phi, theta, psi) for ZYZ convention
-        euler_angles = self.orientation_search_config.euler_angles
-        euler_angles = euler_angles.to(torch.float32)
-
+        euler_angles = self.orientation_search_config.euler_angles.to(torch.float32)
         template_dft = volume_to_rfft_fourier_slice(template)
 
-        return {
+        validate_orientation_eligible_for_match_template(
+            backend=self.computational_config.backend,
+            orientation_eligible=self.orientation_eligible_for_mip,
+            num_orientations=int(euler_angles.shape[0]),
+        )
+
+        out: dict[str, Any] = {
             "image_dft": image_preprocessed_dft,
             "template_dft": template_dft,
             "ctf_filters": ctf_filters,
@@ -225,6 +270,97 @@ class MatchTemplateManager(BaseModel2DTM):
             "device": self.computational_config.gpu_devices,
             "mag_matrix": self.optics_group.mag_matrix_tensor,
         }
+        if resolve_match_template_backend(self.computational_config.backend)[1]:
+            assert self.orientation_eligible_for_mip is not None
+            out["orientation_eligible"] = self.orientation_eligible_for_mip
+        return out
+
+    def make_backend_core_function_kwargs(self) -> dict[str, Any]:
+        """Generates the keyword arguments for backend call from held parameters."""
+        # Ensure the micrograph is loaded and in the correct format
+        if self.micrograph is None:
+            self.micrograph = load_mrc_image(self.micrograph_path)
+
+        if not isinstance(self.micrograph, torch.Tensor):
+            image = torch.from_numpy(self.micrograph)
+        else:
+            image = self.micrograph
+
+        return self._make_backend_core_kwargs_from_image_tensor(
+            image,
+            defocus_values=self.defocus_search_config.defocus_values,
+        )
+
+    def make_backend_core_function_kwargs_with_image(
+        self,
+        image: torch.Tensor,
+        *,
+        defocus_values: torch.Tensor | None = None,
+        whitening_ref_image: torch.Tensor | None = None,
+    ) -> dict[str, Any]:
+        """Like :meth:`make_backend_core_function_kwargs` but using ``image``.
+
+        Parameters
+        ----------
+        image
+            Real-space micrograph tensor (e.g. CTF-corrected).
+        defocus_values
+            Defocus offsets for the CTF filter stack and backend. Defaults to
+            ``defocus_search_config.defocus_values``.
+        whitening_ref_image
+            Optional real-space image used only to build whitening filters.
+            Defaults to ``image``.
+        """
+        dv = (
+            defocus_values
+            if defocus_values is not None
+            else self.defocus_search_config.defocus_values
+        )
+        return self._make_backend_core_kwargs_from_image_tensor(
+            image,
+            defocus_values=dv,
+            whitening_ref_image=whitening_ref_image,
+        )
+
+    def _invoke_core_match_template(
+        self,
+        core_kwargs: dict[str, Any],
+        orientation_batch_size: int,
+        compute_correlation_table: bool = True,
+    ) -> dict[str, Any]:
+        """Run :func:`core_match_template` with this manager's compute settings."""
+        return core_match_template(
+            **core_kwargs,
+            orientation_batch_size=orientation_batch_size,
+            num_cuda_streams=self.computational_config.num_cpus,
+            backend=self.computational_config.backend,
+            compute_correlation_table=compute_correlation_table,
+        )
+
+    def _invoke_core_match_template_distributed(
+        self,
+        world_size: int,
+        rank: int,
+        local_rank: int,
+        device: torch.device,
+        core_kwargs: dict[str, Any],
+        orientation_batch_size: int,
+        compute_correlation_table: bool = True,
+    ) -> dict[str, Any]:
+        """Run distributed core match; strips ``device`` from kwargs if present."""
+        kwargs = dict(core_kwargs)
+        _ = kwargs.pop("device", None)
+        return core_match_template_distributed(
+            world_size,
+            rank,
+            local_rank,
+            device,
+            orientation_batch_size,
+            self.computational_config.num_cpus,
+            self.computational_config.backend,
+            compute_correlation_table=compute_correlation_table,
+            **kwargs,
+        )
 
     def run_match_template(
         self,
@@ -257,11 +393,9 @@ class MatchTemplateManager(BaseModel2DTM):
         None
         """
         core_kwargs = self.make_backend_core_function_kwargs()
-        results = core_match_template(
-            **core_kwargs,
-            orientation_batch_size=orientation_batch_size,
-            num_cuda_streams=self.computational_config.num_cpus,
-            backend=self.computational_config.backend,
+        results = self._invoke_core_match_template(
+            core_kwargs,
+            orientation_batch_size,
             compute_correlation_table=compute_correlation_table,
         )
 
@@ -326,24 +460,23 @@ class MatchTemplateManager(BaseModel2DTM):
 
         device = torch.device(f"cuda:{local_rank}")
 
+        # Same distributed rank-0 / empty-kwargs pattern as spatial match (R0801).
+        # pylint: disable=duplicate-code
         if rank == 0:
             core_kwargs = self.make_backend_core_function_kwargs()
         else:
             core_kwargs = {}
 
-        _ = core_kwargs.pop("device", None)
-
-        results = core_match_template_distributed(
+        results = self._invoke_core_match_template_distributed(
             world_size,
             rank,
             local_rank,
             device,
+            core_kwargs,
             orientation_batch_size,
-            self.computational_config.num_cpus,
-            self.computational_config.backend,
             compute_correlation_table=compute_correlation_table,
-            **core_kwargs,
         )
+        # pylint: enable=duplicate-code
 
         # Only populate the results on the first rank
         if torch.distributed.get_rank() == 0:
@@ -378,20 +511,26 @@ class MatchTemplateManager(BaseModel2DTM):
         self.match_template_result.relative_defocus = results["best_defocus"]
 
         self.match_template_result.total_projections = results["total_projections"]
+        self.match_template_result.total_mip_eligible_projections = results.get(
+            "total_mip_eligible_projections", 0
+        )
         self.match_template_result.total_orientations = results["total_orientations"]
         self.match_template_result.total_defocus = results["total_defocus"]
 
         # Build a typed CorrelationTable from the processed backend output, looking up
         # per-detection mean/variance from the statistics tensors independently.
-        self.match_template_result.correlation_table = (
-            CorrelationTable.from_match_template_results(
-                processed_correlation_table=results["correlation_table"],
-                defocus_values=defocus_values,
-                euler_angles=euler_angles,
-                correlation_average=results["correlation_mean"],
-                correlation_variance_map=results["correlation_variance"],
+        # Merged/sectored/spatial paths may omit the table.
+        processed_table = results.get("correlation_table")
+        if processed_table is not None:
+            self.match_template_result.correlation_table = (
+                CorrelationTable.from_match_template_results(
+                    processed_correlation_table=processed_table,
+                    defocus_values=defocus_values,
+                    euler_angles=euler_angles,
+                    correlation_average=results["correlation_mean"],
+                    correlation_variance_map=results["correlation_variance"],
+                )
             )
-        )
 
         # Apply the valid cropping mode to the results
         # NOTE: zipFFT already applies valid cropping internally

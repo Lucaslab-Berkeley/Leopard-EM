@@ -399,7 +399,78 @@ def do_iteration_and_correlation_table_updates(
         )
 
 
+# pylint: disable=too-many-locals
+def do_iteration_statistics_updates_masked_mip(
+    cross_correlation: torch.Tensor,
+    current_indexes: torch.Tensor,
+    mip: torch.Tensor,
+    best_global_index: torch.Tensor,
+    correlation_sum: torch.Tensor,
+    correlation_squared_sum: torch.Tensor,
+    orientation_batch_start: int,
+    orientation_eligible: torch.Tensor,
+    img_h: int,
+    img_w: int,
+) -> None:
+    """Like unmasked stats updates but MIP / best index ignore ineligible rows.
+
+    Ineligible orientations (False in ``orientation_eligible``) are treated as
+    ``-inf`` for the per-pixel maximum only. Sums and sums of squares still use
+    every cross-correlation map in ``cross_correlation``.
+
+    ``img_h`` / ``img_w`` are the valid correlation region size; when smaller than
+    the full CC map, a top-left cropped view is used (same convention as
+    ``_stats_and_table_core``).
+    """
+    num_o = cross_correlation.shape[2]
+    o_end = orientation_batch_start + num_o
+    elig_slice = orientation_eligible[orientation_batch_start:o_end]
+    elig_b = elig_slice.to(device=cross_correlation.device, dtype=torch.bool)
+    elig_expand = elig_b.view(1, 1, num_o, 1, 1).expand_as(cross_correlation)
+    neg_inf = torch.tensor(
+        float("-inf"),
+        dtype=cross_correlation.dtype,
+        device=cross_correlation.device,
+    )
+    cc_for_max = torch.where(elig_expand, cross_correlation, neg_inf)
+
+    def _crop_to_valid(cc: torch.Tensor) -> torch.Tensor:
+        cc_reshaped = cc.view(-1, cc.shape[-2], cc.shape[-1])
+        if cc_reshaped.shape[-2] == img_h and cc_reshaped.shape[-1] == img_w:
+            return cc_reshaped
+        return cc_reshaped.as_strided(
+            size=(cc_reshaped.shape[0], img_h, img_w),
+            stride=(
+                cc_reshaped.stride(0),
+                cc_reshaped.stride(1),
+                cc_reshaped.stride(2),
+            ),
+        )
+
+    cc_reshaped_max = _crop_to_valid(cc_for_max)
+    cc_reshaped_all = _crop_to_valid(cross_correlation)
+
+    max_values, max_indices = torch.max(cc_reshaped_max, dim=0)
+
+    update_mask = max_values > mip
+    torch.where(update_mask, max_values, mip, out=mip)
+    torch.where(
+        update_mask,
+        current_indexes[max_indices],
+        best_global_index,
+        out=best_global_index,
+    )
+
+    correlation_sum += cc_reshaped_all.sum(dim=0)
+    correlation_squared_sum += (cc_reshaped_all**2).sum(dim=0)
+
+
 # These are compiled normalization and stat update functions
 normalize_template_projection_compiled = attempt_torch_compilation(
     normalize_template_projection, backend="inductor", mode="default"
+)
+do_iteration_statistics_updates_masked_mip_compiled = attempt_torch_compilation(
+    do_iteration_statistics_updates_masked_mip,
+    backend="inductor",
+    mode="max-autotune-no-cudagraphs",
 )

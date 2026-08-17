@@ -30,10 +30,74 @@ from leopard_em.backend.process_results import (
     process_correlation_table,
     scale_mip,
 )
-from leopard_em.backend.utils import do_iteration_and_correlation_table_updates
+from leopard_em.backend.utils import (
+    do_iteration_and_correlation_table_updates,
+    do_iteration_statistics_updates_masked_mip_compiled,
+)
 
 DEFAULT_STATISTIC_DTYPE = torch.float32
 CORRELATION_TABLE_THRESHOLD = 5.5
+
+# Match-template "backend" selects CC implementation and optional masked MIP reduction.
+BACKEND_STREAMED = "streamed"
+BACKEND_BATCHED = "batched"
+BACKEND_ZIPFFT = "zipfft"
+BACKEND_STREAMED_MASKED_MIP = "streamed_masked_mip"
+BACKEND_BATCHED_MASKED_MIP = "batched_masked_mip"
+
+
+def resolve_match_template_backend(backend: str) -> tuple[str, bool]:
+    """Map backend string to CC mode and whether MIP uses an eligibility mask.
+
+    Returns
+    -------
+    tuple[str, bool]
+        ``(cc_mode, use_mip_mask)`` where ``cc_mode`` is ``streamed``, ``batched``,
+        or ``zipfft``.
+    """
+    if backend in (BACKEND_STREAMED, BACKEND_BATCHED, BACKEND_ZIPFFT):
+        return backend, False
+    if backend == BACKEND_STREAMED_MASKED_MIP:
+        return BACKEND_STREAMED, True
+    if backend == BACKEND_BATCHED_MASKED_MIP:
+        return BACKEND_BATCHED, True
+    raise ValueError(
+        f"Unknown match template backend {backend!r}. Expected one of "
+        f"{BACKEND_STREAMED!r}, {BACKEND_BATCHED!r}, {BACKEND_ZIPFFT!r}, "
+        f"{BACKEND_STREAMED_MASKED_MIP!r}, {BACKEND_BATCHED_MASKED_MIP!r}."
+    )
+
+
+def _validate_orientation_eligible_arg(
+    *,
+    backend: str,
+    orientation_eligible: torch.Tensor | None,
+    num_orientations: int,
+) -> None:
+    """Ensure ``orientation_eligible`` matches ``backend`` requirements."""
+    _cc, use_mip_mask = resolve_match_template_backend(backend)
+    if not use_mip_mask:
+        if orientation_eligible is not None:
+            raise ValueError(
+                "orientation_eligible must be None when backend is "
+                f"{BACKEND_STREAMED!r}, {BACKEND_BATCHED!r}, or {BACKEND_ZIPFFT!r}."
+            )
+        return
+    if orientation_eligible is None:
+        raise ValueError(
+            f"orientation_eligible is required for backend {backend!r} "
+            f"({BACKEND_STREAMED_MASKED_MIP!r} or {BACKEND_BATCHED_MASKED_MIP!r})."
+        )
+    if orientation_eligible.ndim != 1 or int(orientation_eligible.shape[0]) != int(
+        num_orientations
+    ):
+        raise ValueError(
+            "orientation_eligible must be a 1D tensor with length num_orientations "
+            f"({num_orientations}); got shape {tuple(orientation_eligible.shape)}."
+        )
+
+
+validate_orientation_eligible_for_match_template = _validate_orientation_eligible_arg
 
 # Turn off gradient calculations by default
 torch.set_grad_enabled(False)
@@ -163,6 +227,7 @@ def core_match_template(
     num_cuda_streams: int = 1,
     backend: str = "streamed",
     mag_matrix: torch.Tensor | None = None,
+    orientation_eligible: torch.Tensor | None = None,
     compute_correlation_table: bool = True,
 ) -> dict[str, torch.Tensor | dict | int]:
     """Core function for performing the whole-orientation search.
@@ -216,8 +281,15 @@ def core_match_template(
         will be reduced to the number of cross-correlations per batch. This is done to
         avoid unnecessary overhead and performance degradation.
     backend : str, optional
-        The backend to use for computation. Defaults to 'streamed'.
-        Must be 'streamed' or 'batched'.
+        Cross-correlation and MIP policy: ``streamed``, ``batched``, ``zipfft``,
+        ``streamed_masked_mip``, or ``batched_masked_mip``. The ``*_masked_mip``
+        backends use the same CC path as the unprefixed name but restrict the MIP and
+        best-orientation selection using ``orientation_eligible``.
+    orientation_eligible : torch.Tensor | None, optional
+        Per-orientation mask for MIP (1D, length ``num_orientations``). Required when
+        ``backend`` is ``streamed_masked_mip`` or ``batched_masked_mip``; must be
+        ``None`` otherwise. Ineligible orientations still contribute to correlation
+        sums used for mean/variance.
     mag_matrix : torch.Tensor | None, optional
         Anisotropic magnification matrix of shape (2, 2). If None,
         no magnification transform is applied. Default is None.
@@ -250,6 +322,12 @@ def core_match_template(
     ################################################################
     ### Initial checks for input parameters plus and adjustments ###
     ################################################################
+    validate_orientation_eligible_for_match_template(
+        backend=backend,
+        orientation_eligible=orientation_eligible,
+        num_orientations=int(euler_angles.shape[0]),
+    )
+
     # If there are more streams than cross-correlations to compute per batch, then
     # reduce the number of streams to the number of cross-correlations per batch.
     total_cc_per_batch = (
@@ -277,6 +355,8 @@ def core_match_template(
     defocus_values = defocus_values.cpu()
     pixel_values = pixel_values.cpu()
     euler_angles = euler_angles.cpu()
+    if orientation_eligible is not None:
+        orientation_eligible = orientation_eligible.cpu()
     # Move mag_matrix to CPU if it's not None
     if mag_matrix is not None:
         mag_matrix = mag_matrix.cpu()
@@ -289,6 +369,16 @@ def core_match_template(
     total_projections = (
         euler_angles.shape[0] * defocus_values.shape[0] * pixel_values.shape[0]
     )
+    # For masked-MIP backends only eligible orientations count toward the MIP, so the
+    # multiplicity used for peak-significance thresholds should also be reduced.
+    if orientation_eligible is not None:
+        total_mip_eligible_projections = (
+            int(orientation_eligible.bool().sum())
+            * defocus_values.shape[0]
+            * pixel_values.shape[0]
+        )
+    else:
+        total_mip_eligible_projections = total_projections
 
     ############################################################
     ### Shared queue mechanism and multiprocessing arguments ###
@@ -330,6 +420,7 @@ def core_match_template(
             "backend": backend,
             "device": d,
             "mag_matrix": mag_matrix,
+            "orientation_eligible": orientation_eligible,
             "compute_correlation_table": compute_correlation_table,
         }
 
@@ -378,10 +469,14 @@ def core_match_template(
         "best_theta": best_theta,
         "best_psi": best_psi,
         "best_defocus": best_defocus,
+        "best_global_index": best_global_index,
+        "correlation_sum": correlation_sum,
+        "correlation_squared_sum": correlation_squared_sum,
         "correlation_mean": correlation_mean,
         "correlation_variance": correlation_variance,
         "correlation_table": correlation_table,
         "total_projections": total_projections,
+        "total_mip_eligible_projections": total_mip_eligible_projections,
         "total_orientations": euler_angles.shape[0],
         "total_defocus": defocus_values.shape[0],
     }
@@ -390,6 +485,7 @@ def core_match_template(
 # pylint: disable=too-many-locals
 # pylint: disable=too-many-arguments
 # pylint: disable=too-many-positional-arguments
+# pylint: disable=too-many-branches
 def _core_match_template_single_gpu(
     rank: int,
     index_queue: MultiprocessWorkIndexQueue,
@@ -404,6 +500,7 @@ def _core_match_template_single_gpu(
     backend: str,
     device: torch.device,
     mag_matrix: torch.Tensor | None = None,
+    orientation_eligible: torch.Tensor | None = None,
     compute_correlation_table: bool = True,
 ) -> tuple[
     torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, tensordict.TensorDict
@@ -442,8 +539,10 @@ def _core_match_template_single_gpu(
     num_cuda_streams : int
         Number of CUDA streams to use for parallelizing cross-correlation computation.
     backend : str, optional
-        The backend to use for computation.
-        Defaults to 'streamed'. Must be 'streamed' or 'batched'.
+        ``streamed``, ``batched``, ``zipfft``, ``streamed_masked_mip``, or
+        ``batched_masked_mip``.
+    orientation_eligible : torch.Tensor | None, optional
+        Required for ``*_masked_mip`` backends (1D, length ``num_orientations``).
     device : torch.device
         Device to run the computation on. All tensors must be allocated on this device.
     mag_matrix : torch.Tensor | None, optional
@@ -456,7 +555,7 @@ def _core_match_template_single_gpu(
 
     Returns
     -------
-    tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]
+    tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, tensordict.TensorDict]
         Tuple containing the following tensors:
             - mip: Maximum intensity projection of the cross-correlation values across
               orientation and defocus search space.
@@ -491,6 +590,11 @@ def _core_match_template_single_gpu(
     # Move mag_matrix to device if it's not None
     if mag_matrix is not None:
         mag_matrix = mag_matrix.to(device)
+
+    cc_mode, use_mip_mask = resolve_match_template_backend(backend)
+    if use_mip_mask:
+        assert orientation_eligible is not None
+        orientation_eligible = orientation_eligible.to(device)
 
     num_orientations = euler_angles.shape[0]
     num_defocus = defocus_values.shape[0]
@@ -591,7 +695,7 @@ def _core_match_template_single_gpu(
                 batch_search_indices = indices + local_to_global_idx_increment[:, None]
                 batch_search_indices = batch_search_indices.flatten()
 
-                if backend == "batched":
+                if cc_mode == "batched":
                     cross_correlation = do_batched_orientation_cross_correlate(
                         image_dft=image_dft,
                         template_dft=template_dft,
@@ -599,7 +703,7 @@ def _core_match_template_single_gpu(
                         projective_filters=projective_filters,
                         mag_matrix=mag_matrix,
                     )
-                elif backend == "streamed":
+                elif cc_mode == "streamed":
                     cross_correlation = do_streamed_orientation_cross_correlate(
                         image_dft=image_dft,
                         template_dft=template_dft,
@@ -608,7 +712,7 @@ def _core_match_template_single_gpu(
                         streams=streams,
                         mag_matrix=mag_matrix,
                     )
-                elif backend == "zipfft":
+                elif cc_mode == "zipfft":
                     cross_correlation = do_batched_orientation_cross_correlate_zipfft(
                         image_dft=image_dft,
                         template_dft=template_dft,
@@ -618,25 +722,39 @@ def _core_match_template_single_gpu(
                 else:
                     raise ValueError(
                         f"Unknown backend '{backend}'. Must be one of 'batched', "
-                        "'streamed', or 'zipfft'."
+                        "'streamed', 'zipfft', 'streamed_masked_mip', or "
+                        "'batched_masked_mip'."
                     )
 
-                # Update tracked statistics and correlation table
-                do_iteration_and_correlation_table_updates(
-                    cross_correlation=cross_correlation,
-                    current_indexes=batch_search_indices,
-                    correlation_table=correlation_table,
-                    mip=mip,
-                    best_global_index=best_global_index,
-                    correlation_sum=correlation_sum,
-                    correlation_squared_sum=correlation_squared_sum,
-                    threshold=CORRELATION_TABLE_THRESHOLD,
-                    valid_shape_h=valid_correlation_shape[0],
-                    valid_shape_w=valid_correlation_shape[1],
-                    needs_valid_cropping=(backend != "zipfft"),
-                    compute_correlation_table=compute_correlation_table,
-                )
-
+                # Update tracked statistics (and correlation table when unmasked)
+                if use_mip_mask:
+                    do_iteration_statistics_updates_masked_mip_compiled(
+                        cross_correlation=cross_correlation,
+                        current_indexes=batch_search_indices,
+                        mip=mip,
+                        best_global_index=best_global_index,
+                        correlation_sum=correlation_sum,
+                        correlation_squared_sum=correlation_squared_sum,
+                        orientation_batch_start=i,
+                        orientation_eligible=orientation_eligible,
+                        img_h=valid_correlation_shape[0],
+                        img_w=valid_correlation_shape[1],
+                    )
+                else:
+                    do_iteration_and_correlation_table_updates(
+                        cross_correlation=cross_correlation,
+                        current_indexes=batch_search_indices,
+                        correlation_table=correlation_table,
+                        mip=mip,
+                        best_global_index=best_global_index,
+                        correlation_sum=correlation_sum,
+                        correlation_squared_sum=correlation_squared_sum,
+                        threshold=CORRELATION_TABLE_THRESHOLD,
+                        valid_shape_h=valid_correlation_shape[0],
+                        valid_shape_w=valid_correlation_shape[1],
+                        needs_valid_cropping=(cc_mode != "zipfft"),
+                        compute_correlation_table=compute_correlation_table,
+                    )
         except Exception as e:
             index_queue.set_error_flag()
             print(f"Error occurred in process {rank}: {e}")

@@ -123,6 +123,30 @@ class OrientationSearchConfig(BaseModel2DTM):
         # but not both, so we can proceed.
         return self
 
+    def _resolved_euler_bounds(self) -> tuple[float, float, float, float, float, float]:
+        """Return symmetry-derived or manual angular bounds in degrees.
+
+        Single source of truth for :attr:`euler_angles` and
+        :attr:`effective_euler_bounds`.
+        """
+        if self.symmetry is not None:
+            match = re.match(r"([A-Za-z]+)(\d*)", self.symmetry)
+            if match is None:
+                raise ValueError(f"Invalid symmetry format: {self.symmetry}")
+            sym_group = match.group(1)
+            sym_order = int(match.group(2)) if match.group(2) else 1
+            phi_min, phi_max, theta_min, theta_max, psi_min, psi_max = (
+                get_symmetry_ranges(sym_group, sym_order)
+            )
+            return phi_min, phi_max, theta_min, theta_max, psi_min, psi_max
+        phi_min = self.phi_min if self.phi_min is not None else 0.0
+        phi_max = self.phi_max if self.phi_max is not None else 360.0
+        theta_min = self.theta_min if self.theta_min is not None else 0.0
+        theta_max = self.theta_max if self.theta_max is not None else 180.0
+        psi_min = self.psi_min if self.psi_min is not None else 0.0
+        psi_max = self.psi_max if self.psi_max is not None else 360.0
+        return phi_min, phi_max, theta_min, theta_max, psi_min, psi_max
+
     @property
     def euler_angles(self) -> torch.Tensor:
         """Returns the Euler angles ('ZYZ' convention) to search over.
@@ -134,29 +158,9 @@ class OrientationSearchConfig(BaseModel2DTM):
             search over. The columns represent the psi, theta, and phi angles
             respectively.
         """
-        # If the symmetry used for the angular ranges, calculate the angular ranges
-        # based on the symmetry group.
-        if self.symmetry is not None:
-            match = re.match(r"([A-Za-z]+)(\d*)", self.symmetry)
-            if match is None:
-                raise ValueError(f"Invalid symmetry format: {self.symmetry}")
-
-            sym_group = match.group(1)
-            sym_order = int(match.group(2)) if match.group(2) else 1
-            (phi_min, phi_max, theta_min, theta_max, psi_min, psi_max) = (
-                get_symmetry_ranges(sym_group, sym_order)
-            )
-        # Otherwise, use the provided angular ranges replacing with default values if
-        # any are set to None.
-        else:
-            phi_min = self.phi_min if self.phi_min is not None else 0.0
-            phi_max = self.phi_max if self.phi_max is not None else 360.0
-            theta_min = self.theta_min if self.theta_min is not None else 0.0
-            theta_max = self.theta_max if self.theta_max is not None else 180.0
-            psi_min = self.psi_min if self.psi_min is not None else 0.0
-            psi_max = self.psi_max if self.psi_max is not None else 360.0
-
-        # Generate angles
+        phi_min, phi_max, theta_min, theta_max, psi_min, psi_max = (
+            self._resolved_euler_bounds()
+        )
         return get_uniform_euler_angles(
             psi_step=self.psi_step,
             theta_step=self.theta_step,
@@ -168,6 +172,66 @@ class OrientationSearchConfig(BaseModel2DTM):
             psi_max=psi_max,
             base_grid_method=self.base_grid_method,
         )
+
+    @property
+    def effective_euler_bounds(
+        self,
+    ) -> tuple[float, float, float, float, float, float]:
+        """Return the resolved angular bounds without generating the full angle grid.
+
+        Uses the same logic as :attr:`euler_angles`: symmetry-derived bounds take
+        priority; otherwise manual min/max fields are used with sensible defaults.
+
+        Returns
+        -------
+        tuple[float, float, float, float, float, float]
+            ``(phi_min, phi_max, theta_min, theta_max, psi_min, psi_max)``
+            in degrees.
+        """
+        return self._resolved_euler_bounds()
+
+    def orientation_eligible_mask(self, euler_angles: torch.Tensor) -> torch.Tensor:
+        """Return a bool mask for orientations within the effective bounds.
+
+        Each row of ``euler_angles`` is a ``(phi, theta, psi)`` triplet (degrees,
+        ZYZ convention). Rows that lie **within** the resolved bounds are ``True``.
+
+        ``phi`` and ``psi`` are tested with periodic wrap so bounds that straddle
+        360° (e.g. ``phi_min=350, phi_max=10``) are handled correctly. ``theta``
+        is tested with a simple inclusive interval on ``[0, 180]``.
+
+        Parameters
+        ----------
+        euler_angles : torch.Tensor
+            Shape ``(N, 3)`` with columns ``(phi, theta, psi)`` in degrees.
+
+        Returns
+        -------
+        torch.Tensor
+            Bool tensor of shape ``(N,)``.
+        """
+        phi_min, phi_max, theta_min, theta_max, psi_min, psi_max = (
+            self.effective_euler_bounds
+        )
+        phi = euler_angles[:, 0]
+        theta = euler_angles[:, 1]
+        psi = euler_angles[:, 2]
+
+        # theta: simple inclusive interval, no wrap
+        theta_ok = (theta >= theta_min - EPS) & (theta <= theta_max + EPS)
+
+        # phi / psi: periodic on [0, 360); handle wrap-around bounds
+        def _angle_in_range(angles: torch.Tensor, lo: float, hi: float) -> torch.Tensor:
+            """True when 'angles' lie in [lo, hi) accounting for 360-degree wrap."""
+            if lo <= hi:
+                return (angles >= lo - EPS) & (angles <= hi + EPS)
+            # wrap-around case: e.g. lo=350, hi=10
+            return (angles >= lo - EPS) | (angles <= hi + EPS)
+
+        phi_ok = _angle_in_range(phi, phi_min, phi_max)
+        psi_ok = _angle_in_range(psi, psi_min, psi_max)
+
+        return phi_ok & theta_ok & psi_ok
 
 
 class MultipleOrientationConfig(BaseModel2DTM):

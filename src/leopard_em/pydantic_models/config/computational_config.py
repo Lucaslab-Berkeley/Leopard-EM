@@ -73,13 +73,16 @@ class ComputationalConfigMatch(BaseComputationalConfig):
         - The specific string "cpu" which means to use CPU.
     num_cpus : int
         Total number of CPUs to use, defaults to 1.
-    backend : Literal["streamed", "batched", "zipfft"], optional
-        The cross-correlation backend to use for match template. Must be one of
-        "streamed", "batched", or "zipfft". When "streamed", individual 2D
-        cross-correlations are computed across multiple streams using PyTorch while
-        with "batched", all the 2D cross-correlations are computed in a single batched
-        call also with PyTorch. When "zipfft", the zipFFT library is used to compute the
-        cross-correlations. Defaults to "streamed".
+    backend : Literal[
+        "streamed", "batched", "zipfft", "streamed_masked_mip", "batched_masked_mip"
+    ], optional
+        Cross-correlation backend for match template. ``streamed`` / ``batched`` use
+        PyTorch (streamed vs single batched CC). ``zipfft`` uses the zipFFT library.
+        ``streamed_masked_mip`` / ``batched_masked_mip`` use the same CC paths as the
+        unprefixed names but restrict MIP / best-orientation selection via
+        ``orientation_eligible`` (see
+        ``MatchTemplateManager.orientation_eligible_for_mip``). Defaults to
+        ``streamed``.
     """
 
     # Type-hinting here is ensuring non-negative integers, and list of at least one
@@ -92,7 +95,13 @@ class ComputationalConfigMatch(BaseComputationalConfig):
         ]
     ] = [0]
     num_cpus: Annotated[int, Field(ge=1)] = 1
-    backend: Literal["streamed", "batched", "zipfft"] = "streamed"
+    backend: Literal[
+        "streamed",
+        "batched",
+        "zipfft",
+        "streamed_masked_mip",
+        "batched_masked_mip",
+    ] = "streamed"
 
 
 class ComputationalConfigRefine(BaseComputationalConfig):

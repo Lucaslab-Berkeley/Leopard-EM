@@ -70,7 +70,7 @@ class OptimizeTemplateManager(BaseModel2DTM):
     apply_global_filtering: bool = True
 
     # Excluded tensors
-    template_volume: ExcludedTensor
+    template_volume: ExcludedTensor = None
 
     def make_backend_core_function_kwargs(
         self, prefer_refined_angles: bool = True
@@ -82,8 +82,8 @@ class OptimizeTemplateManager(BaseModel2DTM):
         prefer_refined_angles : bool
             Whether to use refined angles or not. Defaults to True.
         """
-        # simulate template volume
-        template = self.simulator.run(device=self.computational_config.gpu_ids)
+        # simulate template volume (run returns (volume, new_spacing))
+        template, _ = self.simulator.run(device=self.computational_config.gpu_ids)
 
         # The set of "best" euler angles from match template search
         # Check if refined angles exist, otherwise use the original angles

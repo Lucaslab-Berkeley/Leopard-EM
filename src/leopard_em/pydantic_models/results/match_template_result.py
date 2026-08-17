@@ -130,20 +130,21 @@ class _MatchTemplateResultBase(BaseModel2DTM):
     # Scalar (non-tensor) attributes
     leopard_em_version: str = Field(default_factory=_leopard_em_version)
     total_projections: int = 0
+    total_mip_eligible_projections: int = 0
     total_orientations: int = 0
     total_defocus: int = 0
 
     match_template_peaks: MatchTemplatePeaks = Field(default=None, exclude=True)
     correlation_table: CorrelationTable | None = Field(default=None, exclude=True)
 
-    mip: ExcludedTensor
-    scaled_mip: ExcludedTensor
-    correlation_average: ExcludedTensor
-    correlation_variance: ExcludedTensor
-    orientation_psi: ExcludedTensor
-    orientation_theta: ExcludedTensor
-    orientation_phi: ExcludedTensor
-    relative_defocus: ExcludedTensor
+    mip: ExcludedTensor = None
+    scaled_mip: ExcludedTensor = None
+    correlation_average: ExcludedTensor = None
+    correlation_variance: ExcludedTensor = None
+    orientation_psi: ExcludedTensor = None
+    orientation_theta: ExcludedTensor = None
+    orientation_phi: ExcludedTensor = None
+    relative_defocus: ExcludedTensor = None
 
     ############################################
     ### Functional (data processing) methods ###
@@ -195,6 +196,15 @@ class _MatchTemplateResultBase(BaseModel2DTM):
         -------
         MatchTemplatePeaks
         """
+        # Use eligible-only count as the multiplicity denominator when available.
+        # This correctly reflects the number of independent MIP candidates when a
+        # masked backend was used (ineligible orientations never won the MIP).
+        # Fall back to total_projections for old results that lack this field.
+        total_corr = (
+            self.total_mip_eligible_projections
+            if self.total_mip_eligible_projections > 0
+            else self.total_projections
+        )
         self.match_template_peaks = extract_peaks_and_statistics_zscore(
             mip=self.mip,
             scaled_mip=self.scaled_mip,
@@ -204,7 +214,7 @@ class _MatchTemplateResultBase(BaseModel2DTM):
             best_defocus=self.relative_defocus,
             correlation_average=self.correlation_average,
             correlation_variance=self.correlation_variance,
-            total_correlation_positions=self.total_projections,
+            total_correlation_positions=total_corr,
             **kwargs,
         )
         return self.match_template_peaks
@@ -333,7 +343,11 @@ class MatchTemplateResultMRC(_MatchTemplateResultBase):
                 overwrite=self.allow_file_overwrite,
             )
 
-        self.export_correlation_table()
+        if (
+            self.correlation_table is not None
+            and self.correlation_table_path is not None
+        ):
+            self.export_correlation_table()
 
     def export_correlation_table(self) -> None:
         """Write the held CorrelationTable to ``self.correlation_table_path``."""

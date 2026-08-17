@@ -1,2 +1,4 @@
 [default.extend-words]
 BA = "BA"
+# y-index alongside ix; typos otherwise suggests "it"
+iy = "iy"

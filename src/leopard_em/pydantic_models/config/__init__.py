@@ -20,20 +20,30 @@ from .orientation_search import (
     RefineOrientationConfig,
 )
 from .pixel_size_search import PixelSizeSearchConfig
+from .spatial_ctf_premultiply import (
+    LinearDefocusSpatialConfig,
+    QuadraticPhaseSpatialConfig,
+    SpatialModelConfig,
+    SpatialPsfConfig,
+)
 
 __all__ = [
     "ArbitraryCurveFilterConfig",
     "BandpassFilterConfig",
     "ComputationalConfigMatch",
     "ComputationalConfigRefine",
+    "ConstrainedOrientationConfig",
     "DefocusSearchConfig",
+    "LinearDefocusSpatialConfig",
+    "MovieConfig",
     "MultipleOrientationConfig",
     "OrientationSearchConfig",
-    "PixelSizeSearchConfig",
     "PhaseRandomizationFilterConfig",
+    "PixelSizeSearchConfig",
     "PreprocessingFilters",
+    "QuadraticPhaseSpatialConfig",
     "RefineOrientationConfig",
+    "SpatialModelConfig",
+    "SpatialPsfConfig",
     "WhiteningFilterConfig",
-    "ConstrainedOrientationConfig",
-    "MovieConfig",
 ]

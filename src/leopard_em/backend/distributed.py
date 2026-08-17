@@ -297,6 +297,7 @@ class TensorShapeDataclass:
     euler_angles_shape: tuple[int, int]  # (num_orientations, 3)
     defocus_values_shape: tuple[int]  # (num_defocus,)
     pixel_values_shape: tuple[int]  # (num_Cs,)
+    orientation_eligible_shape: tuple[int, ...] | None = None  # (num_orientations,)
 
 
 def run_multiprocess_jobs(
