@@ -274,7 +274,7 @@ class SpatialConstraintMaps:
             assert mask is not None
             if not any(np.array_equal(mask, seen) for seen in unique_masks):
                 unique_masks.append(mask)
-        if len(unique_masks) == 1 and len(boxed) == 1:
+        if len(unique_masks) == 1:
             return unique_masks[0].astype(bool)
 
         ok = np.ones((angles.shape[0], *self.eligible.shape), dtype=bool)
@@ -525,6 +525,45 @@ def rasterize_rectangle(
         corners=_corners_from_box(box),
         n_orientations=n_orientations,
         region_id=region_id,
+    )
+
+
+def combine_spatial_maps(
+    parts: list[SpatialConstraintMaps],
+) -> SpatialConstraintMaps:
+    """Union several region maps. Overlapping pixels take the later region."""
+    if not parts:
+        raise ValueError("Need at least one spatial map to combine.")
+    first = parts[0]
+    shape = first.eligible.shape
+    eligible = np.zeros(shape, dtype=np.uint8)
+    region_id = np.zeros(shape, dtype=np.int16)
+    n_orientations = np.zeros(shape, dtype=np.int32)
+    regions: list[dict[str, Any]] = []
+    pixel_size = first.pixel_size_angstrom
+    for maps in parts:
+        if maps.eligible.shape != shape:
+            raise ValueError(
+                "Cannot combine spatial maps of shape "
+                f"{maps.eligible.shape} with {shape}."
+            )
+        inside = maps.eligible > 0
+        eligible = np.where(inside, np.uint8(1), eligible)
+        region_id = np.where(inside, maps.region_id, region_id).astype(np.int16)
+        n_orientations = np.where(inside, maps.n_orientations, n_orientations).astype(
+            np.int32
+        )
+        regions.extend(maps.regions)
+        if maps.pixel_size_angstrom is not None:
+            pixel_size = maps.pixel_size_angstrom
+    return SpatialConstraintMaps(
+        eligible=eligible,
+        region_id=region_id,
+        n_orientations=n_orientations,
+        micrograph_shape=first.micrograph_shape,
+        coordinate_frame=first.coordinate_frame,
+        pixel_size_angstrom=pixel_size,
+        regions=regions,
     )
 
 

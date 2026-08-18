@@ -9,6 +9,7 @@ import torch
 from leopard_em.analysis.zscore_metric import extract_peaks_and_statistics_zscore
 from leopard_em.pydantic_models.config import FilamentConstraint, SpatialBox
 from leopard_em.pydantic_models.config.spatial_constraint import (
+    combine_spatial_maps,
     rasterize_polygon,
     rasterize_rectangle,
     read_spatial_constraint_hdf5,
@@ -34,6 +35,25 @@ def test_rasterize_rectangle_inclusive_bounds():
 
 
 def test_legacy_aabb_yaml_becomes_four_corners():
+    box = SpatialBox(y0=2, x0=3, y1=5, x1=6)
+    assert len(box.corners) == 4
+    assert box.as_ymin_xmin_ymax_xmax() == (2.0, 3.0, 5.0, 6.0)
+
+
+def test_combine_spatial_maps_later_region_wins():
+    left = rasterize_rectangle(
+        (8, 10), box=(2.0, 2.0, 5.0, 6.0), n_orientations=1, region_id=1
+    )
+    right = rasterize_rectangle(
+        (8, 10), box=(2.0, 5.0, 5.0, 8.0), n_orientations=2, region_id=2
+    )
+    combined = combine_spatial_maps([left, right])
+    assert int(combined.region_id[3, 3]) == 1
+    assert int(combined.region_id[3, 6]) == 2
+    assert int(combined.region_id[3, 7]) == 2
+    assert int(combined.eligible[3, 3]) == 1
+    assert int(combined.eligible[0, 0]) == 0
+    assert len(combined.regions) == 2
     box = SpatialBox(y0=2, x0=3, y1=5, x1=6)
     assert len(box.corners) == 4
     assert box.as_ymin_xmin_ymax_xmax() == (2.0, 3.0, 5.0, 6.0)

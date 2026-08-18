@@ -1,6 +1,8 @@
-r"""Standalone napari helper to choose a filament Euler-box orientation constraint.
+r"""Standalone napari helper to choose filament Euler-box orientation constraints.
 
-Draw a line along a filament and four corner points for the search region.
+Draw a line along a filament and four corner points for its search region, then
+commit that pair as a colored overlay. Repeat for each filament. The ± Euler
+box is shared; each region keeps its own in-plane ``psi``.
 
 Dependencies: napari, numpy, mrcfile, h5py (qtpy ships with napari). This
 script does not import leopard_em.
@@ -36,6 +38,21 @@ _NAPARI_INSTALL_MESSAGE = (
     "Install with:  pip install napari mrcfile numpy h5py"
 )
 _ANGLE_DECIMALS = 4
+REGION_COLORS = (
+    "#ff6b6b",
+    "#4dabf7",
+    "#69db7c",
+    "#ffd43b",
+    "#da77f2",
+    "#ff922b",
+    "#22b8cf",
+    "#e599f7",
+)
+
+
+def region_color(index: int) -> str:
+    """Return a stable overlay color for committed region ``index``."""
+    return REGION_COLORS[int(index) % len(REGION_COLORS)]
 
 
 def last_filament_line(shapes_layer) -> tuple[float, float, float, float]:
@@ -142,14 +159,39 @@ def rasterize_search_box(
     image_shape: tuple[int, int],
     corners: np.ndarray,
     n_orientations: int,
+    region_id: int = 1,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Return ``eligible``, ``region_id``, ``n_orientations`` maps for one quad."""
     height, width = image_shape
     inside = points_in_polygon(height, width, corners)
     eligible = inside.astype(np.uint8)
-    region_id = np.where(inside, 1, 0).astype(np.int16)
+    region_ids = np.where(inside, int(region_id), 0).astype(np.int16)
     n_orients = np.where(inside, int(n_orientations), 0).astype(np.int32)
-    return eligible, region_id, n_orients
+    return eligible, region_ids, n_orients
+
+
+def combine_search_boxes(
+    parts: list[tuple[np.ndarray, np.ndarray, np.ndarray]],
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Union rasterized boxes. Overlapping pixels take the later region."""
+    if not parts:
+        raise ValueError("Need at least one search box to combine.")
+    eligible, region_id, n_orients = (array.copy() for array in parts[0])
+    for next_eligible, next_region_id, next_n_orients in parts[1:]:
+        if next_eligible.shape != eligible.shape:
+            raise ValueError(
+                "Cannot combine search boxes of shape "
+                f"{next_eligible.shape} with {eligible.shape}."
+            )
+        inside = next_eligible > 0
+        eligible = np.where(inside, next_eligible, eligible)
+        region_id = np.where(inside, next_region_id, region_id)
+        n_orients = np.where(inside, next_n_orients, n_orients)
+    return (
+        eligible.astype(np.uint8),
+        region_id.astype(np.int16),
+        n_orients.astype(np.int32),
+    )
 
 
 def write_spatial_constraint_hdf5(
@@ -157,12 +199,14 @@ def write_spatial_constraint_hdf5(
     eligible: np.ndarray,
     region_id: np.ndarray,
     n_orientations: np.ndarray,
-    payload: dict,
-    box: np.ndarray,
+    region_payloads: list[dict],
     pixel_size_angstrom: float | None = None,
 ) -> None:
     """Write the constraint HDF5 sidecar (standalone; no leopard_em import)."""
     import h5py
+
+    if not region_payloads:
+        raise ValueError("Need at least one region to write a constraint HDF5.")
 
     compression = {"compression": "gzip", "compression_opts": 4}
     with h5py.File(path, "w") as handle:
@@ -177,34 +221,40 @@ def write_spatial_constraint_hdf5(
         maps_group.create_dataset("region_id", data=region_id, **compression)
         maps_group.create_dataset("n_orientations", data=n_orientations, **compression)
 
-        region = handle.create_group("regions").create_group("0001")
-        region.attrs["cone_half_angle_deg"] = payload["cone_half_angle_deg"]
-        region.attrs["theta_center_deg"] = payload["theta_center_deg"]
-        region.attrs["phi_min"] = payload["phi_min"]
-        region.attrs["phi_max"] = payload["phi_max"]
-        region.attrs["psi_step"] = payload["psi_step"]
-        region.attrs["theta_step"] = payload["theta_step"]
-        region.attrs["base_grid_method"] = payload["base_grid_method"]
-        region.attrs["region_id"] = 1
-        line = payload["line"]
-        region.create_dataset(
-            "line",
-            data=np.array(
-                [line["y0"], line["x0"], line["y1"], line["x1"]], dtype=np.float64
-            ),
-        )
-        region.create_dataset(
-            "box", data=np.asarray(box, dtype=np.float64).reshape(-1, 2)
-        )
-        cfg_root = region.create_group("orientation_configs")
-        for index, block in enumerate(
-            payload["orientation_search_config"]["orientation_configs"]
-        ):
-            cfg_grp = cfg_root.create_group(str(index))
-            for key, value in block.items():
-                if value is None:
-                    continue
-                cfg_grp.attrs[key] = value
+        regions_group = handle.create_group("regions")
+        for index, payload in enumerate(region_payloads, start=1):
+            region = regions_group.create_group(f"{index:04d}")
+            _write_hdf5_region(region, payload, region_id=index)
+
+
+def _write_hdf5_region(region, payload: dict, region_id: int) -> None:
+    region.attrs["cone_half_angle_deg"] = payload["cone_half_angle_deg"]
+    region.attrs["theta_center_deg"] = payload["theta_center_deg"]
+    region.attrs["phi_min"] = payload["phi_min"]
+    region.attrs["phi_max"] = payload["phi_max"]
+    region.attrs["psi_step"] = payload["psi_step"]
+    region.attrs["theta_step"] = payload["theta_step"]
+    region.attrs["base_grid_method"] = payload["base_grid_method"]
+    region.attrs["region_id"] = int(region_id)
+    region.attrs["filament_angle_deg"] = payload["filament_angle_deg"]
+    line = payload["line"]
+    region.create_dataset(
+        "line",
+        data=np.array(
+            [line["y0"], line["x0"], line["y1"], line["x1"]], dtype=np.float64
+        ),
+    )
+    box = payload["spatial_box"]["corners"]
+    region.create_dataset("box", data=np.asarray(box, dtype=np.float64).reshape(-1, 2))
+    cfg_root = region.create_group("orientation_configs")
+    for index, block in enumerate(
+        payload["orientation_search_config"]["orientation_configs"]
+    ):
+        cfg_grp = cfg_root.create_group(str(index))
+        for key, value in block.items():
+            if value is None:
+                continue
+            cfg_grp.attrs[key] = value
 
 
 def filament_psi_from_image_line(y0: float, x0: float, y1: float, x1: float) -> float:
@@ -285,7 +335,9 @@ def fourier_lowpass(
     t = (freq[taper] - cutoff) / falloff
     weight[taper] = (0.5 * (1.0 + np.cos(np.pi * t))).astype(np.float32)
     weight[freq >= cutoff + falloff] = 0.0
-    filtered = np.fft.irfftn(np.fft.rfftn(image) * weight, s=image.shape)
+    filtered = np.fft.irfft2(
+        np.fft.rfft2(image) * weight, s=image.shape, axes=(-2, -1)
+    )
     return np.asarray(filtered, dtype=np.float32)
 
 
@@ -310,7 +362,7 @@ def imagej_contrast_limits(
 
 
 def raise_constraint_layers(viewer) -> None:
-    """Keep search outline, corners, then filament above the micrograph."""
+    """Keep committed overlays, scratch outline, corners, then filament on top."""
     names = [layer.name for layer in viewer.layers]
     n_layers = len(viewer.layers)
 
@@ -324,6 +376,7 @@ def raise_constraint_layers(viewer) -> None:
             names = [layer.name for layer in viewer.layers]
             n_layers = len(viewer.layers)
 
+    _move_to_top("committed_regions")
     _move_to_top("search_region")
     _move_to_top("search_corners")
     _move_to_top("filament")
@@ -483,10 +536,96 @@ def preview_text(payload: dict) -> str:
     return "\n".join(lines)
 
 
+def preview_regions_text(region_payloads: list[dict]) -> str:
+    """Summary of one or more committed regions."""
+    if not region_payloads:
+        return "No regions yet."
+    if len(region_payloads) == 1:
+        return preview_text(region_payloads[0])
+    first = region_payloads[0]
+    cone = first["cone_half_angle_deg"]
+    blocks = first["orientation_search_config"]["orientation_configs"]
+    lines = [
+        f"{len(region_payloads)} regions",
+        f"Euler box ±{cone:g}°",
+        f"  theta: [{blocks[0]['theta_min']:.2f}, {blocks[0]['theta_max']:.2f}]",
+        "  phi:   [0.00, 360.00]",
+    ]
+    for index, payload in enumerate(region_payloads, start=1):
+        psi = payload["filament_angle_deg"] % 360.0
+        lines.append(f"region {index}: psi {psi:.2f}° / {(psi + 180.0) % 360.0:.2f}°")
+    return "\n".join(lines)
+
+
+def region_from_line_and_corners(
+    y0: float,
+    x0: float,
+    y1: float,
+    x1: float,
+    corners: np.ndarray,
+) -> dict:
+    """Snapshot a scratch line + quad as a committed region dict."""
+    return {
+        "y0": float(y0),
+        "x0": float(x0),
+        "y1": float(y1),
+        "x1": float(x1),
+        "corners": np.asarray(corners, dtype=float).reshape(-1, 2),
+        "filament_angle_deg": round(
+            filament_psi_from_image_line(y0, x0, y1, x1), _ANGLE_DECIMALS
+        ),
+    }
+
+
+def sidecar_payload_from_regions(
+    region_payloads: list[dict],
+    spatial_constraint_path: str | None = None,
+) -> dict:
+    """Build a YAML sidecar dict from one or more region payloads."""
+    if not region_payloads:
+        raise ValueError("Need at least one region.")
+    payloads = [dict(payload) for payload in region_payloads]
+    if spatial_constraint_path:
+        for payload in payloads:
+            payload["spatial_constraint_path"] = spatial_constraint_path
+    if len(payloads) == 1:
+        return payloads[0]
+    first = payloads[0]
+    sidecar: dict = {
+        "cone_half_angle_deg": first["cone_half_angle_deg"],
+        "theta_center_deg": first["theta_center_deg"],
+        "phi_min": first["phi_min"],
+        "phi_max": first["phi_max"],
+        "psi_step": first["psi_step"],
+        "theta_step": first["theta_step"],
+        "base_grid_method": first["base_grid_method"],
+        "regions": [
+            {
+                "filament_angle_deg": payload["filament_angle_deg"],
+                "line": payload["line"],
+                "spatial_box": payload["spatial_box"],
+            }
+            for payload in payloads
+        ],
+    }
+    if "micrograph_path" in first:
+        sidecar["micrograph_path"] = first["micrograph_path"]
+    if spatial_constraint_path:
+        sidecar["spatial_constraint_path"] = spatial_constraint_path
+    if first.get("stats_from_valid_orientations_defocus"):
+        sidecar["stats_from_valid_orientations_defocus"] = True
+    return sidecar
+
+
 def dump_constraint_yaml(payload: dict) -> str:
     """Serialize the sidecar as YAML text."""
+    if payload.get("regions"):
+        return _dump_multi_region_yaml(payload)
+    return _dump_single_region_yaml(payload)
+
+
+def _dump_shared_header(payload: dict) -> list[str]:
     lines = [
-        f"filament_angle_deg: {_yaml_scalar(payload['filament_angle_deg'])}",
         f"cone_half_angle_deg: {_yaml_scalar(payload['cone_half_angle_deg'])}",
         f"theta_center_deg: {_yaml_scalar(payload['theta_center_deg'])}",
         f"phi_min: {_yaml_scalar(payload['phi_min'])}",
@@ -504,22 +643,38 @@ def dump_constraint_yaml(payload: dict) -> str:
         )
     if payload.get("stats_from_valid_orientations_defocus"):
         lines.append("stats_from_valid_orientations_defocus: true")
-    line = payload["line"]
-    lines.append("line:")
+    return lines
+
+
+def _dump_line_block(line: dict, indent: int) -> list[str]:
+    pad = " " * indent
+    lines = [f"{pad}line:"]
     for key in ("y0", "x0", "y1", "x1"):
-        lines.append(f"  {key}: {_yaml_scalar(line[key])}")
-    if "spatial_box" in payload:
-        box = payload["spatial_box"]
-        lines.append("spatial_box:")
-        if "corners" in box:
-            lines.append("  corners:")
-            for y_pt, x_pt in box["corners"]:
-                lines.append(f"    - [{_yaml_scalar(y_pt)}, {_yaml_scalar(x_pt)}]")
-        else:
-            for key in ("y0", "x0", "y1", "x1"):
-                lines.append(f"  {key}: {_yaml_scalar(box[key])}")
-    lines.append("orientation_search_config:")
-    lines.append("  orientation_configs:")
+        lines.append(f"{pad}  {key}: {_yaml_scalar(line[key])}")
+    return lines
+
+
+def _dump_spatial_box_block(box: dict, indent: int) -> list[str]:
+    pad = " " * indent
+    lines = [f"{pad}spatial_box:"]
+    if "corners" in box:
+        lines.append(f"{pad}  corners:")
+        for y_pt, x_pt in box["corners"]:
+            lines.append(f"{pad}    - [{_yaml_scalar(y_pt)}, {_yaml_scalar(x_pt)}]")
+        return lines
+    for key in ("y0", "x0", "y1", "x1"):
+        lines.append(f"{pad}  {key}: {_yaml_scalar(box[key])}")
+    return lines
+
+
+def _dump_orientation_search_config(payload: dict, indent: int = 0) -> list[str]:
+    pad = " " * indent
+    item_pad = " " * (indent + 4)
+    cont_pad = " " * (indent + 6)
+    lines = [
+        f"{pad}orientation_search_config:",
+        f"{pad}  orientation_configs:",
+    ]
     keys = (
         "psi_step",
         "theta_step",
@@ -535,9 +690,34 @@ def dump_constraint_yaml(payload: dict) -> str:
     for block in payload["orientation_search_config"]["orientation_configs"]:
         first = True
         for key in keys:
-            prefix = "    - " if first else "      "
+            prefix = f"{item_pad}- " if first else cont_pad
             lines.append(f"{prefix}{key}: {_yaml_scalar(block[key])}")
             first = False
+    return lines
+
+
+def _dump_single_region_yaml(payload: dict) -> str:
+    lines = [
+        f"filament_angle_deg: {_yaml_scalar(payload['filament_angle_deg'])}",
+        *_dump_shared_header(payload),
+        *_dump_line_block(payload["line"], 0),
+    ]
+    if "spatial_box" in payload:
+        lines.extend(_dump_spatial_box_block(payload["spatial_box"], 0))
+    lines.extend(_dump_orientation_search_config(payload))
+    return "\n".join(lines) + "\n"
+
+
+def _dump_multi_region_yaml(payload: dict) -> str:
+    lines = _dump_shared_header(payload)
+    lines.append("regions:")
+    for region in payload["regions"]:
+        lines.append(
+            f"  - filament_angle_deg: {_yaml_scalar(region['filament_angle_deg'])}"
+        )
+        lines.extend(_dump_line_block(region["line"], 4))
+        if "spatial_box" in region:
+            lines.extend(_dump_spatial_box_block(region["spatial_box"], 4))
     return "\n".join(lines) + "\n"
 
 
@@ -558,6 +738,7 @@ def build_viewer(
             QHBoxLayout,
             QLabel,
             QLineEdit,
+            QListWidget,
             QPushButton,
             QTextEdit,
             QVBoxLayout,
@@ -567,6 +748,14 @@ def build_viewer(
         raise SystemExit(_NAPARI_INSTALL_MESSAGE) from exc
 
     viewer = napari.Viewer(title="Choose filament constraint")
+    committed = viewer.add_shapes(
+        name="committed_regions",
+        ndim=2,
+        edge_color="tomato",
+        edge_width=3,
+        face_color="transparent",
+    )
+    committed.editable = False
     search_region = viewer.add_shapes(
         name="search_region",
         ndim=2,
@@ -591,6 +780,8 @@ def build_viewer(
     )
     shapes.mode = "add_line"
 
+    committed_regions: list[dict] = []
+
     panel = QWidget()
     layout = QVBoxLayout(panel)
 
@@ -599,8 +790,9 @@ def build_viewer(
             "1. Load a micrograph\n"
             "2. Draw a line along the filament\n"
             "3. Click four corners for allowed particle centers\n"
-            "4. Set the ± Euler-box range\n"
-            "5. Export YAML + HDF5"
+            "4. Click Add region (repeat for each filament)\n"
+            "5. Set the shared ± Euler-box range\n"
+            "6. Export YAML + HDF5"
         )
     )
 
@@ -687,20 +879,36 @@ def build_viewer(
     form.addRow("theta center", theta_center_spin)
     layout.addLayout(form)
 
+    layout.addWidget(QLabel("Regions"))
+    region_list = QListWidget()
+    region_list.setMinimumHeight(90)
+    layout.addWidget(region_list)
+    region_buttons = QHBoxLayout()
+    add_region_button = QPushButton("Add region")
+    delete_region_button = QPushButton("Delete")
+    focus_region_button = QPushButton("Focus")
+    region_buttons.addWidget(add_region_button)
+    region_buttons.addWidget(delete_region_button)
+    region_buttons.addWidget(focus_region_button)
+    layout.addLayout(region_buttons)
+
     output_edit = _path_row("Output YAML", output_path, save=True)
     export_button = QPushButton("Export constraint YAML")
     layout.addWidget(export_button)
 
-    preview = QTextEdit()
-    preview.setReadOnly(True)
-    preview.setPlainText(
+    help_text = (
         "Draw a line along the filament and four corners for allowed centers.\n"
+        "Click Add region to keep that pair, then draw the next filament.\n"
         "The line sets psi (in-plane angle of the tube in the image).\n"
         "The four points define a quadrilateral in pos_x_img / pos_y_img\n"
         "(particle center); click order does not matter.\n"
         "phi is searched 0-360° around the tube.\n"
-        "A second pole at psi+180° covers the flip."
+        "A second pole at psi+180° covers the flip.\n"
+        "A complete scratch pair is included on export even without Add."
     )
+    preview = QTextEdit()
+    preview.setReadOnly(True)
+    preview.setPlainText(help_text)
     layout.addWidget(preview)
 
     def current_micrograph_path() -> str | None:
@@ -708,6 +916,25 @@ def build_viewer(
         if text and Path(text).is_file():
             return text
         return None
+
+    def payload_kwargs() -> dict:
+        return {
+            "cone_half_angle_deg": float(cone_spin.value()),
+            "psi_step": float(psi_step_spin.value()),
+            "theta_step": float(theta_step_spin.value()),
+            "theta_center_deg": float(theta_center_spin.value()),
+            "micrograph_path": current_micrograph_path(),
+        }
+
+    def payload_from_region(region: dict) -> dict:
+        return build_constraint_payload(
+            y0=region["y0"],
+            x0=region["x0"],
+            y1=region["y1"],
+            x1=region["x1"],
+            spatial_box=region["corners"],
+            **payload_kwargs(),
+        )
 
     def sync_search_outline() -> None:
         """Draw the quadrilateral connecting the four corner points."""
@@ -718,6 +945,51 @@ def build_viewer(
             return
         search_region.data = [corners]
         search_region.shape_type = ["polygon"]
+
+    def sync_committed_overlay() -> None:
+        data = []
+        shape_types = []
+        colors = []
+        widths = []
+        focused_row = region_list.currentRow()
+        for index, region in enumerate(committed_regions):
+            color = region_color(index)
+            width = 6 if index == focused_row else 3
+            data.append(np.asarray(region["corners"], dtype=float))
+            shape_types.append("polygon")
+            colors.append(color)
+            widths.append(width)
+            data.append(
+                np.array(
+                    [
+                        [region["y0"], region["x0"]],
+                        [region["y1"], region["x1"]],
+                    ],
+                    dtype=float,
+                )
+            )
+            shape_types.append("line")
+            colors.append(color)
+            widths.append(width + 2)
+        if not data:
+            committed.data = []
+            return
+        committed.data = data
+        committed.shape_type = shape_types
+        committed.edge_color = colors
+        committed.edge_width = widths
+        committed.editable = False
+
+    def refresh_region_list() -> None:
+        current = region_list.currentRow()
+        region_list.blockSignals(True)
+        region_list.clear()
+        for index, region in enumerate(committed_regions):
+            region_list.addItem(f"{index + 1}  psi {region['filament_angle_deg']:.1f}°")
+        if committed_regions:
+            region_list.setCurrentRow(min(max(current, 0), len(committed_regions) - 1))
+        region_list.blockSignals(False)
+        sync_committed_overlay()
 
     def current_payload() -> dict:
         y0, x0, y1, x1 = last_filament_line(shapes)
@@ -730,22 +1002,75 @@ def build_viewer(
             x0=x0,
             y1=y1,
             x1=x1,
-            cone_half_angle_deg=float(cone_spin.value()),
-            psi_step=float(psi_step_spin.value()),
-            theta_step=float(theta_step_spin.value()),
-            theta_center_deg=float(theta_center_spin.value()),
-            micrograph_path=current_micrograph_path(),
             spatial_box=box,
+            **payload_kwargs(),
         )
 
     def refresh_preview() -> None:
         sync_search_outline()
+        committed_payloads = [
+            payload_from_region(region) for region in committed_regions
+        ]
+        scratch_payload = None
+        scratch_error = None
         try:
-            payload = current_payload()
+            scratch_payload = current_payload()
         except (ValueError, IndexError) as exc:
+            scratch_error = str(exc)
+        chunks: list[str] = []
+        if committed_payloads:
+            chunks.append(preview_regions_text(committed_payloads))
+        if scratch_payload is not None and "spatial_box" in scratch_payload:
+            scratch_text = preview_text(scratch_payload)
+            if committed_payloads:
+                chunks.append(f"Scratch (click Add region to keep):\n{scratch_text}")
+            else:
+                chunks.append(scratch_text)
+        elif scratch_error and not committed_payloads:
+            chunks.append(scratch_error)
+        preview.setPlainText("\n\n".join(chunks) if chunks else help_text)
+
+    def clear_scratch() -> None:
+        shapes.data = []
+        search_corners.data = []
+        search_region.data = []
+        shapes.mode = "add_line"
+        search_corners.mode = "add"
+
+    def on_add_region() -> None:
+        try:
+            y0, x0, y1, x1 = last_filament_line(shapes)
+            corners = last_search_corners(search_corners)
+        except ValueError as exc:
             preview.setPlainText(str(exc))
             return
-        preview.setPlainText(preview_text(payload))
+        committed_regions.append(region_from_line_and_corners(y0, x0, y1, x1, corners))
+        clear_scratch()
+        refresh_region_list()
+        region_list.setCurrentRow(len(committed_regions) - 1)
+        refresh_preview()
+
+    def on_delete_region() -> None:
+        row = region_list.currentRow()
+        if row < 0 or row >= len(committed_regions):
+            preview.setPlainText("Select a region to delete.")
+            return
+        committed_regions.pop(row)
+        refresh_region_list()
+        refresh_preview()
+
+    def on_focus_region() -> None:
+        row = region_list.currentRow()
+        if row < 0 or row >= len(committed_regions):
+            preview.setPlainText("Select a region to focus.")
+            return
+        corners = np.asarray(committed_regions[row]["corners"], dtype=float)
+        cy, cx = corners.mean(axis=0)
+        center = list(viewer.camera.center)
+        center[-2] = float(cy)
+        center[-1] = float(cx)
+        viewer.camera.center = tuple(center)
+        sync_committed_overlay()
 
     def load_display_kwargs() -> tuple[float | None, float, float | None]:
         lowpass = float(lowpass_spin.value()) if lowpass_check.isChecked() else None
@@ -773,10 +1098,27 @@ def build_viewer(
         shapes.mode = "add_line"
         search_corners.mode = "add"
         raise_constraint_layers(viewer)
-        try:
-            preview.setPlainText(f"{notes}\n\n{preview_text(current_payload())}")
-        except (ValueError, IndexError):
+        refresh_preview()
+        current = preview.toPlainText()
+        if current and current != help_text:
+            preview.setPlainText(f"{notes}\n\n{current}")
+        else:
             preview.setPlainText(notes)
+
+    def regions_for_export() -> list[dict]:
+        payloads = [payload_from_region(region) for region in committed_regions]
+        try:
+            scratch = current_payload()
+        except (ValueError, IndexError):
+            scratch = None
+        if scratch is not None and "spatial_box" in scratch:
+            payloads.append(scratch)
+        if not payloads:
+            raise ValueError(
+                "Add at least one region: draw a line and four corners, "
+                "then Add region (or export the current scratch pair)."
+            )
+        return payloads
 
     def on_export() -> None:
         out = output_edit.text().strip()
@@ -784,14 +1126,10 @@ def build_viewer(
             preview.setPlainText("Choose an output YAML path first.")
             return
         try:
-            box = last_search_corners(search_corners)
-            payload = current_payload()
-            if "spatial_box" not in payload:
-                raise ValueError("Place exactly four search-region corners.")
+            region_payloads = regions_for_export()
             out_path = Path(out)
             out_path.parent.mkdir(parents=True, exist_ok=True)
             h5_path = out_path.with_suffix(".h5")
-            payload["spatial_constraint_path"] = str(h5_path)
 
             micrograph_layer = next(
                 (layer for layer in viewer.layers if layer.name == "micrograph"),
@@ -800,12 +1138,21 @@ def build_viewer(
             if micrograph_layer is None:
                 raise ValueError("Load a micrograph before exporting.")
             image_shape = tuple(int(v) for v in micrograph_layer.data.shape[-2:])
-            n_orient = estimate_n_orientations(
-                payload["orientation_search_config"]["orientation_configs"]
-            )
-            eligible, region_id, n_orients = rasterize_search_box(
-                image_shape, box, n_orientations=n_orient
-            )
+            parts = []
+            for index, payload in enumerate(region_payloads, start=1):
+                n_orient = estimate_n_orientations(
+                    payload["orientation_search_config"]["orientation_configs"]
+                )
+                corners = np.asarray(payload["spatial_box"]["corners"], dtype=float)
+                parts.append(
+                    rasterize_search_box(
+                        image_shape,
+                        corners,
+                        n_orientations=n_orient,
+                        region_id=index,
+                    )
+                )
+            eligible, region_id, n_orients = combine_search_boxes(parts)
             px = float(pixel_size_spin.value())
             pixel_size = px if px > 0.0 else None
             write_spatial_constraint_hdf5(
@@ -813,21 +1160,28 @@ def build_viewer(
                 eligible,
                 region_id,
                 n_orients,
-                payload,
-                box,
+                region_payloads,
                 pixel_size_angstrom=pixel_size,
             )
-            out_path.write_text(dump_constraint_yaml(payload), encoding="utf-8")
+            sidecar = sidecar_payload_from_regions(
+                region_payloads, spatial_constraint_path=str(h5_path)
+            )
+            out_path.write_text(dump_constraint_yaml(sidecar), encoding="utf-8")
         except (ValueError, IndexError, OSError) as exc:
             preview.setPlainText(str(exc))
             return
         preview.setPlainText(
-            f"Wrote {out_path}\nWrote {h5_path}\n\n{preview_text(payload)}"
+            f"Wrote {out_path}\nWrote {h5_path}\n\n"
+            f"{preview_regions_text(region_payloads)}"
         )
         print(f"Wrote filament constraint to {out_path}")
         print(f"Wrote spatial constraint maps to {h5_path}")
 
     load_button.clicked.connect(on_load)
+    add_region_button.clicked.connect(on_add_region)
+    delete_region_button.clicked.connect(on_delete_region)
+    focus_region_button.clicked.connect(on_focus_region)
+    region_list.currentRowChanged.connect(lambda _: sync_committed_overlay())
     export_button.clicked.connect(on_export)
     cone_spin.valueChanged.connect(lambda _: refresh_preview())
     psi_step_spin.valueChanged.connect(lambda _: refresh_preview())
@@ -850,8 +1204,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """Parse command-line arguments for the napari helper."""
     parser = argparse.ArgumentParser(
         description=(
-            "Draw a filament line and four search-region corners in napari, "
-            "then export an Euler-box constraint YAML."
+            "Draw filament lines and four search-region corners in napari, "
+            "commit each pair as a region, then export an Euler-box constraint YAML."
         )
     )
     parser.add_argument(

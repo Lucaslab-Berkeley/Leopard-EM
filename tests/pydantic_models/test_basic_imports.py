@@ -27,6 +27,7 @@ def test_config_imports():
             DefocusSearchConfig,
             FilamentConstraint,
             FilamentLine,
+            FilamentRegion,
             OrientationSearchConfig,
             PhaseRandomizationFilterConfig,
             PixelSizeSearchConfig,

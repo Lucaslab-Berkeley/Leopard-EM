@@ -21,7 +21,7 @@ from typing import Annotated, Any, ClassVar, Literal
 
 import numpy as np
 import yaml
-from pydantic import AliasChoices, ConfigDict, Field
+from pydantic import AliasChoices, ConfigDict, Field, model_validator
 
 from leopard_em.pydantic_models.custom_types import BaseModel2DTM
 
@@ -31,6 +31,7 @@ from .spatial_constraint import (
     SpatialConstraintMaps,
     _as_euler_array,
     _in_angle_range,
+    combine_spatial_maps,
     rasterize_rectangle,
     read_spatial_constraint_hdf5,
     write_spatial_constraint_hdf5,
@@ -52,22 +53,38 @@ class FilamentLine(BaseModel2DTM):
     x1: float
 
 
+class FilamentRegion(BaseModel2DTM):
+    """One filament line plus its search quadrilateral.
+
+    ``region_id`` is GUI grouping: later regions win where boxes overlap.
+    Eligible orientations for pixels in this region come from this region's
+    ``filament_angle_deg`` (psi) and the parent sidecar's shared Euler box.
+    """
+
+    model_config: ClassVar = ConfigDict(extra="ignore")
+
+    filament_angle_deg: float
+    line: FilamentLine | None = None
+    spatial_box: SpatialBox | None = None
+
+
 class FilamentConstraint(BaseModel2DTM):
     """Sidecar that subsets a YAML orientation search, not a replacement grid.
 
     The match-template YAML still owns the FFT / default mean-variance Euler
-    list. This model stores an Euler box around an in-plane filament line. At
-    runtime that box is intersected with the YAML angles to build a
-    per-pixel (or broadcast 1-D) eligibility mask.
+    list. This model stores an Euler box around one or more in-plane filament
+    lines. At runtime each region's box is intersected with the YAML angles to
+    build a per-pixel eligibility mask.
 
     Attributes
     ----------
-    filament_angle_deg : float
-        In-plane filament angle in degrees, used as ``psi`` for pole 1. See
-        ``filament_psi_from_image_line``.
+    filament_angle_deg : float, optional
+        In-plane filament angle in degrees, used as ``psi`` for pole 1 when
+        there is a single region. Required unless ``regions`` is non-empty.
+        See ``filament_psi_from_image_line``.
     cone_half_angle_deg : float
         Half-width of the Euler box around each pole, in degrees. Applied to
-        both ``theta`` and ``psi``.
+        both ``theta`` and ``psi``. Shared by all regions.
     theta_center_deg : float
         Center of the ``theta`` box. Default 90° (side-on).
     phi_min, phi_max : float
@@ -78,15 +95,19 @@ class FilamentConstraint(BaseModel2DTM):
     base_grid_method : str
         Sampling method forwarded to the preview ``OrientationSearchConfig``.
     line : FilamentLine, optional
-        Image-space line the angle was measured from.
+        Image-space line the angle was measured from (single-region YAML).
     micrograph_path : str, optional
         Micrograph the line was drawn on.
     spatial_constraint_path : str, optional
         Path to a per-pixel constraint HDF5 written by the napari helper.
     spatial_box : SpatialBox, optional
         Image-space quadrilateral of four ``(y, x)`` corners (particle-center
-        coordinates). Stored for round-trip; the HDF5 is authoritative at
-        runtime. Legacy ``y0, x0, y1, x1`` YAML is still accepted.
+        coordinates) for a single-region sidecar. Legacy ``y0, x0, y1, x1``
+        YAML is still accepted.
+    regions : list[FilamentRegion], optional
+        Multiple filament boxes. When set, each entry has its own line, psi,
+        and spatial box; the Euler ± range above is shared. Later regions win
+        where boxes overlap.
     stats_from_valid_orientations_defocus : bool
         If True, mean/variance use only eligible (pixel, orientation, defocus)
         tuples. Default False keeps mean/variance from all searched angles and
@@ -97,7 +118,7 @@ class FilamentConstraint(BaseModel2DTM):
     # Sidecar YAML may also contain a generated orientation_search_config block.
     model_config: ClassVar = ConfigDict(extra="ignore", populate_by_name=True)
 
-    filament_angle_deg: float
+    filament_angle_deg: float | None = None
     cone_half_angle_deg: Annotated[float, Field(gt=0.0, le=180.0)] = 10.0
     theta_center_deg: float = 90.0
     phi_min: float = 0.0
@@ -109,6 +130,7 @@ class FilamentConstraint(BaseModel2DTM):
     micrograph_path: str | None = None
     spatial_constraint_path: str | None = None
     spatial_box: SpatialBox | None = None
+    regions: list[FilamentRegion] = Field(default_factory=list)
     stats_from_valid_orientations_defocus: bool = Field(
         default=False,
         validation_alias=AliasChoices(
@@ -116,6 +138,37 @@ class FilamentConstraint(BaseModel2DTM):
             "stats_from_valid_orientations",
         ),
     )
+
+    @model_validator(mode="after")
+    def _require_angle_or_regions(self) -> FilamentConstraint:
+        if self.regions:
+            return self
+        if self.filament_angle_deg is None:
+            raise ValueError(
+                "filament_angle_deg is required unless regions is non-empty."
+            )
+        return self
+
+    def iter_regions(self) -> list[FilamentRegion]:
+        """Return committed regions, or one synthetic region from top-level fields."""
+        if self.regions:
+            return list(self.regions)
+        return [
+            FilamentRegion(
+                filament_angle_deg=float(self.filament_angle_deg),
+                line=self.line,
+                spatial_box=self.spatial_box,
+            )
+        ]
+
+    def _resolved_filament_angle(
+        self, filament_angle_deg: float | None = None
+    ) -> float:
+        if filament_angle_deg is not None:
+            return float(filament_angle_deg)
+        if self.filament_angle_deg is not None:
+            return float(self.filament_angle_deg)
+        return float(self.iter_regions()[0].filament_angle_deg)
 
     @classmethod
     def from_line(
@@ -134,17 +187,22 @@ class FilamentConstraint(BaseModel2DTM):
             **kwargs,
         )
 
-    def pole_psi_angles_deg(self) -> tuple[float, float]:
+    def pole_psi_angles_deg(
+        self, filament_angle_deg: float | None = None
+    ) -> tuple[float, float]:
         """Return the two in-plane poles ``(psi, psi + 180)`` in ``[0, 360)``."""
-        pole_1 = _wrap_360(self.filament_angle_deg)
-        pole_2 = _wrap_360(self.filament_angle_deg + 180.0)
+        angle = self._resolved_filament_angle(filament_angle_deg)
+        pole_1 = _wrap_360(angle)
+        pole_2 = _wrap_360(angle + 180.0)
         return pole_1, pole_2
 
     def theta_range_deg(self) -> tuple[float, float]:
         """Return the clamped ``(theta_min, theta_max)`` Euler-box range."""
         return _clamp_theta_range(self.theta_center_deg, self.cone_half_angle_deg)
 
-    def to_orientation_config(self) -> MultipleOrientationConfig:
+    def to_orientation_config(
+        self, filament_angle_deg: float | None = None
+    ) -> MultipleOrientationConfig:
         """Build the two-pole (possibly wrap-split) orientation search."""
         theta_min, theta_max = self.theta_range_deg()
         configs: list[OrientationSearchConfig] = []
@@ -160,7 +218,7 @@ class FilamentConstraint(BaseModel2DTM):
             )
             return MultipleOrientationConfig(orientation_configs=configs)
 
-        for pole_psi in self.pole_psi_angles_deg():
+        for pole_psi in self.pole_psi_angles_deg(filament_angle_deg):
             for psi_min, psi_max in periodic_euler_box_intervals(
                 pole_psi, self.cone_half_angle_deg
             ):
@@ -175,7 +233,9 @@ class FilamentConstraint(BaseModel2DTM):
 
         return MultipleOrientationConfig(orientation_configs=configs)
 
-    def orientation_allowed_mask(self, euler_angles: Any) -> np.ndarray:
+    def orientation_allowed_mask(
+        self, euler_angles: Any, filament_angle_deg: float | None = None
+    ) -> np.ndarray:
         """Return a ``(N,)`` bool mask of YAML angles inside this Euler box.
 
         ``euler_angles`` is ``(N, 3)`` with columns ``(phi, theta, psi)`` in
@@ -195,33 +255,53 @@ class FilamentConstraint(BaseModel2DTM):
         else:
             psi_ok = np.zeros(psi.shape, dtype=bool)
             half = float(self.cone_half_angle_deg)
-            for pole in self.pole_psi_angles_deg():
+            for pole in self.pole_psi_angles_deg(filament_angle_deg):
                 delta = np.abs(((psi - pole + 180.0) % 360.0) - 180.0)
                 psi_ok |= delta <= half + 1e-3
         return phi_ok & theta_ok & psi_ok
 
     def preview_text(self) -> str:
         """Human-readable summary of the Euler boxes for the GUI."""
-        pole_1, pole_2 = self.pole_psi_angles_deg()
         theta_min, theta_max = self.theta_range_deg()
-        lines = [
-            f"psi pole 1: {_round_angle(pole_1):.2f}°",
-            f"psi pole 2: {_round_angle(pole_2):.2f}°",
+        regions = self.iter_regions()
+        header = [
             f"Euler box ±{self.cone_half_angle_deg:g}°",
             f"  theta: [{theta_min:.2f}, {theta_max:.2f}]",
             f"  phi:   [{self.phi_min:.2f}, {self.phi_max:.2f}]",
         ]
-        for i, pole_psi in enumerate((pole_1, pole_2), start=1):
-            intervals = periodic_euler_box_intervals(
-                pole_psi, self.cone_half_angle_deg
+        if len(regions) == 1:
+            pole_1, pole_2 = self.pole_psi_angles_deg(regions[0].filament_angle_deg)
+            lines = [
+                f"psi pole 1: {_round_angle(pole_1):.2f}°",
+                f"psi pole 2: {_round_angle(pole_2):.2f}°",
+                *header,
+            ]
+            for i, pole_psi in enumerate((pole_1, pole_2), start=1):
+                intervals = periodic_euler_box_intervals(
+                    pole_psi, self.cone_half_angle_deg
+                )
+                interval_str = ", ".join(
+                    f"[{lo:.2f}, {hi:.2f}]" for lo, hi in intervals
+                )
+                lines.append(f"  psi pole {i}: {interval_str}")
+            return "\n".join(lines)
+
+        lines = [f"{len(regions)} regions", *header]
+        for index, region in enumerate(regions, start=1):
+            pole_1, pole_2 = self.pole_psi_angles_deg(region.filament_angle_deg)
+            lines.append(
+                f"region {index}: psi {_round_angle(pole_1):.2f}° / "
+                f"{_round_angle(pole_2):.2f}°"
             )
-            interval_str = ", ".join(f"[{lo:.2f}, {hi:.2f}]" for lo, hi in intervals)
-            lines.append(f"  psi pole {i}: {interval_str}")
         return "\n".join(lines)
 
     def to_sidecar_dict(self) -> dict[str, Any]:
         """Serialize constraint fields plus the generated orientation config."""
         payload = self.model_dump(exclude_none=True)
+        if not payload.get("regions"):
+            payload.pop("regions", None)
+        if self.regions:
+            return payload
         payload["orientation_search_config"] = self.to_orientation_config().model_dump()
         return payload
 
@@ -256,10 +336,14 @@ class FilamentConstraint(BaseModel2DTM):
         """Return maps in stats-map (``pos_xy``) coordinates, or None.
 
         If ``defocus_values`` / ``euler_angles`` are given, optional HDF5
-        bounds are expanded against this run's YAML grids. A missing
-        orientation mask is filled from this constraint's Euler box.
+        bounds are expanded against this run's YAML grids. Region Euler boxes
+        in the HDF5 (or rasterized from YAML ``spatial_box``) become
+        ``orientation_eligible``. A missing orientation mask is filled from
+        this constraint's Euler box.
         """
         maps = self.load_spatial_maps()
+        if maps is None:
+            maps = self.rasterize_spatial_maps(image_shape)
         if maps is None:
             return None
         half_width = int(template_width) // 2
@@ -277,16 +361,47 @@ class FilamentConstraint(BaseModel2DTM):
             maps.expand_defocus_against_grid(defocus_values)
         if euler_angles is not None:
             maps.expand_orientation_against_grid(euler_angles)
-            # YAML Euler box is authoritative. Region-table boxes in an older
-            # HDF5 may still describe the inverted phi/psi assignment.
-            if (
-                maps.orientation_eligible is None
-                or np.asarray(maps.orientation_eligible).ndim == 1
-            ):
+            if maps.orientation_eligible is None:
                 maps.apply_orientation_mask_1d(
                     self.orientation_allowed_mask(euler_angles)
                 )
         return maps
+
+    def rasterize_spatial_maps(
+        self,
+        image_shape: tuple[int, int],
+        n_orientations: int | None = None,
+        pixel_size_angstrom: float | None = None,
+    ) -> SpatialConstraintMaps | None:
+        """Paint every region's ``spatial_box`` onto ``(H, W)`` maps.
+
+        Later regions overwrite ``region_id`` where boxes overlap. Returns
+        None if no region has a spatial box.
+        """
+        parts: list[SpatialConstraintMaps] = []
+        for index, region in enumerate(self.iter_regions(), start=1):
+            if region.spatial_box is None:
+                continue
+            n_orients = n_orientations
+            if n_orients is None:
+                n_orients = int(
+                    self.to_orientation_config(
+                        region.filament_angle_deg
+                    ).euler_angles.shape[0]
+                )
+            maps = rasterize_rectangle(
+                image_shape=image_shape,
+                box=region.spatial_box,
+                n_orientations=n_orients,
+                region_id=index,
+            )
+            maps.regions = [self._region_table_entry(region, index)]
+            parts.append(maps)
+        if not parts:
+            return None
+        combined = combine_spatial_maps(parts)
+        combined.pixel_size_angstrom = pixel_size_angstrom
+        return combined
 
     def write_spatial_hdf5(
         self,
@@ -296,40 +411,47 @@ class FilamentConstraint(BaseModel2DTM):
         pixel_size_angstrom: float | None = None,
         leopard_em_version: str = "uninstalled",
     ) -> SpatialConstraintMaps:
-        """Rasterize ``spatial_box`` and write the constraint HDF5."""
-        if self.spatial_box is None:
-            raise ValueError("spatial_box is required to write a constraint HDF5.")
-        if n_orientations is None:
-            n_orientations = int(self.to_orientation_config().euler_angles.shape[0])
-        maps = rasterize_rectangle(
-            image_shape=image_shape,
-            box=self.spatial_box,
-            n_orientations=n_orientations,
-        )
-        maps.pixel_size_angstrom = pixel_size_angstrom
-        maps.regions = [
-            {
-                "cone_half_angle_deg": self.cone_half_angle_deg,
-                "theta_center_deg": self.theta_center_deg,
-                "phi_min": self.phi_min,
-                "phi_max": self.phi_max,
-                "psi_step": self.psi_step,
-                "theta_step": self.theta_step,
-                "base_grid_method": self.base_grid_method,
-                "region_id": 1,
-                "filament_angle_deg": self.filament_angle_deg,
-                "box": self.spatial_box.corner_array(),
-                "line": None
-                if self.line is None
-                else (self.line.y0, self.line.x0, self.line.y1, self.line.x1),
-                "orientation_configs": [
-                    block.model_dump()
-                    for block in self.to_orientation_config().orientation_configs
-                ],
-            }
+        """Rasterize region boxes and write the constraint HDF5."""
+        missing = [
+            index
+            for index, region in enumerate(self.iter_regions(), start=1)
+            if region.spatial_box is None
         ]
+        if missing:
+            raise ValueError(
+                "spatial_box is required to write a constraint HDF5 "
+                f"(missing on region(s) {missing})."
+            )
+        maps = self.rasterize_spatial_maps(
+            image_shape,
+            n_orientations=n_orientations,
+            pixel_size_angstrom=pixel_size_angstrom,
+        )
+        if maps is None:
+            raise ValueError("spatial_box is required to write a constraint HDF5.")
         write_spatial_constraint_hdf5(path, maps, leopard_em_version=leopard_em_version)
         return maps
+
+    def _region_table_entry(self, region: FilamentRegion, region_id: int) -> dict:
+        config = self.to_orientation_config(region.filament_angle_deg)
+        line = region.line
+        box = None if region.spatial_box is None else region.spatial_box.corner_array()
+        return {
+            "cone_half_angle_deg": self.cone_half_angle_deg,
+            "theta_center_deg": self.theta_center_deg,
+            "phi_min": self.phi_min,
+            "phi_max": self.phi_max,
+            "psi_step": self.psi_step,
+            "theta_step": self.theta_step,
+            "base_grid_method": self.base_grid_method,
+            "region_id": region_id,
+            "filament_angle_deg": region.filament_angle_deg,
+            "box": box,
+            "line": None if line is None else (line.y0, line.x0, line.y1, line.x1),
+            "orientation_configs": [
+                block.model_dump() for block in config.orientation_configs
+            ],
+        }
 
     def _make_orientation_config(
         self,
