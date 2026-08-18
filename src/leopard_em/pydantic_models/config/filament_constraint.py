@@ -1,15 +1,17 @@
 """Filament orientation constraint: Euler-box search around an in-plane line.
 
 Assumes the template microtubule (or other filament) axis is along Z. Roma
-``'ZYZ'`` is intrinsic, with angles ordered ``(phi, theta, psi)``:
+``'ZYZ'`` is intrinsic, with angles ordered ``(phi, theta, psi)``. torch-so3
+treats ``(phi, theta)`` as the view on the sphere and ``psi`` as the in-plane
+rotation of that projection:
 
-* ``phi`` — azimuth of the tube in the image (the drawn line)
+* ``psi`` — in-plane angle of the tube in the image (the drawn line)
 * ``theta`` — tilt of the tube vs the beam (centered at 90° for side-on)
-* ``psi`` — roll around the tube (searched over a full 360°)
+* ``phi`` — roll around the tube (searched over a full 360°)
 
-A line drawn on the micrograph sets ``phi``. The opposite polarity along the
-same line is the second pole at ``phi + 180°``. The ± range is an Euler box
-in ``theta`` and ``phi`` around each pole, not a true spherical cone.
+A line drawn on the micrograph sets ``psi``. The opposite polarity along the
+same line is the second pole at ``psi + 180°``. The ± range is an Euler box
+in ``theta`` and ``psi`` around each pole, not a true spherical cone.
 """
 
 from __future__ import annotations
@@ -17,6 +19,7 @@ from __future__ import annotations
 import math
 from typing import Annotated, Any, ClassVar, Literal
 
+import numpy as np
 import yaml
 from pydantic import AliasChoices, ConfigDict, Field
 
@@ -26,6 +29,8 @@ from .orientation_search import MultipleOrientationConfig, OrientationSearchConf
 from .spatial_constraint import (
     SpatialBox,
     SpatialConstraintMaps,
+    _as_euler_array,
+    _in_angle_range,
     rasterize_rectangle,
     read_spatial_constraint_hdf5,
     write_spatial_constraint_hdf5,
@@ -48,25 +53,30 @@ class FilamentLine(BaseModel2DTM):
 
 
 class FilamentConstraint(BaseModel2DTM):
-    """Stage-1 filament constraint used to build a restricted orientation search.
+    """Sidecar that subsets a YAML orientation search, not a replacement grid.
+
+    The match-template YAML still owns the FFT / default mean-variance Euler
+    list. This model stores an Euler box around an in-plane filament line. At
+    runtime that box is intersected with the YAML angles to build a
+    per-pixel (or broadcast 1-D) eligibility mask.
 
     Attributes
     ----------
     filament_angle_deg : float
-        In-plane filament angle in degrees, used as ``phi`` for pole 1. This is
-        the azimuth of the template Z axis in a y-up lab frame (see
-        ``filament_phi_from_image_line``).
+        In-plane filament angle in degrees, used as ``psi`` for pole 1. See
+        ``filament_psi_from_image_line``.
     cone_half_angle_deg : float
         Half-width of the Euler box around each pole, in degrees. Applied to
-        both ``theta`` and ``phi``.
+        both ``theta`` and ``psi``.
     theta_center_deg : float
         Center of the ``theta`` box. Default 90° (side-on).
-    psi_min, psi_max : float
+    phi_min, phi_max : float
         Roll around the filament axis, in degrees. Default is a full 360°.
     psi_step, theta_step : float
-        Angular sampling of the generated ``OrientationSearchConfig`` blocks.
+        Angular sampling used when dumping a preview ``OrientationSearchConfig``.
+        The match-template YAML still controls the actual search sampling.
     base_grid_method : str
-        Sampling method forwarded to ``OrientationSearchConfig``.
+        Sampling method forwarded to the preview ``OrientationSearchConfig``.
     line : FilamentLine, optional
         Image-space line the angle was measured from.
     micrograph_path : str, optional
@@ -74,8 +84,9 @@ class FilamentConstraint(BaseModel2DTM):
     spatial_constraint_path : str, optional
         Path to a per-pixel constraint HDF5 written by the napari helper.
     spatial_box : SpatialBox, optional
-        Image-space rectangle (particle-center coordinates). Stored for
-        round-trip; the HDF5 is authoritative at runtime.
+        Image-space quadrilateral of four ``(y, x)`` corners (particle-center
+        coordinates). Stored for round-trip; the HDF5 is authoritative at
+        runtime. Legacy ``y0, x0, y1, x1`` YAML is still accepted.
     stats_from_valid_orientations_defocus : bool
         If True, mean/variance use only eligible (pixel, orientation, defocus)
         tuples. Default False keeps mean/variance from all searched angles and
@@ -89,8 +100,8 @@ class FilamentConstraint(BaseModel2DTM):
     filament_angle_deg: float
     cone_half_angle_deg: Annotated[float, Field(gt=0.0, le=180.0)] = 10.0
     theta_center_deg: float = 90.0
-    psi_min: float = 0.0
-    psi_max: float = 360.0
+    phi_min: float = 0.0
+    phi_max: float = 360.0
     psi_step: Annotated[float, Field(gt=0.0)] = 1.5
     theta_step: Annotated[float, Field(gt=0.0)] = 2.5
     base_grid_method: Literal["uniform", "healpix", "cartesian"] = "uniform"
@@ -116,15 +127,15 @@ class FilamentConstraint(BaseModel2DTM):
         **kwargs: Any,
     ) -> FilamentConstraint:
         """Build a constraint from an image-space line (y down, x right)."""
-        angle = filament_phi_from_image_line(y0, x0, y1, x1)
+        angle = filament_psi_from_image_line(y0, x0, y1, x1)
         return cls(
             filament_angle_deg=angle,
             line=FilamentLine(y0=y0, x0=x0, y1=y1, x1=x1),
             **kwargs,
         )
 
-    def pole_phi_angles_deg(self) -> tuple[float, float]:
-        """Return the two in-plane poles ``(phi, phi + 180)`` in ``[0, 360)``."""
+    def pole_psi_angles_deg(self) -> tuple[float, float]:
+        """Return the two in-plane poles ``(psi, psi + 180)`` in ``[0, 360)``."""
         pole_1 = _wrap_360(self.filament_angle_deg)
         pole_2 = _wrap_360(self.filament_angle_deg + 180.0)
         return pole_1, pole_2
@@ -141,22 +152,22 @@ class FilamentConstraint(BaseModel2DTM):
         if self.cone_half_angle_deg >= 180.0:
             configs.append(
                 self._make_orientation_config(
-                    phi_min=0.0,
-                    phi_max=360.0,
+                    psi_min=0.0,
+                    psi_max=360.0,
                     theta_min=theta_min,
                     theta_max=theta_max,
                 )
             )
             return MultipleOrientationConfig(orientation_configs=configs)
 
-        for pole_phi in self.pole_phi_angles_deg():
-            for phi_min, phi_max in phi_euler_box_intervals(
-                pole_phi, self.cone_half_angle_deg
+        for pole_psi in self.pole_psi_angles_deg():
+            for psi_min, psi_max in periodic_euler_box_intervals(
+                pole_psi, self.cone_half_angle_deg
             ):
                 configs.append(
                     self._make_orientation_config(
-                        phi_min=phi_min,
-                        phi_max=phi_max,
+                        psi_min=psi_min,
+                        psi_max=psi_max,
                         theta_min=theta_min,
                         theta_max=theta_max,
                     )
@@ -164,21 +175,48 @@ class FilamentConstraint(BaseModel2DTM):
 
         return MultipleOrientationConfig(orientation_configs=configs)
 
+    def orientation_allowed_mask(self, euler_angles: Any) -> np.ndarray:
+        """Return a ``(N,)`` bool mask of YAML angles inside this Euler box.
+
+        ``euler_angles`` is ``(N, 3)`` with columns ``(phi, theta, psi)`` in
+        degrees (roma ``'ZYZ'``). The mask is True where the angle falls in
+        the ``phi`` roll range, the ``theta`` box, and either pole's ``psi``
+        interval. This is the search-grid subset, not a new grid.
+        """
+        angles = _as_euler_array(euler_angles)
+        phi = angles[:, 0]
+        theta = angles[:, 1]
+        psi = angles[:, 2]
+        theta_min, theta_max = self.theta_range_deg()
+        theta_ok = _in_angle_range(theta, theta_min, theta_max, period=None)
+        phi_ok = _in_angle_range(phi, self.phi_min, self.phi_max, period=360.0)
+        if self.cone_half_angle_deg >= 180.0:
+            psi_ok = np.ones(psi.shape, dtype=bool)
+        else:
+            psi_ok = np.zeros(psi.shape, dtype=bool)
+            half = float(self.cone_half_angle_deg)
+            for pole in self.pole_psi_angles_deg():
+                delta = np.abs(((psi - pole + 180.0) % 360.0) - 180.0)
+                psi_ok |= delta <= half + 1e-3
+        return phi_ok & theta_ok & psi_ok
+
     def preview_text(self) -> str:
         """Human-readable summary of the Euler boxes for the GUI."""
-        pole_1, pole_2 = self.pole_phi_angles_deg()
+        pole_1, pole_2 = self.pole_psi_angles_deg()
         theta_min, theta_max = self.theta_range_deg()
         lines = [
-            f"phi pole 1: {_round_angle(pole_1):.2f}°",
-            f"phi pole 2: {_round_angle(pole_2):.2f}°",
+            f"psi pole 1: {_round_angle(pole_1):.2f}°",
+            f"psi pole 2: {_round_angle(pole_2):.2f}°",
             f"Euler box ±{self.cone_half_angle_deg:g}°",
             f"  theta: [{theta_min:.2f}, {theta_max:.2f}]",
-            f"  psi:   [{self.psi_min:.2f}, {self.psi_max:.2f}]",
+            f"  phi:   [{self.phi_min:.2f}, {self.phi_max:.2f}]",
         ]
-        for i, pole_phi in enumerate((pole_1, pole_2), start=1):
-            intervals = phi_euler_box_intervals(pole_phi, self.cone_half_angle_deg)
+        for i, pole_psi in enumerate((pole_1, pole_2), start=1):
+            intervals = periodic_euler_box_intervals(
+                pole_psi, self.cone_half_angle_deg
+            )
             interval_str = ", ".join(f"[{lo:.2f}, {hi:.2f}]" for lo, hi in intervals)
-            lines.append(f"  phi pole {i}: {interval_str}")
+            lines.append(f"  psi pole {i}: {interval_str}")
         return "\n".join(lines)
 
     def to_sidecar_dict(self) -> dict[str, Any]:
@@ -200,26 +238,26 @@ class FilamentConstraint(BaseModel2DTM):
     def load_spatial_maps(self) -> SpatialConstraintMaps | None:
         """Load per-pixel maps from ``spatial_constraint_path``, if set.
 
-        ``n_orientations`` is filled from this constraint's Euler-angle grid
-        so the count matches the search that will actually run.
+        ``n_orientations`` is whatever was stored at write time. Call
+        ``expand_orientation_against_grid`` (via ``stats_maps_for_template``)
+        to count YAML angles inside this Euler box.
         """
         if not self.spatial_constraint_path:
             return None
-        maps = read_spatial_constraint_hdf5(self.spatial_constraint_path)
-        n_orient = int(self.to_orientation_config().euler_angles.shape[0])
-        maps.fill_n_orientations(n_orient)
-        return maps
+        return read_spatial_constraint_hdf5(self.spatial_constraint_path)
 
     def stats_maps_for_template(
         self,
         image_shape: tuple[int, int],
         template_width: int,
         defocus_values: Any | None = None,
+        euler_angles: Any | None = None,
     ) -> SpatialConstraintMaps | None:
         """Return maps in stats-map (``pos_xy``) coordinates, or None.
 
-        If ``defocus_values`` is given, optional HDF5 defocus bounds are expanded
-        against that grid (relative Å, same as ``DefocusSearchConfig``).
+        If ``defocus_values`` / ``euler_angles`` are given, optional HDF5
+        bounds are expanded against this run's YAML grids. A missing
+        orientation mask is filled from this constraint's Euler box.
         """
         maps = self.load_spatial_maps()
         if maps is None:
@@ -237,6 +275,17 @@ class FilamentConstraint(BaseModel2DTM):
         maps = maps.to_stats_map_coords(half_width, stats_shape)
         if defocus_values is not None:
             maps.expand_defocus_against_grid(defocus_values)
+        if euler_angles is not None:
+            maps.expand_orientation_against_grid(euler_angles)
+            # YAML Euler box is authoritative. Region-table boxes in an older
+            # HDF5 may still describe the inverted phi/psi assignment.
+            if (
+                maps.orientation_eligible is None
+                or np.asarray(maps.orientation_eligible).ndim == 1
+            ):
+                maps.apply_orientation_mask_1d(
+                    self.orientation_allowed_mask(euler_angles)
+                )
         return maps
 
     def write_spatial_hdf5(
@@ -262,18 +311,14 @@ class FilamentConstraint(BaseModel2DTM):
             {
                 "cone_half_angle_deg": self.cone_half_angle_deg,
                 "theta_center_deg": self.theta_center_deg,
-                "psi_min": self.psi_min,
-                "psi_max": self.psi_max,
+                "phi_min": self.phi_min,
+                "phi_max": self.phi_max,
                 "psi_step": self.psi_step,
                 "theta_step": self.theta_step,
                 "base_grid_method": self.base_grid_method,
                 "region_id": 1,
-                "box": (
-                    self.spatial_box.y0,
-                    self.spatial_box.x0,
-                    self.spatial_box.y1,
-                    self.spatial_box.x1,
-                ),
+                "filament_angle_deg": self.filament_angle_deg,
+                "box": self.spatial_box.corner_array(),
                 "line": None
                 if self.line is None
                 else (self.line.y0, self.line.x0, self.line.y1, self.line.x1),
@@ -288,8 +333,8 @@ class FilamentConstraint(BaseModel2DTM):
 
     def _make_orientation_config(
         self,
-        phi_min: float,
-        phi_max: float,
+        psi_min: float,
+        psi_max: float,
         theta_min: float,
         theta_max: float,
     ) -> OrientationSearchConfig:
@@ -297,31 +342,30 @@ class FilamentConstraint(BaseModel2DTM):
             symmetry=None,
             psi_step=self.psi_step,
             theta_step=self.theta_step,
-            phi_min=_round_angle(phi_min),
-            phi_max=_round_angle(phi_max),
+            phi_min=_round_angle(self.phi_min),
+            phi_max=_round_angle(self.phi_max),
             theta_min=_round_angle(theta_min),
             theta_max=_round_angle(theta_max),
-            psi_min=_round_angle(self.psi_min),
-            psi_max=_round_angle(self.psi_max),
+            psi_min=_round_angle(psi_min),
+            psi_max=_round_angle(psi_max),
             base_grid_method=self.base_grid_method,
         )
 
 
-def filament_phi_from_image_line(
+def filament_psi_from_image_line(
     y0: float,
     x0: float,
     y1: float,
     x1: float,
 ) -> float:
-    """Return ``phi`` in degrees from an image-space line.
+    """Return in-plane ``psi`` in degrees from an image-space line.
 
     Image coordinates are numpy / napari ``(y, x)`` with ``y`` increasing
-    downward. After a roma ``'ZYZ'`` rotation with ``theta = 90°``, the
-    template Z axis (filament axis) lies along ``(cos phi, sin phi)`` in a
-    y-up lab frame, so the image-space line ``(dx, dy)`` maps to
-    ``phi = atan2(-dy, dx)``.
+    downward. torch-so3 ``'ZYZ'`` treats ``psi`` as the in-plane rotation of
+    the projection, so the image-space line ``(dx, dy)`` maps to
+    ``psi = atan2(-dy, dx)``.
 
-    The line is undirected: ``phi`` and ``phi + 180°`` are the two poles of
+    The line is undirected: ``psi`` and ``psi + 180°`` are the two poles of
     the same filament.
 
     Parameters
@@ -332,7 +376,7 @@ def filament_phi_from_image_line(
     Returns
     -------
     float
-        ``phi`` for pole 1, in ``[0, 360)``.
+        ``psi`` for pole 1, in ``[0, 360)``.
 
     Raises
     ------
@@ -346,11 +390,15 @@ def filament_phi_from_image_line(
     return _wrap_360(math.degrees(math.atan2(-dy, dx)))
 
 
-def phi_euler_box_intervals(
+# Deprecated alias; the image-plane angle is ZYZ psi, not phi.
+filament_phi_from_image_line = filament_psi_from_image_line
+
+
+def periodic_euler_box_intervals(
     center_deg: float,
     half_width_deg: float,
 ) -> list[tuple[float, float]]:
-    """Split ``center ± half_width`` into ``[0, 360]`` phi intervals.
+    """Split ``center ± half_width`` into ``[0, 360]`` intervals.
 
     A range that wraps past 0/360 is returned as two intervals so it can be
     represented by ``OrientationSearchConfig`` min/max fields.
@@ -374,6 +422,9 @@ def phi_euler_box_intervals(
     if hi > 0.0:
         intervals.append((0.0, _round_angle(hi)))
     return intervals
+
+
+phi_euler_box_intervals = periodic_euler_box_intervals
 
 
 def _clamp_theta_range(center_deg: float, half_width_deg: float) -> tuple[float, float]:

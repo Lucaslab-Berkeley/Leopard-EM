@@ -41,21 +41,21 @@ orientation_search_config:
       theta_step: 2.5
       symmetry: null
       phi_min: 0.0
-      phi_max: 20.0
+      phi_max: 360.0
       theta_min: 80.0
       theta_max: 100.0
       psi_min: 0.0
-      psi_max: 360.0
+      psi_max: 20.0
       base_grid_method: uniform
     - psi_step: 1.5
       theta_step: 2.5
       symmetry: null
-      phi_min: 180.0
-      phi_max: 200.0
+      phi_min: 0.0
+      phi_max: 360.0
       theta_min: 80.0
       theta_max: 100.0
-      psi_min: 0.0
-      psi_max: 360.0
+      psi_min: 180.0
+      psi_max: 200.0
       base_grid_method: uniform
 preprocessing_filters:
   whitening_filter:

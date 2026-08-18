@@ -115,6 +115,7 @@ class MatchTemplateManager(BaseModel2DTM):
     n_orientations_map: ExcludedTensor = None
     n_defocus_map: ExcludedTensor = None
     defocus_eligible: ExcludedTensor = None
+    orientation_eligible: ExcludedTensor = None
     stats_from_valid_orientations_defocus: bool = False
 
     ###########################
@@ -163,22 +164,33 @@ class MatchTemplateManager(BaseModel2DTM):
             if maps.defocus_eligible is None
             else torch.from_numpy(maps.defocus_eligible.astype(bool))
         )
+        self.orientation_eligible = (
+            None
+            if maps.orientation_eligible is None
+            else torch.from_numpy(maps.orientation_eligible.astype(bool))
+        )
         self.stats_from_valid_orientations_defocus = (
             stats_from_valid_orientations_defocus
         )
 
     def apply_filament_constraint(self, constraint: FilamentConstraint) -> None:
-        """Replace orientation search and optional spatial maps from a sidecar."""
-        self.orientation_search_config = constraint.to_orientation_config()
+        """Install per-pixel eligibility from a sidecar; keep the YAML search.
+
+        The match-template YAML ``orientation_search_config`` is the FFT grid.
+        The sidecar Euler box and optional HDF5 only subset which
+        (pixel, orientation, defocus) tuples may win the MIP.
+        """
         if self.micrograph is None:
             self.micrograph = load_mrc_image(self.micrograph_path)
         image = self.micrograph
         image_shape = (int(image.shape[-2]), int(image.shape[-1]))
         template_width = int(mrcfile.open(self.template_volume_path).header.nx)
+        euler_angles = self.orientation_search_config.euler_angles
         maps = constraint.stats_maps_for_template(
             image_shape,
             template_width,
             defocus_values=self.defocus_search_config.defocus_values,
+            euler_angles=euler_angles,
         )
         if maps is not None:
             self.apply_spatial_constraint(
@@ -187,6 +199,13 @@ class MatchTemplateManager(BaseModel2DTM):
                     constraint.stats_from_valid_orientations_defocus
                 ),
             )
+            return
+
+        mask_1d = constraint.orientation_allowed_mask(euler_angles)
+        self.orientation_eligible = torch.as_tensor(mask_1d, dtype=torch.bool)
+        self.stats_from_valid_orientations_defocus = (
+            constraint.stats_from_valid_orientations_defocus
+        )
 
     ############################################
     ### Functional (data processing) methods ###
@@ -283,6 +302,11 @@ class MatchTemplateManager(BaseModel2DTM):
                 None
                 if self.defocus_eligible is None
                 else torch.as_tensor(self.defocus_eligible, dtype=torch.bool)
+            ),
+            "orientation_eligible": (
+                None
+                if self.orientation_eligible is None
+                else torch.as_tensor(self.orientation_eligible, dtype=torch.bool)
             ),
             "stats_from_valid_orientations_defocus": (
                 self.stats_from_valid_orientations_defocus

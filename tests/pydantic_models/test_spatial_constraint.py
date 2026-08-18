@@ -9,6 +9,7 @@ import torch
 from leopard_em.analysis.zscore_metric import extract_peaks_and_statistics_zscore
 from leopard_em.pydantic_models.config import FilamentConstraint, SpatialBox
 from leopard_em.pydantic_models.config.spatial_constraint import (
+    rasterize_polygon,
     rasterize_rectangle,
     read_spatial_constraint_hdf5,
     write_spatial_constraint_hdf5,
@@ -30,6 +31,24 @@ def test_rasterize_rectangle_inclusive_bounds():
     assert int(maps.region_id[3, 4]) == 1
     expected = int(maps.eligible.sum()) * 12 * 2
     assert maps.allowed_num_ccg(n_defocus=2, n_cs=1) == expected
+
+
+def test_legacy_aabb_yaml_becomes_four_corners():
+    box = SpatialBox(y0=2, x0=3, y1=5, x1=6)
+    assert len(box.corners) == 4
+    assert box.as_ymin_xmin_ymax_xmax() == (2.0, 3.0, 5.0, 6.0)
+
+
+def test_rasterize_sheared_quad_excludes_aabb_outside():
+    corners = np.array(
+        [[1.0, 1.0], [1.0, 5.0], [5.0, 7.0], [5.0, 3.0]],
+        dtype=np.float64,
+    )
+    maps = rasterize_polygon((8, 10), corners=corners, n_orientations=2)
+    assert maps.eligible[2, 4] == 1
+    assert maps.eligible[2, 6] == 0
+    assert maps.eligible[0, 0] == 0
+    assert len(maps.regions[0]["box"]) == 4
 
 
 def test_hdf5_roundtrip(tmp_path: Path):
@@ -67,6 +86,97 @@ def test_hdf5_roundtrip(tmp_path: Path):
     assert loaded.regions[0]["orientation_configs"][0]["phi_min"] == 350.0
 
 
+def test_expand_orientation_from_region_boxes():
+    maps = rasterize_rectangle((6, 6), box=(2.0, 2.0, 4.0, 4.0), n_orientations=99)
+    maps.regions[0]["orientation_configs"] = [
+        {
+            "phi_min": 40.0,
+            "phi_max": 50.0,
+            "theta_min": 80.0,
+            "theta_max": 100.0,
+            "psi_min": 0.0,
+            "psi_max": 360.0,
+        }
+    ]
+    euler = np.array(
+        [
+            [45.0, 90.0, 0.0],
+            [90.0, 90.0, 0.0],
+            [45.0, 0.0, 0.0],
+        ],
+        dtype=np.float64,
+    )
+    maps.expand_orientation_against_grid(euler)
+    assert maps.orientation_eligible is not None
+    assert maps.orientation_eligible.shape == (3,)
+    assert int(maps.orientation_eligible[0]) == 1
+    assert int(maps.orientation_eligible[1]) == 0
+    assert int(maps.orientation_eligible[2]) == 0
+    assert int(maps.n_orientations[3, 3]) == 1
+    assert int(maps.n_orientations[0, 0]) == 0
+    assert maps.allowed_num_ccg(n_defocus=2) == int(maps.eligible.sum()) * 1 * 2
+
+
+def test_missing_orientation_maps_keep_full_yaml_grid():
+    maps = rasterize_rectangle((4, 4), box=(1.0, 1.0, 2.0, 2.0), n_orientations=3)
+    euler = np.array(
+        [[0.0, 90.0, 0.0], [10.0, 90.0, 0.0], [20.0, 90.0, 0.0]],
+        dtype=np.float64,
+    )
+    maps.expand_orientation_against_grid(euler)
+    assert maps.orientation_eligible is None
+    assert int(maps.n_orientations[1, 1]) == 3
+    assert int(maps.n_orientations[0, 0]) == 0
+
+
+def test_expand_orientation_dense_mask_and_shape_mismatch():
+    maps = rasterize_rectangle((4, 4), box=(1.0, 1.0, 2.0, 2.0), n_orientations=2)
+    euler = np.array(
+        [[0.0, 90.0, 0.0], [90.0, 90.0, 0.0]],
+        dtype=np.float64,
+    )
+    dense = np.zeros((2, 4, 4), dtype=np.uint8)
+    dense[0, 1, 1] = 1
+    maps.orientation_eligible = dense
+    maps.expand_orientation_against_grid(euler)
+    assert maps.orientation_eligible.shape == (2, 4, 4)
+    assert int(maps.orientation_eligible[0, 1, 1]) == 1
+    assert int(maps.orientation_eligible[1, 1, 1]) == 0
+    assert int(maps.n_orientations[1, 1]) == 1
+    assert int(maps.n_orientations[0, 0]) == 0
+
+    maps.orientation_eligible = np.zeros((3, 4, 4), dtype=np.uint8)
+    with pytest.raises(ValueError, match="orientation_eligible shape"):
+        maps.expand_orientation_against_grid(euler)
+
+
+def test_hdf5_roundtrip_orientation_eligible(tmp_path: Path):
+    maps = rasterize_rectangle((5, 5), box=(1.0, 1.0, 3.0, 3.0), n_orientations=2)
+    dense = np.zeros((2, 5, 5), dtype=np.uint8)
+    dense[0] = maps.eligible
+    maps.orientation_eligible = dense
+    path = tmp_path / "orient_constraint.h5"
+    write_spatial_constraint_hdf5(str(path), maps)
+    loaded = read_spatial_constraint_hdf5(str(path))
+    np.testing.assert_array_equal(loaded.orientation_eligible, dense)
+    euler = np.array([[0.0, 90.0, 0.0], [10.0, 90.0, 0.0]], dtype=np.float64)
+    loaded.expand_orientation_against_grid(euler)
+    assert int(loaded.n_orientations[2, 2]) == 1
+    assert int(loaded.n_orientations[0, 0]) == 0
+
+
+def test_orientation_eligible_to_stats_map_coords():
+    maps = rasterize_rectangle((10, 10), box=(4.0, 4.0, 6.0, 6.0), n_orientations=3)
+    dense = np.zeros((2, 10, 10), dtype=np.uint8)
+    dense[1] = maps.eligible
+    maps.orientation_eligible = dense
+    stats = maps.to_stats_map_coords(half_template_width=2, stats_shape=(7, 7))
+    assert stats.orientation_eligible is not None
+    assert stats.orientation_eligible.shape == (2, 7, 7)
+    assert int(stats.orientation_eligible[1, 2, 2]) == 1
+    assert int(stats.orientation_eligible[1, 0, 0]) == 0
+
+
 def test_image_to_stats_map_coords():
     maps = rasterize_rectangle((10, 10), box=(4.0, 4.0, 6.0, 6.0), n_orientations=3)
     stats = maps.to_stats_map_coords(half_template_width=2, stats_shape=(7, 7))
@@ -93,15 +203,28 @@ def test_filament_constraint_writes_and_loads_spatial_hdf5(tmp_path: Path):
 
     loaded = constraint.load_spatial_maps()
     assert loaded is not None
-    n_orient = int(constraint.to_orientation_config().euler_angles.shape[0])
-    assert int(loaded.n_orientations.max()) == n_orient
     assert loaded.eligible[3, 4] == 1
     assert loaded.eligible[0, 0] == 0
 
-    stats = constraint.stats_maps_for_template(image_shape=(12, 12), template_width=4)
+    euler = np.array(
+        [
+            [0.0, 90.0, 0.0],
+            [90.0, 90.0, 90.0],
+        ],
+        dtype=np.float64,
+    )
+    stats = constraint.stats_maps_for_template(
+        image_shape=(12, 12),
+        template_width=4,
+        euler_angles=euler,
+    )
     assert stats is not None
     assert stats.coordinate_frame == "pos_xy"
     assert stats.eligible.shape == (9, 9)
+    assert stats.orientation_eligible is not None
+    assert int(stats.n_orientations.max()) == 1
+    assert int(stats.orientation_eligible[0]) == 1
+    assert int(stats.orientation_eligible[1]) == 0
 
 
 def test_num_ccg_and_peaks_outside_box():

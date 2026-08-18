@@ -1,16 +1,15 @@
 r"""Standalone napari helper to choose a filament Euler-box orientation constraint.
 
-Draw a line along a filament in a micrograph, set the ± Euler-box range, and
-export a YAML sidecar for ``run_constrained_match_template.py``.
+Draw a line along a filament and four corner points for the search region.
 
 Dependencies: napari, numpy, mrcfile, h5py (qtpy ships with napari). This
 script does not import leopard_em.
 
 The template filament axis is assumed to lie along Z. Roma ``'ZYZ'`` is
-intrinsic with angles ``(phi, theta, psi)``. The drawn line sets ``phi``
-(azimuth of the tube in the image); ``psi`` is searched over 360° (roll
+intrinsic with angles ``(phi, theta, psi)``. The drawn line sets ``psi``
+(in-plane rotation of the projection); ``phi`` is searched over 360° (roll
 around the tube); ``theta`` is an Euler box around 90° (side-on). The
-opposite polarity along the same line is a second pole at ``phi + 180°``.
+opposite polarity along the same line is a second pole at ``psi + 180°``.
 
 Example
 -------
@@ -58,22 +57,66 @@ def last_filament_line(shapes_layer) -> tuple[float, float, float, float]:
     )
 
 
-def last_search_box(shapes_layer) -> tuple[float, float, float, float]:
-    """Return ``(y0, x0, y1, x1)`` bounds of the last rectangle in a Shapes layer."""
-    rects = []
-    for data, shape_type in zip(shapes_layer.data, shapes_layer.shape_type):
-        arr = np.asarray(data, dtype=float)
-        if shape_type in ("rectangle", "polygon") or arr.shape[0] >= 4:
-            rects.append(arr)
-    if not rects:
-        raise ValueError("Draw a search-region rectangle first.")
-    points = rects[-1]
-    return (
-        float(points[:, 0].min()),
-        float(points[:, 1].min()),
-        float(points[:, 0].max()),
-        float(points[:, 1].max()),
+def last_search_corners(points_layer) -> np.ndarray:
+    """Return four ``(y, x)`` corners from a napari Points layer.
+
+    Points are ordered around their centroid so click order does not matter.
+    """
+    points = np.asarray(points_layer.data, dtype=float)
+    if points.ndim != 2 or points.shape[0] != 4 or points.shape[1] < 2:
+        n_pts = 0 if points.size == 0 else int(points.shape[0])
+        raise ValueError(
+            f"Place exactly four search-region corners (currently {n_pts})."
+        )
+    return order_polygon_vertices(points[:, :2])
+
+
+def order_polygon_vertices(vertices: np.ndarray) -> np.ndarray:
+    """Order vertices counter-clockwise around their centroid."""
+    verts = np.asarray(vertices, dtype=float).reshape(-1, 2)
+    center = verts.mean(axis=0)
+    angles = np.arctan2(verts[:, 0] - center[0], verts[:, 1] - center[1])
+    return verts[np.argsort(angles)]
+
+
+def points_in_polygon(height: int, width: int, vertices: np.ndarray) -> np.ndarray:
+    """Pixel-center even-odd fill of a closed polygon, inclusive of edges."""
+    verts = order_polygon_vertices(vertices)
+    yy, xx = np.meshgrid(
+        np.arange(height, dtype=np.float64),
+        np.arange(width, dtype=np.float64),
+        indexing="ij",
     )
+    inside = np.zeros((height, width), dtype=bool)
+    n_verts = verts.shape[0]
+    prev = n_verts - 1
+    for index in range(n_verts):
+        y_i, x_i = verts[index, 0], verts[index, 1]
+        y_j, x_j = verts[prev, 0], verts[prev, 1]
+        straddles = (y_i > yy) != (y_j > yy)
+        denom = y_j - y_i
+        denom = np.where(denom == 0.0, 1.0, denom)
+        x_intersect = x_i + (yy - y_i) * (x_j - x_i) / denom
+        inside ^= straddles & (xx < x_intersect)
+        prev = index
+    atol = 1e-6
+    on_edge = np.zeros((height, width), dtype=bool)
+    for index in range(n_verts):
+        y0, x0 = verts[index]
+        y1, x1 = verts[(index + 1) % n_verts]
+        dy = y1 - y0
+        dx = x1 - x0
+        scale = max(1.0, abs(dy) + abs(dx))
+        cross = (yy - y0) * dx - (xx - x0) * dy
+        collinear = np.abs(cross) <= atol * scale
+        in_segment = (
+            (yy >= min(y0, y1) - atol)
+            & (yy <= max(y0, y1) + atol)
+            & (xx >= min(x0, x1) - atol)
+            & (xx <= max(x0, x1) + atol)
+        )
+        on_edge |= collinear & in_segment
+    return inside | on_edge
 
 
 def estimate_n_orientations(blocks: list[dict]) -> int:
@@ -97,19 +140,12 @@ def estimate_n_orientations(blocks: list[dict]) -> int:
 
 def rasterize_search_box(
     image_shape: tuple[int, int],
-    y0: float,
-    x0: float,
-    y1: float,
-    x1: float,
+    corners: np.ndarray,
     n_orientations: int,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Return ``eligible``, ``region_id``, ``n_orientations`` maps for one box."""
+    """Return ``eligible``, ``region_id``, ``n_orientations`` maps for one quad."""
     height, width = image_shape
-    ymin, ymax = min(y0, y1), max(y0, y1)
-    xmin, xmax = min(x0, x1), max(x0, x1)
-    y_idx = np.arange(height)[:, None]
-    x_idx = np.arange(width)[None, :]
-    inside = (y_idx >= ymin) & (y_idx <= ymax) & (x_idx >= xmin) & (x_idx <= xmax)
+    inside = points_in_polygon(height, width, corners)
     eligible = inside.astype(np.uint8)
     region_id = np.where(inside, 1, 0).astype(np.int16)
     n_orients = np.where(inside, int(n_orientations), 0).astype(np.int32)
@@ -122,7 +158,7 @@ def write_spatial_constraint_hdf5(
     region_id: np.ndarray,
     n_orientations: np.ndarray,
     payload: dict,
-    box: tuple[float, float, float, float],
+    box: np.ndarray,
     pixel_size_angstrom: float | None = None,
 ) -> None:
     """Write the constraint HDF5 sidecar (standalone; no leopard_em import)."""
@@ -144,8 +180,8 @@ def write_spatial_constraint_hdf5(
         region = handle.create_group("regions").create_group("0001")
         region.attrs["cone_half_angle_deg"] = payload["cone_half_angle_deg"]
         region.attrs["theta_center_deg"] = payload["theta_center_deg"]
-        region.attrs["psi_min"] = payload["psi_min"]
-        region.attrs["psi_max"] = payload["psi_max"]
+        region.attrs["phi_min"] = payload["phi_min"]
+        region.attrs["phi_max"] = payload["phi_max"]
         region.attrs["psi_step"] = payload["psi_step"]
         region.attrs["theta_step"] = payload["theta_step"]
         region.attrs["base_grid_method"] = payload["base_grid_method"]
@@ -157,7 +193,9 @@ def write_spatial_constraint_hdf5(
                 [line["y0"], line["x0"], line["y1"], line["x1"]], dtype=np.float64
             ),
         )
-        region.create_dataset("box", data=np.array(box, dtype=np.float64))
+        region.create_dataset(
+            "box", data=np.asarray(box, dtype=np.float64).reshape(-1, 2)
+        )
         cfg_root = region.create_group("orientation_configs")
         for index, block in enumerate(
             payload["orientation_search_config"]["orientation_configs"]
@@ -169,8 +207,8 @@ def write_spatial_constraint_hdf5(
                 cfg_grp.attrs[key] = value
 
 
-def filament_phi_from_image_line(y0: float, x0: float, y1: float, x1: float) -> float:
-    """Return ``phi`` in degrees from an image-space line (y down, x right)."""
+def filament_psi_from_image_line(y0: float, x0: float, y1: float, x1: float) -> float:
+    """Return in-plane ``psi`` in degrees from an image-space line (y down, x right)."""
     dx = x1 - x0
     dy = y1 - y0
     if dx == 0.0 and dy == 0.0:
@@ -178,10 +216,10 @@ def filament_phi_from_image_line(y0: float, x0: float, y1: float, x1: float) -> 
     return math.degrees(math.atan2(-dy, dx)) % 360.0
 
 
-def phi_euler_box_intervals(
+def periodic_euler_box_intervals(
     center_deg: float, half_width_deg: float
 ) -> list[tuple[float, float]]:
-    """Split ``center ± half_width`` into ``[0, 360]`` phi intervals."""
+    """Split ``center ± half_width`` into ``[0, 360]`` intervals."""
     if half_width_deg >= 180.0:
         return [(0.0, 360.0)]
 
@@ -272,19 +310,23 @@ def imagej_contrast_limits(
 
 
 def raise_constraint_layers(viewer) -> None:
-    """Keep search-region then filament above the micrograph."""
+    """Keep search outline, corners, then filament above the micrograph."""
     names = [layer.name for layer in viewer.layers]
     n_layers = len(viewer.layers)
-    if "search_region" in names:
-        idx = names.index("search_region")
+
+    def _move_to_top(name: str) -> None:
+        nonlocal names, n_layers
+        if name not in names:
+            return
+        idx = names.index(name)
         if idx != n_layers - 1:
             viewer.layers.move(idx, n_layers)
             names = [layer.name for layer in viewer.layers]
             n_layers = len(viewer.layers)
-    if "filament" in names:
-        idx = names.index("filament")
-        if idx != n_layers - 1:
-            viewer.layers.move(idx, n_layers)
+
+    _move_to_top("search_region")
+    _move_to_top("search_corners")
+    _move_to_top("filament")
 
 
 def raise_filament_layer(viewer) -> None:
@@ -358,50 +400,50 @@ def build_constraint_payload(
     theta_step: float,
     theta_center_deg: float,
     micrograph_path: str | None,
-    spatial_box: tuple[float, float, float, float] | None = None,
+    spatial_box: np.ndarray | None = None,
     spatial_constraint_path: str | None = None,
 ) -> dict:
     """Build the sidecar dict consumed by FilamentConstraint.from_yaml."""
-    phi = round(filament_phi_from_image_line(y0, x0, y1, x1), _ANGLE_DECIMALS)
+    psi = round(filament_psi_from_image_line(y0, x0, y1, x1), _ANGLE_DECIMALS)
     theta_min = round(max(0.0, theta_center_deg - cone_half_angle_deg), _ANGLE_DECIMALS)
     theta_max = round(
         min(180.0, theta_center_deg + cone_half_angle_deg), _ANGLE_DECIMALS
     )
-    pole_1 = phi % 360.0
-    pole_2 = (phi + 180.0) % 360.0
+    pole_1 = psi % 360.0
+    pole_2 = (psi + 180.0) % 360.0
 
     if cone_half_angle_deg >= 180.0:
         interval_groups = [[(0.0, 360.0)]]
     else:
         interval_groups = [
-            phi_euler_box_intervals(pole, cone_half_angle_deg)
+            periodic_euler_box_intervals(pole, cone_half_angle_deg)
             for pole in (pole_1, pole_2)
         ]
 
     blocks: list[dict] = []
     for intervals in interval_groups:
-        for phi_min, phi_max in intervals:
+        for psi_min, psi_max in intervals:
             blocks.append(
                 {
                     "psi_step": psi_step,
                     "theta_step": theta_step,
                     "symmetry": None,
-                    "phi_min": phi_min,
-                    "phi_max": phi_max,
+                    "phi_min": 0.0,
+                    "phi_max": 360.0,
                     "theta_min": theta_min,
                     "theta_max": theta_max,
-                    "psi_min": 0.0,
-                    "psi_max": 360.0,
+                    "psi_min": psi_min,
+                    "psi_max": psi_max,
                     "base_grid_method": "uniform",
                 }
             )
 
     payload: dict = {
-        "filament_angle_deg": phi,
+        "filament_angle_deg": psi,
         "cone_half_angle_deg": cone_half_angle_deg,
         "theta_center_deg": theta_center_deg,
-        "psi_min": 0.0,
-        "psi_max": 360.0,
+        "phi_min": 0.0,
+        "phi_max": 360.0,
         "psi_step": psi_step,
         "theta_step": theta_step,
         "base_grid_method": "uniform",
@@ -411,12 +453,8 @@ def build_constraint_payload(
     if micrograph_path:
         payload["micrograph_path"] = micrograph_path
     if spatial_box is not None:
-        payload["spatial_box"] = {
-            "y0": spatial_box[0],
-            "x0": spatial_box[1],
-            "y1": spatial_box[2],
-            "x1": spatial_box[3],
-        }
+        corners = np.asarray(spatial_box, dtype=float).reshape(-1, 2)
+        payload["spatial_box"] = {"corners": [[float(y), float(x)] for y, x in corners]}
     if spatial_constraint_path:
         payload["spatial_constraint_path"] = spatial_constraint_path
     return payload
@@ -424,24 +462,24 @@ def build_constraint_payload(
 
 def preview_text(payload: dict) -> str:
     """Human-readable summary of the Euler boxes."""
-    phi = payload["filament_angle_deg"]
+    psi = payload["filament_angle_deg"]
     cone = payload["cone_half_angle_deg"]
-    pole_1 = phi % 360.0
-    pole_2 = (phi + 180.0) % 360.0
+    pole_1 = psi % 360.0
+    pole_2 = (psi + 180.0) % 360.0
     blocks = payload["orientation_search_config"]["orientation_configs"]
     theta_min = blocks[0]["theta_min"]
     theta_max = blocks[0]["theta_max"]
     lines = [
-        f"phi pole 1: {pole_1:.2f}°",
-        f"phi pole 2: {pole_2:.2f}°",
+        f"psi pole 1: {pole_1:.2f}°",
+        f"psi pole 2: {pole_2:.2f}°",
         f"Euler box ±{cone:g}°",
         f"  theta: [{theta_min:.2f}, {theta_max:.2f}]",
-        "  psi:   [0.00, 360.00]",
+        "  phi:   [0.00, 360.00]",
     ]
     for i, pole in enumerate((pole_1, pole_2), start=1):
-        intervals = phi_euler_box_intervals(pole, cone)
+        intervals = periodic_euler_box_intervals(pole, cone)
         interval_str = ", ".join(f"[{lo:.2f}, {hi:.2f}]" for lo, hi in intervals)
-        lines.append(f"  phi pole {i}: {interval_str}")
+        lines.append(f"  psi pole {i}: {interval_str}")
     return "\n".join(lines)
 
 
@@ -451,8 +489,8 @@ def dump_constraint_yaml(payload: dict) -> str:
         f"filament_angle_deg: {_yaml_scalar(payload['filament_angle_deg'])}",
         f"cone_half_angle_deg: {_yaml_scalar(payload['cone_half_angle_deg'])}",
         f"theta_center_deg: {_yaml_scalar(payload['theta_center_deg'])}",
-        f"psi_min: {_yaml_scalar(payload['psi_min'])}",
-        f"psi_max: {_yaml_scalar(payload['psi_max'])}",
+        f"phi_min: {_yaml_scalar(payload['phi_min'])}",
+        f"phi_max: {_yaml_scalar(payload['phi_max'])}",
         f"psi_step: {_yaml_scalar(payload['psi_step'])}",
         f"theta_step: {_yaml_scalar(payload['theta_step'])}",
         f"base_grid_method: {_yaml_scalar(payload['base_grid_method'])}",
@@ -473,8 +511,13 @@ def dump_constraint_yaml(payload: dict) -> str:
     if "spatial_box" in payload:
         box = payload["spatial_box"]
         lines.append("spatial_box:")
-        for key in ("y0", "x0", "y1", "x1"):
-            lines.append(f"  {key}: {_yaml_scalar(box[key])}")
+        if "corners" in box:
+            lines.append("  corners:")
+            for y_pt, x_pt in box["corners"]:
+                lines.append(f"    - [{_yaml_scalar(y_pt)}, {_yaml_scalar(x_pt)}]")
+        else:
+            for key in ("y0", "x0", "y1", "x1"):
+                lines.append(f"  {key}: {_yaml_scalar(box[key])}")
     lines.append("orientation_search_config:")
     lines.append("  orientation_configs:")
     keys = (
@@ -503,7 +546,7 @@ def build_viewer(
     output_path: str,
     pixel_size_angstrom: float | None = None,
 ) -> None:
-    """Create the napari viewer, shapes layer, and constraint widgets."""
+    """Create the napari viewer, constraint layers, and widgets."""
     try:
         import napari
         from qtpy.QtCore import QTimer
@@ -531,7 +574,14 @@ def build_viewer(
         edge_width=4,
         face_color="transparent",
     )
-    search_region.mode = "add_rectangle"
+    search_region.editable = False
+    search_corners = viewer.add_points(
+        name="search_corners",
+        ndim=2,
+        size=18,
+        face_color="yellow",
+    )
+    search_corners.mode = "add"
     shapes = viewer.add_shapes(
         name="filament",
         ndim=2,
@@ -548,7 +598,7 @@ def build_viewer(
         QLabel(
             "1. Load a micrograph\n"
             "2. Draw a line along the filament\n"
-            "3. Draw a rectangle for allowed particle centers\n"
+            "3. Click four corners for allowed particle centers\n"
             "4. Set the ± Euler-box range\n"
             "5. Export YAML + HDF5"
         )
@@ -593,9 +643,7 @@ def build_viewer(
     pixel_size_spin.setDecimals(4)
     pixel_size_spin.setSingleStep(0.01)
     pixel_size_spin.setSpecialValueText("from MRC")
-    pixel_size_spin.setValue(
-        float(pixel_size_angstrom) if pixel_size_angstrom else 0.0
-    )
+    pixel_size_spin.setValue(float(pixel_size_angstrom) if pixel_size_angstrom else 0.0)
     pixel_size_spin.setSuffix(" Å/px")
     saturated_spin = QDoubleSpinBox()
     saturated_spin.setRange(0.0, 50.0)
@@ -646,11 +694,12 @@ def build_viewer(
     preview = QTextEdit()
     preview.setReadOnly(True)
     preview.setPlainText(
-        "Draw a line along the filament and a rectangle for allowed centers.\n"
-        "The line sets phi (tube azimuth in the image).\n"
-        "The box is pos_x_img / pos_y_img (particle center).\n"
-        "psi is searched 0-360° around the tube.\n"
-        "A second pole at phi+180° covers the flip."
+        "Draw a line along the filament and four corners for allowed centers.\n"
+        "The line sets psi (in-plane angle of the tube in the image).\n"
+        "The four points define a quadrilateral in pos_x_img / pos_y_img\n"
+        "(particle center); click order does not matter.\n"
+        "phi is searched 0-360° around the tube.\n"
+        "A second pole at psi+180° covers the flip."
     )
     layout.addWidget(preview)
 
@@ -660,10 +709,20 @@ def build_viewer(
             return text
         return None
 
+    def sync_search_outline() -> None:
+        """Draw the quadrilateral connecting the four corner points."""
+        try:
+            corners = last_search_corners(search_corners)
+        except ValueError:
+            search_region.data = []
+            return
+        search_region.data = [corners]
+        search_region.shape_type = ["polygon"]
+
     def current_payload() -> dict:
         y0, x0, y1, x1 = last_filament_line(shapes)
         try:
-            box = last_search_box(search_region)
+            box = last_search_corners(search_corners)
         except ValueError:
             box = None
         return build_constraint_payload(
@@ -680,6 +739,7 @@ def build_viewer(
         )
 
     def refresh_preview() -> None:
+        sync_search_outline()
         try:
             payload = current_payload()
         except (ValueError, IndexError) as exc:
@@ -711,7 +771,7 @@ def build_viewer(
             preview.setPlainText(str(exc))
             return
         shapes.mode = "add_line"
-        search_region.mode = "add_rectangle"
+        search_corners.mode = "add"
         raise_constraint_layers(viewer)
         try:
             preview.setPlainText(f"{notes}\n\n{preview_text(current_payload())}")
@@ -724,10 +784,10 @@ def build_viewer(
             preview.setPlainText("Choose an output YAML path first.")
             return
         try:
-            box = last_search_box(search_region)
+            box = last_search_corners(search_corners)
             payload = current_payload()
             if "spatial_box" not in payload:
-                raise ValueError("Draw a search-region rectangle first.")
+                raise ValueError("Place exactly four search-region corners.")
             out_path = Path(out)
             out_path.parent.mkdir(parents=True, exist_ok=True)
             h5_path = out_path.with_suffix(".h5")
@@ -744,7 +804,7 @@ def build_viewer(
                 payload["orientation_search_config"]["orientation_configs"]
             )
             eligible, region_id, n_orients = rasterize_search_box(
-                image_shape, *box, n_orientations=n_orient
+                image_shape, box, n_orientations=n_orient
             )
             px = float(pixel_size_spin.value())
             pixel_size = px if px > 0.0 else None
@@ -774,7 +834,7 @@ def build_viewer(
     theta_step_spin.valueChanged.connect(lambda _: refresh_preview())
     theta_center_spin.valueChanged.connect(lambda _: refresh_preview())
     shapes.events.data.connect(lambda _: refresh_preview())
-    search_region.events.data.connect(lambda _: refresh_preview())
+    search_corners.events.data.connect(lambda _: refresh_preview())
 
     viewer.window.add_dock_widget(panel, name="Filament constraint", area="right")
 
@@ -790,8 +850,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """Parse command-line arguments for the napari helper."""
     parser = argparse.ArgumentParser(
         description=(
-            "Draw a filament line in napari and export an Euler-box "
-            "orientation constraint YAML."
+            "Draw a filament line and four search-region corners in napari, "
+            "then export an Euler-box constraint YAML."
         )
     )
     parser.add_argument(
@@ -805,8 +865,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         type=float,
         default=None,
         help=(
-            "Pixel size in Angstroms. Used for the lowpass if the MRC "
-            "header has none."
+            "Pixel size in Angstroms. Used for the lowpass if the MRC header has none."
         ),
     )
     parser.add_argument(

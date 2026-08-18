@@ -165,7 +165,7 @@ def core_match_template(
     mag_matrix: torch.Tensor | None = None,
     compute_correlation_table: bool = True,
     eligible_pixels: torch.Tensor | None = None,
-    allowed_search_mask: torch.Tensor | None = None,
+    orientation_eligible: torch.Tensor | None = None,
     defocus_eligible: torch.Tensor | None = None,
     stats_from_valid_orientations_defocus: bool = False,
 ) -> dict[str, torch.Tensor | dict | int]:
@@ -231,9 +231,9 @@ def core_match_template(
         the returned "correlation_table" will be empty. Default is True.
     eligible_pixels : torch.Tensor, optional
         Boolean stats-map mask of pixels in play. If None, all pixels are eligible.
-    allowed_search_mask : torch.Tensor, optional
-        Boolean mask indexed by global search index. If None, every searched
-        index in this run is allowed.
+    orientation_eligible : torch.Tensor, optional
+        Boolean mask of allowed YAML orientations. Shape ``(n_orient, H, W)``
+        or ``(n_orient,)``. If None, every searched orientation is allowed.
     defocus_eligible : torch.Tensor, optional
         Boolean ``(n_defocus, H, W)`` mask of allowed defocus values per pixel.
         If None, every defocus in this run is allowed.
@@ -297,8 +297,8 @@ def core_match_template(
         mag_matrix = mag_matrix.cpu()
     if eligible_pixels is not None:
         eligible_pixels = eligible_pixels.cpu()
-    if allowed_search_mask is not None:
-        allowed_search_mask = allowed_search_mask.cpu()
+    if orientation_eligible is not None:
+        orientation_eligible = orientation_eligible.cpu()
     if defocus_eligible is not None:
         defocus_eligible = defocus_eligible.cpu()
 
@@ -353,7 +353,7 @@ def core_match_template(
             "mag_matrix": mag_matrix,
             "compute_correlation_table": compute_correlation_table,
             "eligible_pixels": eligible_pixels,
-            "allowed_search_mask": allowed_search_mask,
+            "orientation_eligible": orientation_eligible,
             "defocus_eligible": defocus_eligible,
             "stats_from_valid_orientations_defocus": (
                 stats_from_valid_orientations_defocus
@@ -442,7 +442,7 @@ def _core_match_template_single_gpu(
     mag_matrix: torch.Tensor | None = None,
     compute_correlation_table: bool = True,
     eligible_pixels: torch.Tensor | None = None,
-    allowed_search_mask: torch.Tensor | None = None,
+    orientation_eligible: torch.Tensor | None = None,
     defocus_eligible: torch.Tensor | None = None,
     stats_from_valid_orientations_defocus: bool = False,
 ) -> tuple[
@@ -500,9 +500,9 @@ def _core_match_template_single_gpu(
         the returned correlation table will be empty. Default is True.
     eligible_pixels : torch.Tensor, optional
         Boolean stats-map mask of pixels in play. If None, all pixels are eligible.
-    allowed_search_mask : torch.Tensor, optional
-        Boolean mask indexed by global search index. If None, every searched
-        index in this run is allowed.
+    orientation_eligible : torch.Tensor, optional
+        Boolean mask of allowed YAML orientations. Shape ``(n_orient, H, W)``
+        or ``(n_orient,)``. If None, every searched orientation is allowed.
     defocus_eligible : torch.Tensor, optional
         Boolean ``(n_defocus, H, W)`` mask of allowed defocus values per pixel.
         If None, every defocus in this run is allowed.
@@ -620,8 +620,20 @@ def _core_match_template_single_gpu(
                 f"{tuple(eligible_pixels.shape)} does not match stats-map shape "
                 f"{valid_correlation_shape}."
             )
-    if allowed_search_mask is not None:
-        allowed_search_mask = allowed_search_mask.to(device=device, dtype=torch.bool)
+    if orientation_eligible is not None:
+        orientation_eligible = orientation_eligible.to(
+            device=device, dtype=torch.bool
+        )
+        if orientation_eligible.ndim == 1:
+            expected_orient_shape = (num_orientations,)
+        else:
+            expected_orient_shape = (num_orientations, *valid_correlation_shape)
+        if tuple(orientation_eligible.shape) != expected_orient_shape:
+            raise ValueError(
+                "orientation_eligible shape "
+                f"{tuple(orientation_eligible.shape)} does not match "
+                f"{expected_orient_shape}."
+            )
     if defocus_eligible is not None:
         defocus_eligible = defocus_eligible.to(device=device, dtype=torch.bool)
         expected_defocus_shape = (num_defocus, *valid_correlation_shape)
@@ -716,7 +728,7 @@ def _core_match_template_single_gpu(
                     needs_valid_cropping=(backend != "zipfft"),
                     compute_correlation_table=compute_correlation_table,
                     eligible_pixels=eligible_pixels,
-                    allowed_search_mask=allowed_search_mask,
+                    orientation_eligible=orientation_eligible,
                     defocus_eligible=defocus_eligible,
                     n_orientations=num_orientations,
                     stats_from_valid_orientations_defocus=(

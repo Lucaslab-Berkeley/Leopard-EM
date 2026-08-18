@@ -1,10 +1,11 @@
-"""Match template with a filament-restricted (Euler-box) orientation search.
+"""Match template with a sidecar that subsets the YAML orientation search.
 
-This is the standard match-template program. If CONSTRAINT_YAML_PATH points at
-a sidecar written by ``napari_choose_constraint.py``, that file replaces
-``orientation_search_config`` in the match-template YAML and, if present,
-loads the per-pixel spatial constraint HDF5 for mask-before-max MIP updates
-and the z-score ``num_ccg`` count.
+This is the standard match-template program. YAML_CONFIG_PATH defines the
+FFT grid (and the default mean/variance space). If CONSTRAINT_YAML_PATH points at a
+sidecar from ``napari_choose_constraint.py``, that file does **not** replace
+``orientation_search_config``. It only subsets which (pixel, orientation,
+defocus) tuples may win the MIP, and optionally mean/variance when
+``STATS_FROM_VALID_ORIENTATIONS_DEFOCUS`` is True.
 """
 
 import time
@@ -19,8 +20,8 @@ from leopard_em.pydantic_models.managers import MatchTemplateManager
 # Standard match-template YAML (optics, defocus, filters, output paths, ...).
 YAML_CONFIG_PATH = "/path/to/match-template-configuration.yaml"
 
-# Sidecar from napari_choose_constraint.py. Leave empty to use the orientation
-# search already specified in YAML_CONFIG_PATH.
+# Sidecar from napari_choose_constraint.py. Leave empty to run the YAML
+# search with no per-pixel eligibility subset.
 CONSTRAINT_YAML_PATH = "/path/to/filament_constraint.yaml"
 
 # Path where the picked peaks from the match template search will be output.
@@ -32,29 +33,19 @@ ORIENTATION_BATCH_SIZE = 8
 # How mean and variance (the z-score background) are accumulated.
 #
 # The MIP is always the best *allowed* (pixel, orientation, defocus) tuple:
-# angles outside the Euler box, pixels outside the spatial box, and defocus
-# values outside the per-pixel HDF5 range cannot win.
+# YAML angles outside the sidecar Euler box, pixels outside the spatial box,
+# and defocus values outside the per-pixel HDF5 range cannot win.
 #
-# Mean / variance are separate. They answer "what does a typical correlation
-# look like at this pixel?" and are the divisor for scaled_mip =
-# (mip - mean) / std.
+# Mean / variance use the YAML search grid unless this flag is True:
 #
-#   False (default): use every orientation and defocus this run actually
-#       searched. Today that is the Euler box times the YAML defocus grid
-#       (not full SO(3), not a per-pixel defocus subset). This matches a
-#       normal match-template run, where mean/std come from the whole
-#       search grid. Pixels outside the spatial box still contribute to
-#       the running sums, but they are not used as peaks.
+#   False (default): every orientation and defocus in YAML_CONFIG_PATH, at
+#       every pixel. This matches a normal match-template run.
 #
-#   True: use only allowed (pixel, orientation, defocus) tuples, and
-#       divide by a per-pixel count. Outside the spatial box, or where
-#       n_defocus is 0, count is 0 so mean/std are 0. This differs from
-#       False when the search grid is larger than the allowed set (a
-#       per-pixel defocus range, or a future full-SO(3) search with a
-#       per-pixel Euler box).
+#   True: only allowed (pixel, orientation, defocus) tuples, with a
+#       per-pixel count divisor.
 #
-# Peak cutoff (num_ccg) always uses the sum of allowed tests, independent of
-# this flag: sum over pixels of n_orientations[y, x] * n_defocus[y, x].
+# Peak cutoff (num_ccg) always uses the sum of allowed tests:
+# sum over pixels of n_orientations[y, x] * n_defocus[y, x].
 STATS_FROM_VALID_ORIENTATIONS_DEFOCUS = False
 
 ##############################################################
@@ -74,7 +65,10 @@ def main() -> None:
         mt_manager.apply_filament_constraint(constraint)
         n_orient = int(mt_manager.orientation_search_config.euler_angles.shape[0])
         print(constraint.preview_text())
-        print(f"Using filament constraint with {n_orient} orientations.")
+        print(
+            f"YAML search: {n_orient} orientations "
+            "(sidecar subsets MIP eligibility)."
+        )
         if constraint.spatial_constraint_path:
             print(f"Spatial constraint: {constraint.spatial_constraint_path}")
         if STATS_FROM_VALID_ORIENTATIONS_DEFOCUS:

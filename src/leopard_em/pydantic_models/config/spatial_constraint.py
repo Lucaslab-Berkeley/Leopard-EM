@@ -10,6 +10,7 @@ HDF5 layout::
     maps/defocus_min       float32 (H, W)           # optional, relative Å
     maps/defocus_max       float32 (H, W)           # optional, relative Å
     maps/defocus_eligible  uint8  (n_defocus, H, W) # optional, kernel-ready
+    maps/orientation_eligible uint8 (n_orient, H, W) or (n_orient,)  # optional
     regions/0001/...
 """
 
@@ -20,6 +21,7 @@ from typing import Any
 
 import h5py
 import numpy as np
+from pydantic import field_validator, model_validator
 
 from leopard_em.pydantic_models.custom_types import BaseModel2DTM
 
@@ -29,24 +31,59 @@ _COORDINATE_FRAME = "pos_xy_img"
 
 
 class SpatialBox(BaseModel2DTM):
-    """Axis-aligned rectangle in image (particle-center) coordinates.
+    """Quadrilateral search region in image (particle-center) coordinates.
 
-    Coordinates follow numpy / napari convention: ``(y, x)`` with ``y``
-    increasing downward. ``y0, x0`` is one corner and ``y1, x1`` the opposite.
+    Four corners in numpy / napari ``(y, x)`` (``y`` increasing downward).
+    The region is the interior of the closed polygon those corners define,
+    with edges drawn between consecutive corners (and the last back to the
+    first). Click order does not matter: corners are ordered around their
+    centroid.
+
+    The older axis-aligned YAML form ``y0, x0, y1, x1`` is still accepted
+    and converted to four rectangle corners.
     """
 
-    y0: float
-    x0: float
-    y1: float
-    x1: float
+    corners: list[tuple[float, float]]
+
+    @model_validator(mode="before")
+    @classmethod
+    def _legacy_axis_aligned(cls, data: Any) -> Any:
+        if isinstance(data, dict) and "corners" not in data and "y0" in data:
+            y0 = float(data["y0"])
+            x0 = float(data["x0"])
+            y1 = float(data["y1"])
+            x1 = float(data["x1"])
+            ymin, ymax = min(y0, y1), max(y0, y1)
+            xmin, xmax = min(x0, x1), max(x0, x1)
+            return {
+                "corners": [
+                    (ymin, xmin),
+                    (ymin, xmax),
+                    (ymax, xmax),
+                    (ymax, xmin),
+                ]
+            }
+        return data
+
+    @field_validator("corners")
+    @classmethod
+    def _four_corners(cls, value: list[Any]) -> list[tuple[float, float]]:
+        if len(value) != 4:
+            raise ValueError("spatial_box.corners must contain four (y, x) points.")
+        return [(float(point[0]), float(point[1])) for point in value]
+
+    def corner_array(self) -> np.ndarray:
+        """Return corners as a ``(4, 2)`` array of ``(y, x)``."""
+        return np.asarray(self.corners, dtype=np.float64)
 
     def as_ymin_xmin_ymax_xmax(self) -> tuple[float, float, float, float]:
-        """Return ``(ymin, xmin, ymax, xmax)`` regardless of corner order."""
+        """Return the axis-aligned bounding box of the four corners."""
+        corners = self.corner_array()
         return (
-            min(self.y0, self.y1),
-            min(self.x0, self.x1),
-            max(self.y0, self.y1),
-            max(self.x0, self.x1),
+            float(corners[:, 0].min()),
+            float(corners[:, 1].min()),
+            float(corners[:, 0].max()),
+            float(corners[:, 1].max()),
         )
 
 
@@ -79,6 +116,10 @@ class SpatialConstraintMaps:
         Per-pixel relative-defocus upper bound, Angstroms.
     defocus_eligible : np.ndarray, optional
         ``uint8`` kernel-ready mask of shape ``(n_defocus, H, W)``.
+    orientation_eligible : np.ndarray, optional
+        ``uint8`` kernel-ready mask of shape ``(n_orient, H, W)`` or
+        ``(n_orient,)``. A 1-D mask is the same allowed YAML angles at every
+        in-play pixel (broadcast with ``eligible``).
     """
 
     eligible: np.ndarray
@@ -92,6 +133,7 @@ class SpatialConstraintMaps:
     defocus_min: np.ndarray | None = None
     defocus_max: np.ndarray | None = None
     defocus_eligible: np.ndarray | None = None
+    orientation_eligible: np.ndarray | None = None
 
     def fill_n_orientations(self, n_orient: int) -> None:
         """Set ``n_orientations`` to ``n_orient`` inside the eligible mask."""
@@ -148,6 +190,100 @@ class SpatialConstraintMaps:
 
         self.defocus_eligible = ok.astype(np.uint8)
         self.n_defocus = ok.sum(axis=0).astype(np.int32)
+
+    def expand_orientation_against_grid(self, euler_angles: Any) -> None:
+        """Build ``orientation_eligible`` / ``n_orientations`` against this run.
+
+        The YAML Euler list is the source of allowed angles. HDF5 maps only
+        subset that list. Missing datasets and missing region Euler boxes mean
+        every in-play pixel keeps the full list; in that case
+        ``orientation_eligible`` stays ``None`` so the kernel does not allocate
+        a 3-D mask.
+
+        Precedence: ``orientation_eligible`` as stored, else per-region Euler
+        boxes in the region table.
+        """
+        angles = _as_euler_array(euler_angles)
+        n_grid = int(angles.shape[0])
+        if n_grid == 0:
+            raise ValueError("euler_angles must contain at least one sample.")
+        eligible = self.eligible > 0
+
+        if self.orientation_eligible is not None:
+            ok = np.asarray(self.orientation_eligible, dtype=bool)
+            if ok.ndim == 1:
+                if ok.shape != (n_grid,):
+                    raise ValueError(
+                        "maps/orientation_eligible shape "
+                        f"{tuple(ok.shape)} does not match this run's Euler "
+                        f"grid ({n_grid},)."
+                    )
+                self.orientation_eligible = ok.astype(np.uint8)
+                self.n_orientations = np.where(eligible, int(ok.sum()), 0).astype(
+                    np.int32
+                )
+                return
+            expected = (n_grid, *self.eligible.shape)
+            if ok.shape != expected:
+                raise ValueError(
+                    "maps/orientation_eligible shape "
+                    f"{tuple(ok.shape)} does not match this run's Euler grid "
+                    f"{expected}. Store region Euler boxes instead if the "
+                    "grid can change."
+                )
+            ok = ok & eligible[None, :, :]
+            self.orientation_eligible = ok.astype(np.uint8)
+            self.n_orientations = ok.sum(axis=0).astype(np.int32)
+            return
+
+        ok = self._orientation_ok_from_regions(angles)
+        if ok is None:
+            self.n_orientations = np.where(eligible, n_grid, 0).astype(np.int32)
+            self.orientation_eligible = None
+            return
+
+        if ok.ndim == 1:
+            self.orientation_eligible = ok.astype(np.uint8)
+            self.n_orientations = np.where(eligible, int(ok.sum()), 0).astype(np.int32)
+            return
+
+        ok = ok & eligible[None, :, :]
+        self.orientation_eligible = ok.astype(np.uint8)
+        self.n_orientations = ok.sum(axis=0).astype(np.int32)
+
+    def apply_orientation_mask_1d(self, mask_1d: Any) -> None:
+        """Restrict in-play pixels to a shared 1-D YAML-angle mask."""
+        ok = np.asarray(mask_1d, dtype=bool).reshape(-1)
+        eligible = self.eligible > 0
+        self.orientation_eligible = ok.astype(np.uint8)
+        self.n_orientations = np.where(eligible, int(ok.sum()), 0).astype(np.int32)
+
+    def _orientation_ok_from_regions(self, angles: np.ndarray) -> np.ndarray | None:
+        """Piecewise-constant Euler boxes from the region table, if any."""
+        boxed = [
+            region
+            for region in self.regions
+            if _region_orientation_mask(region, angles) is not None
+        ]
+        if not boxed:
+            return None
+
+        masks = [_region_orientation_mask(region, angles) for region in boxed]
+        unique_masks: list[np.ndarray] = []
+        for mask in masks:
+            assert mask is not None
+            if not any(np.array_equal(mask, seen) for seen in unique_masks):
+                unique_masks.append(mask)
+        if len(unique_masks) == 1 and len(boxed) == 1:
+            return unique_masks[0].astype(bool)
+
+        ok = np.ones((angles.shape[0], *self.eligible.shape), dtype=bool)
+        for region, mask in zip(boxed, masks):
+            assert mask is not None
+            rid = int(region.get("region_id", 1))
+            pixel_mask = self.region_id == rid
+            ok[:, pixel_mask] = mask[:, np.newaxis]
+        return ok
 
     def _defocus_ok_from_regions(self, values: np.ndarray) -> np.ndarray | None:
         """Piecewise-constant defocus bounds from the region table, if any."""
@@ -216,6 +352,16 @@ class SpatialConstraintMaps:
             defocus_eligible = np.where(in_bounds[None, :, :], sampled, 0).astype(
                 np.uint8
             )
+        orientation_eligible = None
+        if self.orientation_eligible is not None:
+            stored = np.asarray(self.orientation_eligible)
+            if stored.ndim == 1:
+                orientation_eligible = stored.astype(np.uint8)
+            else:
+                sampled = stored[:, yy, xx]
+                orientation_eligible = np.where(
+                    in_bounds[None, :, :], sampled, 0
+                ).astype(np.uint8)
 
         return SpatialConstraintMaps(
             eligible=eligible,
@@ -229,6 +375,7 @@ class SpatialConstraintMaps:
             defocus_min=defocus_min,
             defocus_max=defocus_max,
             defocus_eligible=defocus_eligible,
+            orientation_eligible=orientation_eligible,
         )
 
     def allowed_num_ccg(self, n_defocus: int | None = None, n_cs: int = 1) -> int:
@@ -246,35 +393,112 @@ class SpatialConstraintMaps:
         return int(n_orients.sum()) * int(n_defocus) * int(n_cs)
 
 
-def rasterize_rectangle(
+def order_polygon_vertices(vertices: np.ndarray) -> np.ndarray:
+    """Order vertices counter-clockwise around their centroid.
+
+    For a convex quadrilateral this yields a simple (non-self-intersecting)
+    boundary regardless of click order.
+    """
+    verts = np.asarray(vertices, dtype=np.float64).reshape(-1, 2)
+    if verts.shape[0] < 3:
+        raise ValueError("A search region needs at least three vertices.")
+    center = verts.mean(axis=0)
+    angles = np.arctan2(verts[:, 0] - center[0], verts[:, 1] - center[1])
+    return verts[np.argsort(angles)]
+
+
+def points_in_polygon(height: int, width: int, vertices: np.ndarray) -> np.ndarray:
+    """Return a ``(H, W)`` mask of pixel centers inside a closed polygon.
+
+    Uses even-odd fill, then includes points that lie on an edge so the
+    boundary is inclusive (matching the old axis-aligned rectangle).
+    """
+    verts = order_polygon_vertices(vertices)
+    yy, xx = np.meshgrid(
+        np.arange(height, dtype=np.float64),
+        np.arange(width, dtype=np.float64),
+        indexing="ij",
+    )
+    inside = np.zeros((height, width), dtype=bool)
+    n_verts = verts.shape[0]
+    prev = n_verts - 1
+    for index in range(n_verts):
+        y_i, x_i = verts[index, 0], verts[index, 1]
+        y_j, x_j = verts[prev, 0], verts[prev, 1]
+        straddles = (y_i > yy) != (y_j > yy)
+        denom = y_j - y_i
+        denom = np.where(denom == 0.0, 1.0, denom)
+        x_intersect = x_i + (yy - y_i) * (x_j - x_i) / denom
+        inside ^= straddles & (xx < x_intersect)
+        prev = index
+    inside |= _points_on_polygon_edges(yy, xx, verts)
+    return inside
+
+
+def _points_on_polygon_edges(
+    yy: np.ndarray,
+    xx: np.ndarray,
+    verts: np.ndarray,
+    atol: float = 1e-6,
+) -> np.ndarray:
+    """True where a pixel center lies on a polygon edge (inclusive)."""
+    on_edge = np.zeros(yy.shape, dtype=bool)
+    n_verts = verts.shape[0]
+    for index in range(n_verts):
+        y0, x0 = verts[index]
+        y1, x1 = verts[(index + 1) % n_verts]
+        dy = y1 - y0
+        dx = x1 - x0
+        scale = max(1.0, abs(dy) + abs(dx))
+        cross = (yy - y0) * dx - (xx - x0) * dy
+        collinear = np.abs(cross) <= atol * scale
+        ymin, ymax = (min(y0, y1), max(y0, y1))
+        xmin, xmax = (min(x0, x1), max(x0, x1))
+        in_segment = (
+            (yy >= ymin - atol)
+            & (yy <= ymax + atol)
+            & (xx >= xmin - atol)
+            & (xx <= xmax + atol)
+        )
+        on_edge |= collinear & in_segment
+    return on_edge
+
+
+def _corners_from_box(
+    box: SpatialBox | tuple[float, float, float, float] | np.ndarray,
+) -> np.ndarray:
+    """Return ``(N, 2)`` ``(y, x)`` corners from a SpatialBox or AABB tuple."""
+    if isinstance(box, SpatialBox):
+        return box.corner_array()
+    array = np.asarray(box, dtype=np.float64)
+    if array.ndim == 2 and array.shape[1] == 2:
+        return array
+    if array.ndim == 1 and array.size == 4:
+        ymin, xmin = min(array[0], array[2]), min(array[1], array[3])
+        ymax, xmax = max(array[0], array[2]), max(array[1], array[3])
+        return np.array(
+            [[ymin, xmin], [ymin, xmax], [ymax, xmax], [ymax, xmin]],
+            dtype=np.float64,
+        )
+    raise ValueError(
+        "spatial box must be four (y, x) corners or an axis-aligned "
+        "(y0, x0, y1, x1) tuple."
+    )
+
+
+def rasterize_polygon(
     image_shape: tuple[int, int],
-    box: SpatialBox | tuple[float, float, float, float],
+    corners: np.ndarray | SpatialBox | list[tuple[float, float]],
     n_orientations: int,
     region_id: int = 1,
 ) -> SpatialConstraintMaps:
-    """Paint one axis-aligned box onto ``(H, W)`` maps."""
+    """Paint a closed polygon onto ``(H, W)`` maps."""
     height, width = image_shape
-    if isinstance(box, SpatialBox):
-        ymin, xmin, ymax, xmax = box.as_ymin_xmin_ymax_xmax()
-        box_tuple = (box.y0, box.x0, box.y1, box.x1)
-    else:
-        ymin, xmin, ymax, xmax = (
-            min(box[0], box[2]),
-            min(box[1], box[3]),
-            max(box[0], box[2]),
-            max(box[1], box[3]),
-        )
-        box_tuple = box
-
-    y_idx = np.arange(height)[:, None]
-    x_idx = np.arange(width)[None, :]
-    # Inclusive on both ends in pixel-center coordinates.
-    inside = (y_idx >= ymin) & (y_idx <= ymax) & (x_idx >= xmin) & (x_idx <= xmax)
-
+    verts = _corners_from_box(corners)
+    inside = points_in_polygon(height, width, verts)
     eligible = inside.astype(np.uint8)
     region = np.where(inside, region_id, 0).astype(np.int16)
     n_orients = np.where(inside, int(n_orientations), 0).astype(np.int32)
-
     return SpatialConstraintMaps(
         eligible=eligible,
         region_id=region,
@@ -282,10 +506,25 @@ def rasterize_rectangle(
         micrograph_shape=(height, width),
         regions=[
             {
-                "box": box_tuple,
+                "box": [tuple(row) for row in verts.tolist()],
                 "region_id": region_id,
             }
         ],
+    )
+
+
+def rasterize_rectangle(
+    image_shape: tuple[int, int],
+    box: SpatialBox | tuple[float, float, float, float] | np.ndarray,
+    n_orientations: int,
+    region_id: int = 1,
+) -> SpatialConstraintMaps:
+    """Paint a search region (quadrilateral or axis-aligned box) onto maps."""
+    return rasterize_polygon(
+        image_shape=image_shape,
+        corners=_corners_from_box(box),
+        n_orientations=n_orientations,
+        region_id=region_id,
     )
 
 
@@ -348,6 +587,12 @@ def write_spatial_constraint_hdf5(
                 data=np.asarray(maps.defocus_eligible, dtype=np.uint8),
                 **compression_kwargs,
             )
+        if maps.orientation_eligible is not None:
+            maps_group.create_dataset(
+                "orientation_eligible",
+                data=np.asarray(maps.orientation_eligible, dtype=np.uint8),
+                **compression_kwargs,
+            )
 
         regions_group = handle.create_group(_REGIONS_GROUP)
         for index, region in enumerate(maps.regions, start=1):
@@ -369,6 +614,9 @@ def read_spatial_constraint_hdf5(path: str) -> SpatialConstraintMaps:
         defocus_max = _read_optional_dataset(maps_group, "defocus_max", np.float32)
         defocus_eligible = _read_optional_dataset(
             maps_group, "defocus_eligible", np.uint8
+        )
+        orientation_eligible = _read_optional_dataset(
+            maps_group, "orientation_eligible", np.uint8
         )
         if shape_attr is None:
             micrograph_shape = (int(eligible.shape[0]), int(eligible.shape[1]))
@@ -395,6 +643,7 @@ def read_spatial_constraint_hdf5(path: str) -> SpatialConstraintMaps:
         defocus_min=defocus_min,
         defocus_max=defocus_max,
         defocus_eligible=defocus_eligible,
+        orientation_eligible=orientation_eligible,
     )
 
 
@@ -433,11 +682,14 @@ def _write_region_group(grp: h5py.Group, region: dict[str, Any]) -> None:
     for key in (
         "cone_half_angle_deg",
         "theta_center_deg",
+        "phi_min",
+        "phi_max",
         "psi_min",
         "psi_max",
         "psi_step",
         "theta_step",
         "region_id",
+        "filament_angle_deg",
         "base_grid_method",
         "defocus_min",
         "defocus_max",
@@ -461,6 +713,15 @@ def _write_region_group(grp: h5py.Group, region: dict[str, Any]) -> None:
                 cfg_grp.attrs[key] = value
 
 
+def _box_dataset_to_python(array: np.ndarray) -> Any:
+    """Decode a region ``box`` dataset as corners or a legacy AABB tuple."""
+    arr = np.asarray(array, dtype=np.float64)
+    if arr.ndim == 1 and arr.size == 4:
+        return tuple(float(v) for v in arr.tolist())
+    corners = arr.reshape(-1, 2)
+    return [tuple(float(v) for v in row) for row in corners.tolist()]
+
+
 def _read_region_group(grp: h5py.Group) -> dict[str, Any]:
     region: dict[str, Any] = {
         key: _from_h5_attr(value) for key, value in grp.attrs.items()
@@ -468,7 +729,7 @@ def _read_region_group(grp: h5py.Group) -> dict[str, Any]:
     if "line" in grp:
         region["line"] = tuple(np.asarray(grp["line"][:], dtype=np.float64).tolist())
     if "box" in grp:
-        region["box"] = tuple(np.asarray(grp["box"][:], dtype=np.float64).tolist())
+        region["box"] = _box_dataset_to_python(np.asarray(grp["box"][:]))
     if "orientation_configs" in grp:
         cfg_root = grp["orientation_configs"]
         configs = []
@@ -489,3 +750,92 @@ def _from_h5_attr(value: Any) -> Any:
     if isinstance(value, np.generic):
         return value.item()
     return value
+
+
+def _as_euler_array(euler_angles: Any) -> np.ndarray:
+    """Return Euler angles as ``(N, 3)`` float64 ``(phi, theta, psi)``."""
+    if hasattr(euler_angles, "detach"):
+        angles = np.asarray(euler_angles.detach().cpu(), dtype=np.float64)
+    else:
+        angles = np.asarray(euler_angles, dtype=np.float64)
+    if angles.ndim != 2 or angles.shape[1] != 3:
+        raise ValueError(
+            "euler_angles must have shape (n_orientations, 3) with columns "
+            "(phi, theta, psi)."
+        )
+    return angles
+
+
+def euler_angles_in_boxes(
+    euler_angles: np.ndarray,
+    configs: list[dict[str, Any]],
+    atol: float = 1e-3,
+) -> np.ndarray:
+    """Return a ``(N,)`` mask of YAML angles that fall in any Euler box."""
+    phi = euler_angles[:, 0]
+    theta = euler_angles[:, 1]
+    psi = euler_angles[:, 2]
+    ok = np.zeros(euler_angles.shape[0], dtype=bool)
+    for config in configs:
+        phi_ok = _in_angle_range(
+            phi, config.get("phi_min"), config.get("phi_max"), period=360.0, atol=atol
+        )
+        theta_ok = _in_angle_range(
+            theta,
+            config.get("theta_min"),
+            config.get("theta_max"),
+            period=None,
+            atol=atol,
+        )
+        psi_ok = _in_angle_range(
+            psi, config.get("psi_min"), config.get("psi_max"), period=360.0, atol=atol
+        )
+        ok |= phi_ok & theta_ok & psi_ok
+    return ok
+
+
+def _in_angle_range(
+    values: np.ndarray,
+    lo: Any,
+    hi: Any,
+    period: float | None,
+    atol: float = 1e-3,
+) -> np.ndarray:
+    """Inclusive range test. ``None`` bounds mean the axis is unrestricted."""
+    if lo is None or hi is None:
+        return np.ones(values.shape, dtype=bool)
+    low = float(lo)
+    high = float(hi)
+    if period is None:
+        return (values >= low - atol) & (values <= high + atol)
+    if high + atol >= period and low <= atol:
+        return np.ones(values.shape, dtype=bool)
+    if low <= high:
+        return (values >= low - atol) & (values <= high + atol)
+    return (values >= low - atol) | (values <= high + atol)
+
+
+def _region_orientation_mask(
+    region: dict[str, Any],
+    angles: np.ndarray,
+) -> np.ndarray | None:
+    """Return a ``(N,)`` mask for a region Euler box, or None if unspecified."""
+    configs = region.get("orientation_configs") or []
+    usable = [
+        config
+        for config in configs
+        if any(
+            config.get(key) is not None
+            for key in (
+                "phi_min",
+                "phi_max",
+                "theta_min",
+                "theta_max",
+                "psi_min",
+                "psi_max",
+            )
+        )
+    ]
+    if not usable:
+        return None
+    return euler_angles_in_boxes(angles, usable)

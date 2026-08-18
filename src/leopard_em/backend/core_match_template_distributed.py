@@ -519,7 +519,7 @@ def core_match_template_distributed(
         device=device,
         compute_correlation_table=compute_correlation_table,
         eligible_pixels=kwargs.get("eligible_pixels"),  # type: ignore[arg-type]
-        allowed_search_mask=kwargs.get("allowed_search_mask"),  # type: ignore[arg-type]
+        orientation_eligible=kwargs.get("orientation_eligible"),  # type: ignore[arg-type]
         defocus_eligible=kwargs.get("defocus_eligible"),  # type: ignore[arg-type]
         stats_from_valid_orientations_defocus=bool(
             kwargs.get("stats_from_valid_orientations_defocus", False)

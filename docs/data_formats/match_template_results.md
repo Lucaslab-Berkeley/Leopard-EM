@@ -140,7 +140,7 @@ Computing and storing the correlation table does incur a few percent overhead in
 !!! warning "Correlation table export is currently MRC-specific"
 
     `export_correlation_table()` and `load_correlation_table_from_path()` — which read/write via the `correlation_table_path` field — are only implemented on `MatchTemplateResultMRC`.
-    `MatchTemplateResultMRC.export_results()` calls `export_correlation_table()` automatically, so setting `correlation_table_path` in your MRC-backed config is enough.
+    `MatchTemplateResultMRC.export_results()` writes the table when both `correlation_table` and `correlation_table_path` are set; if the path is omitted, only the eight MRC maps are written.
     For `MatchTemplateResultHDF5`, `export_results()` does **not** currently export the correlation table automatically — call `.to_hdf5(...)` on the `CorrelationTable` directly, as shown below.
 
 ```python

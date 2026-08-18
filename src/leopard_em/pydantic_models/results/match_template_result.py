@@ -58,6 +58,19 @@ _TENSOR_NAMES = (
 _HDF5_TENSORS_GROUP = "tensors"
 
 
+def _tensor_for_mrc_write(tensor: torch.Tensor) -> torch.Tensor:
+    """CPU copy of *tensor* with non-finite values replaced by 0.
+
+    Constrained match-template leaves MIP at ``-inf`` for pixels that never
+    received an allowed update. MRC files cannot store inf/NaN without
+    warnings, so those sentinels are zeroed on disk only.
+    """
+    cpu = tensor.detach().cpu()
+    if torch.isfinite(cpu).all():
+        return cpu
+    return torch.nan_to_num(cpu, nan=0.0, posinf=0.0, neginf=0.0)
+
+
 def check_file_path_and_permissions(path: str, allow_overwrite: bool) -> None:
     """Ensures path is writable and it does not exist, if `allow_overwrite` is False."""
     # 1. Create path to file, if it does not exist
@@ -314,7 +327,11 @@ class MatchTemplateResultMRC(_MatchTemplateResultBase):
         self.relative_defocus = load_mrc_image(self.relative_defocus_path)
 
     def export_results(self) -> None:
-        """Write the held tensors to their respective MRC paths."""
+        """Write the held tensors to their respective MRC paths.
+
+        The optional correlation table is written only when both
+        ``correlation_table`` and ``correlation_table_path`` are set.
+        """
         pairs = [
             (self.mip_path, self.mip),
             (self.scaled_mip_path, self.scaled_mip),
@@ -327,13 +344,17 @@ class MatchTemplateResultMRC(_MatchTemplateResultBase):
         ]
         for path, tensor in pairs:
             write_mrc_from_tensor(
-                data=tensor,
+                data=_tensor_for_mrc_write(tensor),
                 mrc_path=path,
                 mrc_header=None,
                 overwrite=self.allow_file_overwrite,
             )
 
-        self.export_correlation_table()
+        if (
+            self.correlation_table is not None
+            and self.correlation_table_path is not None
+        ):
+            self.export_correlation_table()
 
     def export_correlation_table(self) -> None:
         """Write the held CorrelationTable to ``self.correlation_table_path``."""
