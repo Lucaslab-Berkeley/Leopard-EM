@@ -187,7 +187,7 @@ Three options are available:
 
 - `"streamed"` (default) — individual 2D cross-correlations are computed across multiple CUDA streams using PyTorch.
 - `"batched"` — all 2D cross-correlations for a batch of orientations are computed in a single batched PyTorch call.
-- `"zipfft"` — cross-correlations are computed using the optional [zipFFT](https://github.com/mgiammar/zipFFT) library, which can substantially speed up the FFT-based cross-correlation step over the two PyTorch-based backends.
+- `"zipfft"` — cross-correlations are computed using the optional [zipFFT](https://github.com/mgiammar/zipFFT) library, which can substantially speed up the FFT-based cross-correlation step over the two PyTorch-based backends. Development of `zipFFT` was initially motivated by Ben Himes's work on [FastFFT](https://github.com/StochasticAnalytics/FastFFT).
 
 ```yaml
 computational_config:
