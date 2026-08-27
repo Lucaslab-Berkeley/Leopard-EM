@@ -228,29 +228,3 @@ def dose_weight_movie_to_micrograph(
     movie_dw = torch.fft.irfft2(movie_dw_dft, s=frame_shape, dim=(-2, -1))  # pylint: disable=not-callable
     image_dw = torch.sum(movie_dw, dim=0)
     return image_dw
-
-
-def volume_to_rfft_fourier_slice(volume: torch.Tensor) -> torch.Tensor:
-    """Prepares a 3D volume for Fourier slice extraction.
-
-    Parameters
-    ----------
-    volume : torch.Tensor
-        The input volume.
-
-    Returns
-    -------
-    torch.Tensor
-        The prepared volume in Fourier space ready for slice extraction.
-    """
-    assert volume.dim() == 3, "Volume must be 3D"
-
-    # NOTE: There is an extra FFTshift step before the RFFT since, for some reason,
-    # omitting this step will cause a 180 degree phase shift on odd (i, j, k)
-    # structure factors in the Fourier domain. This just requires an extra
-    # IFFTshift after converting a slice back to real-space (handled already).
-    volume = torch.fft.fftshift(volume, dim=(0, 1, 2))  # pylint: disable=E1102
-    volume_rfft = torch.fft.rfftn(volume, dim=(0, 1, 2))  # pylint: disable=E1102
-    volume_rfft = torch.fft.fftshift(volume_rfft, dim=(0, 1))  # pylint: disable=E1102
-
-    return volume_rfft

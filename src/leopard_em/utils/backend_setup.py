@@ -7,10 +7,8 @@ import torch
 from torch_motion_correction.deformation_field import DeformationField
 
 from leopard_em.utils.ctf_utils import _setup_ctf_kwargs_from_particle_stack
-from leopard_em.utils.image_processing import (
-    apply_image_filtering,
-    volume_to_rfft_fourier_slice,
-)
+from leopard_em.utils.fourier_slice import volume_to_rfft_fourier_slice
+from leopard_em.utils.image_processing import apply_image_filtering
 
 # Using the TYPE_CHECKING statement to avoid circular imports
 if TYPE_CHECKING:

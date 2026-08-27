@@ -30,10 +30,8 @@ from leopard_em.pydantic_models.results import (
 from leopard_em.pydantic_models.results.correlation_table import CorrelationTable
 from leopard_em.utils.ctf_utils import calculate_ctf_filter_stack
 from leopard_em.utils.data_io import load_mrc_image, load_mrc_volume
-from leopard_em.utils.image_processing import (
-    preprocess_image,
-    volume_to_rfft_fourier_slice,
-)
+from leopard_em.utils.fourier_slice import volume_to_rfft_fourier_slice
+from leopard_em.utils.image_processing import preprocess_image
 
 
 # pylint: disable=no-self-argument
