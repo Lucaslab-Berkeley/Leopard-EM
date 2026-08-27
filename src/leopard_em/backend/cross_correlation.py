@@ -620,10 +620,9 @@ def do_batched_orientation_cross_correlate_zipfft(
             # with (W // 2 + 1, H) for memory efficiency
             # cross_correlation[k, j, ...] has shape (num_orientations, H_out, W_out)
 
-            # NOTE: zipFFT only supports certain batch sizes for optimal performance,
-            # iterate through ZIPFFT_SUPPORTED_BATCH_SIZES to find the largest supported
-            # batch size to decompose the projections into. Batch=1 will always be
-            # supported.
+            # NOTE: zipFFT only supports certain batch sizes for optimal performance.
+            #       If requested orientation batch size not supported, fall back to
+            #       per-orientation (batch=1) processing.
             if num_orientations in ZIPFFT_SUPPORTED_BATCH_SIZES:
                 # pylint: disable=c-extension-no-member
                 zipfft.padded_rconv2d.corr(

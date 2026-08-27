@@ -196,10 +196,12 @@ computational_config:
   backend: zipfft
 ```
 
-<!-- !!! warning "zipFFT requires a cubic template"
+!!! warning "zipFFT supports limited image/template sizes
 
-    The `zipfft` backend requires the reference template volume to be cubic (equal size along all three dimensions).
-    It also only supports a fixed set of batch sizes internally; Leopard-EM automatically falls back to per-orientation looping for unsupported batch sizes, which will run correctly but without the full performance benefit. -->
+    The `zipfft` backend requires the reference template volume to be cubic.
+    By default, `zipfft` supports 512x512x512 templates and 4096x4096 images, but other sizes can be compiled from source (see the [zipFFT GitHub page](www.github.com/mgiammar/zipFFT) for details on compiling an expanded set of shapes/sizes).
+
+    zipFFT also only supports a fixed set of batch sizes internally. For best performance, set `orientation_batch_size` (passed to `run_match_template`) to one of zipFFT's compiled supported batch sizes; any other value still runs correctly via an automatic per-orientation (batch=1) fallback, just without the full performance benefit.
 
 !!! note "zipFFT and the correlation-mode shapes"
 
