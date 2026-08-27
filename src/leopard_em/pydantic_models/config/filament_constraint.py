@@ -58,14 +58,17 @@ class FilamentRegion(BaseModel2DTM):
 
     ``region_id`` is GUI grouping: later regions win where boxes overlap.
     Eligible orientations for pixels in this region come from this region's
-    ``filament_angle_deg`` (psi) and the parent sidecar's shared Euler box.
+    ``filament_angle_deg`` (psi) and the parent sidecar's shared Euler box,
+    or from a per-pixel ``psi_center`` map plus ``polarity``.
     """
 
     model_config: ClassVar = ConfigDict(extra="ignore")
 
-    filament_angle_deg: float
+    filament_angle_deg: float | None = None
     line: FilamentLine | None = None
     spatial_box: SpatialBox | None = None
+    polarity: Literal["unset", "positive", "negative", "both"] = "unset"
+    region_id: int | None = None
 
 
 class FilamentConstraint(BaseModel2DTM):
@@ -80,7 +83,8 @@ class FilamentConstraint(BaseModel2DTM):
     ----------
     filament_angle_deg : float, optional
         In-plane filament angle in degrees, used as ``psi`` for pole 1 when
-        there is a single region. Required unless ``regions`` is non-empty.
+        there is a single region. Required unless ``regions`` is non-empty
+        or ``spatial_constraint_path`` points at a ``psi_center`` map.
         See ``filament_psi_from_image_line``.
     cone_half_angle_deg : float
         Half-width of the Euler box around each pole, in degrees. Applied to
@@ -138,14 +142,18 @@ class FilamentConstraint(BaseModel2DTM):
             "stats_from_valid_orientations",
         ),
     )
+    polarity: Literal["unset", "positive", "negative", "both"] = "unset"
 
     @model_validator(mode="after")
     def _require_angle_or_regions(self) -> FilamentConstraint:
         if self.regions:
             return self
+        if self.spatial_constraint_path:
+            return self
         if self.filament_angle_deg is None:
             raise ValueError(
-                "filament_angle_deg is required unless regions is non-empty."
+                "filament_angle_deg is required unless regions is non-empty "
+                "or spatial_constraint_path is set."
             )
         return self
 
@@ -153,13 +161,24 @@ class FilamentConstraint(BaseModel2DTM):
         """Return committed regions, or one synthetic region from top-level fields."""
         if self.regions:
             return list(self.regions)
+        if self.filament_angle_deg is None:
+            return []
         return [
             FilamentRegion(
                 filament_angle_deg=float(self.filament_angle_deg),
                 line=self.line,
                 spatial_box=self.spatial_box,
+                polarity=self.polarity,
             )
         ]
+
+    def polarity_by_region(self) -> dict[int, str]:
+        """Return ``region_id -> polarity`` from YAML, 1-based if unspecified."""
+        mapping: dict[int, str] = {}
+        for index, region in enumerate(self.iter_regions(), start=1):
+            rid = int(region.region_id) if region.region_id is not None else index
+            mapping[rid] = region.polarity
+        return mapping
 
     def _resolved_filament_angle(
         self, filament_angle_deg: float | None = None
@@ -269,7 +288,7 @@ class FilamentConstraint(BaseModel2DTM):
             f"  theta: [{theta_min:.2f}, {theta_max:.2f}]",
             f"  phi:   [{self.phi_min:.2f}, {self.phi_max:.2f}]",
         ]
-        if len(regions) == 1:
+        if len(regions) == 1 and regions[0].filament_angle_deg is not None:
             pole_1, pole_2 = self.pole_psi_angles_deg(regions[0].filament_angle_deg)
             lines = [
                 f"psi pole 1: {_round_angle(pole_1):.2f}°",
@@ -288,6 +307,9 @@ class FilamentConstraint(BaseModel2DTM):
 
         lines = [f"{len(regions)} regions", *header]
         for index, region in enumerate(regions, start=1):
+            if region.filament_angle_deg is None:
+                lines.append(f"region {index}: polarity {region.polarity}")
+                continue
             pole_1, pole_2 = self.pole_psi_angles_deg(region.filament_angle_deg)
             lines.append(
                 f"region {index}: psi {_round_angle(pole_1):.2f}° / "
@@ -302,7 +324,10 @@ class FilamentConstraint(BaseModel2DTM):
             payload.pop("regions", None)
         if self.regions:
             return payload
-        payload["orientation_search_config"] = self.to_orientation_config().model_dump()
+        if self.filament_angle_deg is not None:
+            payload["orientation_search_config"] = (
+                self.to_orientation_config().model_dump()
+            )
         return payload
 
     def save_sidecar(self, path: str) -> None:
@@ -357,11 +382,26 @@ class FilamentConstraint(BaseModel2DTM):
                 "spatial constraint maps to stats-map coordinates."
             )
         maps = maps.to_stats_map_coords(half_width, stats_shape)
+        if maps.psi_center is not None:
+            maps.set_psi_search_box(
+                cone_half_angle_deg=self.cone_half_angle_deg,
+                theta_center_deg=self.theta_center_deg,
+                phi_min=self.phi_min,
+                phi_max=self.phi_max,
+                polarity_by_region=self.polarity_by_region(),
+                default_polarity=self.polarity,
+            )
         if defocus_values is not None:
             maps.expand_defocus_against_grid(defocus_values)
         if euler_angles is not None:
-            maps.expand_orientation_against_grid(euler_angles)
-            if maps.orientation_eligible is None:
+            maps.expand_orientation_against_grid(
+                euler_angles,
+                cone_half_angle_deg=self.cone_half_angle_deg,
+                theta_center_deg=self.theta_center_deg,
+                phi_min=self.phi_min,
+                phi_max=self.phi_max,
+            )
+            if maps.orientation_eligible is None and maps.psi_center is None:
                 maps.apply_orientation_mask_1d(
                     self.orientation_allowed_mask(euler_angles)
                 )
@@ -384,11 +424,14 @@ class FilamentConstraint(BaseModel2DTM):
                 continue
             n_orients = n_orientations
             if n_orients is None:
-                n_orients = int(
-                    self.to_orientation_config(
-                        region.filament_angle_deg
-                    ).euler_angles.shape[0]
-                )
+                if region.filament_angle_deg is None:
+                    n_orients = 0
+                else:
+                    n_orients = int(
+                        self.to_orientation_config(
+                            region.filament_angle_deg
+                        ).euler_angles.shape[0]
+                    )
             maps = rasterize_rectangle(
                 image_shape=image_shape,
                 box=region.spatial_box,
@@ -433,10 +476,9 @@ class FilamentConstraint(BaseModel2DTM):
         return maps
 
     def _region_table_entry(self, region: FilamentRegion, region_id: int) -> dict:
-        config = self.to_orientation_config(region.filament_angle_deg)
         line = region.line
         box = None if region.spatial_box is None else region.spatial_box.corner_array()
-        return {
+        entry: dict[str, Any] = {
             "cone_half_angle_deg": self.cone_half_angle_deg,
             "theta_center_deg": self.theta_center_deg,
             "phi_min": self.phi_min,
@@ -445,13 +487,18 @@ class FilamentConstraint(BaseModel2DTM):
             "theta_step": self.theta_step,
             "base_grid_method": self.base_grid_method,
             "region_id": region_id,
-            "filament_angle_deg": region.filament_angle_deg,
+            "polarity": region.polarity,
             "box": box,
             "line": None if line is None else (line.y0, line.x0, line.y1, line.x1),
-            "orientation_configs": [
-                block.model_dump() for block in config.orientation_configs
-            ],
         }
+        if region.filament_angle_deg is None:
+            return entry
+        config = self.to_orientation_config(region.filament_angle_deg)
+        entry["filament_angle_deg"] = region.filament_angle_deg
+        entry["orientation_configs"] = [
+            block.model_dump() for block in config.orientation_configs
+        ]
+        return entry
 
     def _make_orientation_config(
         self,

@@ -5,9 +5,10 @@ import os
 from typing import Any, ClassVar, Literal, Optional
 
 import mrcfile
+import numpy as np
 import pandas as pd
 import torch
-from pydantic import ConfigDict, field_validator
+from pydantic import ConfigDict, Field, field_validator
 
 from leopard_em.backend.core_match_template import core_match_template
 from leopard_em.backend.core_match_template_distributed import (
@@ -116,6 +117,12 @@ class MatchTemplateManager(BaseModel2DTM):
     n_defocus_map: ExcludedTensor = None
     defocus_eligible: ExcludedTensor = None
     orientation_eligible: ExcludedTensor = None
+    psi_center: ExcludedTensor = None
+    pole_mask: ExcludedTensor = None
+    psi_cone_half_angle_deg: float | None = Field(default=None, exclude=True)
+    psi_theta_center_deg: float | None = Field(default=None, exclude=True)
+    psi_phi_min: float | None = Field(default=None, exclude=True)
+    psi_phi_max: float | None = Field(default=None, exclude=True)
     stats_from_valid_orientations_defocus: bool = False
 
     ###########################
@@ -169,6 +176,20 @@ class MatchTemplateManager(BaseModel2DTM):
             if maps.orientation_eligible is None
             else torch.from_numpy(maps.orientation_eligible.astype(bool))
         )
+        self.psi_center = (
+            None
+            if maps.psi_center is None
+            else torch.from_numpy(np.asarray(maps.psi_center, dtype=np.float32))
+        )
+        self.pole_mask = (
+            None
+            if maps.pole_mask is None
+            else torch.from_numpy(np.asarray(maps.pole_mask, dtype=np.uint8))
+        )
+        self.psi_cone_half_angle_deg = maps.psi_cone_half_angle_deg
+        self.psi_theta_center_deg = maps.psi_theta_center_deg
+        self.psi_phi_min = maps.psi_phi_min
+        self.psi_phi_max = maps.psi_phi_max
         self.stats_from_valid_orientations_defocus = (
             stats_from_valid_orientations_defocus
         )
@@ -180,6 +201,12 @@ class MatchTemplateManager(BaseModel2DTM):
         The sidecar Euler box and optional HDF5 only subset which
         (pixel, orientation, defocus) tuples may win the MIP.
         """
+        print(
+            "Applying spatial constraint: load maps, convert to stats-map "
+            "coordinates, then count eligible orientations (CPU; can take "
+            "several minutes, no GPU yet)...",
+            flush=True,
+        )
         if self.micrograph is None:
             self.micrograph = load_mrc_image(self.micrograph_path)
         image = self.micrograph
@@ -308,6 +335,20 @@ class MatchTemplateManager(BaseModel2DTM):
                 if self.orientation_eligible is None
                 else torch.as_tensor(self.orientation_eligible, dtype=torch.bool)
             ),
+            "psi_center": (
+                None
+                if self.psi_center is None
+                else torch.as_tensor(self.psi_center, dtype=torch.float32)
+            ),
+            "pole_mask": (
+                None
+                if self.pole_mask is None
+                else torch.as_tensor(self.pole_mask, dtype=torch.uint8)
+            ),
+            "psi_cone_half_angle_deg": self.psi_cone_half_angle_deg,
+            "psi_theta_center_deg": self.psi_theta_center_deg,
+            "psi_phi_min": self.psi_phi_min,
+            "psi_phi_max": self.psi_phi_max,
             "stats_from_valid_orientations_defocus": (
                 self.stats_from_valid_orientations_defocus
             ),

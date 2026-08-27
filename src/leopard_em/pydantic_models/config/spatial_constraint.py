@@ -11,11 +11,14 @@ HDF5 layout::
     maps/defocus_max       float32 (H, W)           # optional, relative Å
     maps/defocus_eligible  uint8  (n_defocus, H, W) # optional, kernel-ready
     maps/orientation_eligible uint8 (n_orient, H, W) or (n_orient,)  # optional
+    maps/psi_center        float32 (H, W)           # optional, membrane normal psi
+    maps/signed_distance   float32 (H, W)           # optional, polarity GUI
     regions/0001/...
 """
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -28,6 +31,14 @@ from leopard_em.pydantic_models.custom_types import BaseModel2DTM
 _MAPS_GROUP = "maps"
 _REGIONS_GROUP = "regions"
 _COORDINATE_FRAME = "pos_xy_img"
+
+# Per-pixel pole bits used with ``psi_center`` (no dense n_orient cube).
+POLE_POSITIVE = 1  # search ``psi_center``
+POLE_NEGATIVE = 2  # search ``psi_center + 180``
+POLE_BOTH = POLE_POSITIVE | POLE_NEGATIVE
+_ORIENT_COUNT_CHUNK = 32
+_ORIENT_COUNT_PROGRESS_MIN_ANGLES = 256
+_ORIENT_COUNT_PROGRESS_INTERVAL_S = 10.0
 
 
 class SpatialBox(BaseModel2DTM):
@@ -120,6 +131,21 @@ class SpatialConstraintMaps:
         ``uint8`` kernel-ready mask of shape ``(n_orient, H, W)`` or
         ``(n_orient,)``. A 1-D mask is the same allowed YAML angles at every
         in-play pixel (broadcast with ``eligible``).
+    psi_center : np.ndarray, optional
+        ``float32`` in-plane ``psi`` of the local membrane normal, degrees
+        in ``[0, 360)``. Same convention as
+        ``filament_psi_from_image_line``: ``atan2(-normal_y, normal_x)``.
+        When set, the kernel expands the Euler box per pixel instead of
+        storing an ``(n_orient, H, W)`` cube.
+    signed_distance : np.ndarray, optional
+        ``float32`` signed distance to the membrane spline (polarity GUI).
+    pole_mask : np.ndarray, optional
+        ``uint8`` 2-bit pole mask (bit 0 = ``psi_center``, bit 1 =
+        ``psi_center + 180``). Derived from per-region polarity at expand
+        time if missing.
+    psi_cone_half_angle_deg, psi_theta_center_deg, psi_phi_min, psi_phi_max
+        Shared Euler-box scalars used with ``psi_center``. YAML is the
+        source of record; these are filled at expand time.
     """
 
     eligible: np.ndarray
@@ -134,11 +160,39 @@ class SpatialConstraintMaps:
     defocus_max: np.ndarray | None = None
     defocus_eligible: np.ndarray | None = None
     orientation_eligible: np.ndarray | None = None
+    psi_center: np.ndarray | None = None
+    signed_distance: np.ndarray | None = None
+    pole_mask: np.ndarray | None = None
+    psi_cone_half_angle_deg: float | None = None
+    psi_theta_center_deg: float | None = None
+    psi_phi_min: float | None = None
+    psi_phi_max: float | None = None
 
     def fill_n_orientations(self, n_orient: int) -> None:
         """Set ``n_orientations`` to ``n_orient`` inside the eligible mask."""
         self.n_orientations = np.where(self.eligible > 0, int(n_orient), 0).astype(
             np.int32
+        )
+
+    def set_psi_search_box(
+        self,
+        cone_half_angle_deg: float,
+        theta_center_deg: float = 90.0,
+        phi_min: float = 0.0,
+        phi_max: float = 360.0,
+        polarity_by_region: dict[int, str] | None = None,
+        default_polarity: str = "unset",
+    ) -> None:
+        """Attach the shared Euler box and per-pixel pole mask for ``psi_center``."""
+        self.psi_cone_half_angle_deg = float(cone_half_angle_deg)
+        self.psi_theta_center_deg = float(theta_center_deg)
+        self.psi_phi_min = float(phi_min)
+        self.psi_phi_max = float(phi_max)
+        self.pole_mask = pole_mask_from_region_id(
+            self.region_id,
+            polarity_by_region=polarity_by_region,
+            default_polarity=default_polarity,
+            regions=self.regions,
         )
 
     def expand_defocus_against_grid(self, defocus_values: Any) -> None:
@@ -191,7 +245,14 @@ class SpatialConstraintMaps:
         self.defocus_eligible = ok.astype(np.uint8)
         self.n_defocus = ok.sum(axis=0).astype(np.int32)
 
-    def expand_orientation_against_grid(self, euler_angles: Any) -> None:
+    def expand_orientation_against_grid(
+        self,
+        euler_angles: Any,
+        cone_half_angle_deg: float | None = None,
+        theta_center_deg: float | None = None,
+        phi_min: float | None = None,
+        phi_max: float | None = None,
+    ) -> None:
         """Build ``orientation_eligible`` / ``n_orientations`` against this run.
 
         The YAML Euler list is the source of allowed angles. HDF5 maps only
@@ -200,14 +261,40 @@ class SpatialConstraintMaps:
         ``orientation_eligible`` stays ``None`` so the kernel does not allocate
         a 3-D mask.
 
-        Precedence: ``orientation_eligible`` as stored, else per-region Euler
-        boxes in the region table.
+        Precedence: stored ``orientation_eligible``, else per-pixel
+        ``psi_center`` (count only, no cube), else per-region Euler boxes.
         """
         angles = _as_euler_array(euler_angles)
         n_grid = int(angles.shape[0])
         if n_grid == 0:
             raise ValueError("euler_angles must contain at least one sample.")
         eligible = self.eligible > 0
+
+        if self.psi_center is not None and self.orientation_eligible is None:
+            if cone_half_angle_deg is not None:
+                self.psi_cone_half_angle_deg = float(cone_half_angle_deg)
+            if theta_center_deg is not None:
+                self.psi_theta_center_deg = float(theta_center_deg)
+            if phi_min is not None:
+                self.psi_phi_min = float(phi_min)
+            if phi_max is not None:
+                self.psi_phi_max = float(phi_max)
+            if self.pole_mask is None:
+                self.pole_mask = pole_mask_from_region_id(
+                    self.region_id, regions=self.regions
+                )
+            self.n_orientations = count_orientations_from_psi_center(
+                angles,
+                psi_center=self.psi_center,
+                eligible=self.eligible,
+                pole_mask=self.pole_mask,
+                cone_half_angle_deg=self._resolved_psi_cone(),
+                theta_center_deg=self._resolved_psi_theta_center(),
+                phi_min=self._resolved_psi_phi_min(),
+                phi_max=self._resolved_psi_phi_max(),
+            )
+            self.orientation_eligible = None
+            return
 
         if self.orientation_eligible is not None:
             ok = np.asarray(self.orientation_eligible, dtype=bool)
@@ -250,6 +337,38 @@ class SpatialConstraintMaps:
         ok = ok & eligible[None, :, :]
         self.orientation_eligible = ok.astype(np.uint8)
         self.n_orientations = ok.sum(axis=0).astype(np.int32)
+
+    def _resolved_psi_cone(self) -> float:
+        if self.psi_cone_half_angle_deg is not None:
+            return float(self.psi_cone_half_angle_deg)
+        for region in self.regions:
+            if region.get("cone_half_angle_deg") is not None:
+                return float(region["cone_half_angle_deg"])
+        return 10.0
+
+    def _resolved_psi_theta_center(self) -> float:
+        if self.psi_theta_center_deg is not None:
+            return float(self.psi_theta_center_deg)
+        for region in self.regions:
+            if region.get("theta_center_deg") is not None:
+                return float(region["theta_center_deg"])
+        return 90.0
+
+    def _resolved_psi_phi_min(self) -> float:
+        if self.psi_phi_min is not None:
+            return float(self.psi_phi_min)
+        for region in self.regions:
+            if region.get("phi_min") is not None:
+                return float(region["phi_min"])
+        return 0.0
+
+    def _resolved_psi_phi_max(self) -> float:
+        if self.psi_phi_max is not None:
+            return float(self.psi_phi_max)
+        for region in self.regions:
+            if region.get("phi_max") is not None:
+                return float(region["phi_max"])
+        return 360.0
 
     def apply_orientation_mask_1d(self, mask_1d: Any) -> None:
         """Restrict in-play pixels to a shared 1-D YAML-angle mask."""
@@ -363,6 +482,14 @@ class SpatialConstraintMaps:
                     in_bounds[None, :, :], sampled, 0
                 ).astype(np.uint8)
 
+        psi_center = _sample_optional_map(self.psi_center, yy, xx, in_bounds, 0.0)
+        signed_distance = _sample_optional_map(
+            self.signed_distance, yy, xx, in_bounds, 0.0
+        )
+        pole_mask = _sample_optional_map(self.pole_mask, yy, xx, in_bounds, 0)
+        if pole_mask is not None:
+            pole_mask = pole_mask.astype(np.uint8)
+
         return SpatialConstraintMaps(
             eligible=eligible,
             region_id=region_id,
@@ -376,6 +503,13 @@ class SpatialConstraintMaps:
             defocus_max=defocus_max,
             defocus_eligible=defocus_eligible,
             orientation_eligible=orientation_eligible,
+            psi_center=psi_center,
+            signed_distance=signed_distance,
+            pole_mask=pole_mask,
+            psi_cone_half_angle_deg=self.psi_cone_half_angle_deg,
+            psi_theta_center_deg=self.psi_theta_center_deg,
+            psi_phi_min=self.psi_phi_min,
+            psi_phi_max=self.psi_phi_max,
         )
 
     def allowed_num_ccg(self, n_defocus: int | None = None, n_cs: int = 1) -> int:
@@ -556,6 +690,28 @@ def combine_spatial_maps(
         regions.extend(maps.regions)
         if maps.pixel_size_angstrom is not None:
             pixel_size = maps.pixel_size_angstrom
+
+    psi_center = None
+    signed_distance = None
+    if any(maps.psi_center is not None for maps in parts):
+        psi_center = np.zeros(shape, dtype=np.float32)
+        for maps in parts:
+            if maps.psi_center is None:
+                continue
+            inside = maps.eligible > 0
+            psi_center = np.where(inside, maps.psi_center, psi_center).astype(
+                np.float32
+            )
+    if any(maps.signed_distance is not None for maps in parts):
+        signed_distance = np.zeros(shape, dtype=np.float32)
+        for maps in parts:
+            if maps.signed_distance is None:
+                continue
+            inside = maps.eligible > 0
+            signed_distance = np.where(
+                inside, maps.signed_distance, signed_distance
+            ).astype(np.float32)
+
     return SpatialConstraintMaps(
         eligible=eligible,
         region_id=region_id,
@@ -564,6 +720,8 @@ def combine_spatial_maps(
         coordinate_frame=first.coordinate_frame,
         pixel_size_angstrom=pixel_size,
         regions=regions,
+        psi_center=psi_center,
+        signed_distance=signed_distance,
     )
 
 
@@ -632,6 +790,18 @@ def write_spatial_constraint_hdf5(
                 data=np.asarray(maps.orientation_eligible, dtype=np.uint8),
                 **compression_kwargs,
             )
+        if maps.psi_center is not None:
+            maps_group.create_dataset(
+                "psi_center",
+                data=np.asarray(maps.psi_center, dtype=np.float32),
+                **compression_kwargs,
+            )
+        if maps.signed_distance is not None:
+            maps_group.create_dataset(
+                "signed_distance",
+                data=np.asarray(maps.signed_distance, dtype=np.float32),
+                **compression_kwargs,
+            )
 
         regions_group = handle.create_group(_REGIONS_GROUP)
         for index, region in enumerate(maps.regions, start=1):
@@ -656,6 +826,10 @@ def read_spatial_constraint_hdf5(path: str) -> SpatialConstraintMaps:
         )
         orientation_eligible = _read_optional_dataset(
             maps_group, "orientation_eligible", np.uint8
+        )
+        psi_center = _read_optional_dataset(maps_group, "psi_center", np.float32)
+        signed_distance = _read_optional_dataset(
+            maps_group, "signed_distance", np.float32
         )
         if shape_attr is None:
             micrograph_shape = (int(eligible.shape[0]), int(eligible.shape[1]))
@@ -683,6 +857,8 @@ def read_spatial_constraint_hdf5(path: str) -> SpatialConstraintMaps:
         defocus_max=defocus_max,
         defocus_eligible=defocus_eligible,
         orientation_eligible=orientation_eligible,
+        psi_center=psi_center,
+        signed_distance=signed_distance,
     )
 
 
@@ -732,6 +908,7 @@ def _write_region_group(grp: h5py.Group, region: dict[str, Any]) -> None:
         "base_grid_method",
         "defocus_min",
         "defocus_max",
+        "polarity",
     ):
         if key in region and region[key] is not None:
             grp.attrs[key] = region[key]
@@ -878,3 +1055,177 @@ def _region_orientation_mask(
     if not usable:
         return None
     return euler_angles_in_boxes(angles, usable)
+
+
+def polarity_to_pole_mask(polarity: str | None) -> int:
+    """Map a polarity label to the 2-bit search mask.
+
+    ``positive`` searches ``psi_center`` only, ``negative`` searches
+    ``psi_center + 180``, ``both`` / ``unset`` search both poles.
+    """
+    label = "unset" if polarity is None else str(polarity).strip().lower()
+    if label == "positive":
+        return POLE_POSITIVE
+    if label == "negative":
+        return POLE_NEGATIVE
+    return POLE_BOTH
+
+
+def pole_mask_from_region_id(
+    region_id: np.ndarray,
+    polarity_by_region: dict[int, str] | None = None,
+    default_polarity: str = "unset",
+    regions: list[dict[str, Any]] | None = None,
+) -> np.ndarray:
+    """Build a per-pixel ``uint8`` pole mask from region polarity labels."""
+    lookup: dict[int, int] = {}
+    default_bits = polarity_to_pole_mask(default_polarity)
+    if regions:
+        for region in regions:
+            rid = region.get("region_id")
+            if rid is None:
+                continue
+            lookup[int(rid)] = polarity_to_pole_mask(region.get("polarity"))
+    if polarity_by_region:
+        for rid, polarity in polarity_by_region.items():
+            lookup[int(rid)] = polarity_to_pole_mask(polarity)
+
+    ids = np.asarray(region_id, dtype=np.int32)
+    mask = np.zeros(ids.shape, dtype=np.uint8)
+    unique_ids = np.unique(ids)
+    for rid in unique_ids:
+        if int(rid) <= 0:
+            continue
+        bits = lookup.get(int(rid), default_bits)
+        mask[ids == rid] = np.uint8(bits)
+    return mask
+
+
+def circular_abs_diff_deg(
+    values: np.ndarray, center: np.ndarray | float
+) -> np.ndarray:
+    """Smallest absolute difference on a 360° circle, in degrees."""
+    return np.abs(((values - center + 180.0) % 360.0) - 180.0)
+
+
+def psi_from_normal_yx(
+    normal_y: np.ndarray | float, normal_x: np.ndarray | float
+) -> np.ndarray | float:
+    """In-plane ``psi`` of a membrane normal, degrees in ``[0, 360)``.
+
+    Matches ``filament_psi_from_image_line``: ``atan2(-normal_y, normal_x)``.
+    """
+    psi = np.degrees(np.arctan2(-np.asarray(normal_y), np.asarray(normal_x))) % 360.0
+    if np.ndim(psi) == 0:
+        return float(psi)
+    return psi.astype(np.float32)
+
+
+def count_orientations_from_psi_center(
+    euler_angles: np.ndarray,
+    psi_center: np.ndarray,
+    eligible: np.ndarray,
+    pole_mask: np.ndarray,
+    cone_half_angle_deg: float,
+    theta_center_deg: float = 90.0,
+    phi_min: float = 0.0,
+    phi_max: float = 360.0,
+    atol: float = 1e-3,
+    chunk: int = _ORIENT_COUNT_CHUNK,
+) -> np.ndarray:
+    """Count YAML angles inside the per-pixel ``psi_center`` Euler box.
+
+    Does not allocate an ``(n_orient, H, W)`` cube. Loops over orientation
+    chunks and accumulates a ``(H, W)`` count.
+    """
+    angles = _as_euler_array(euler_angles)
+    n_grid = int(angles.shape[0])
+    counts = np.zeros(eligible.shape, dtype=np.int32)
+    in_play = eligible > 0
+    if n_grid == 0 or not bool(in_play.any()):
+        return counts
+
+    phi = angles[:, 0]
+    theta = angles[:, 1]
+    psi = angles[:, 2]
+    theta_min = max(0.0, float(theta_center_deg) - float(cone_half_angle_deg))
+    theta_max = min(180.0, float(theta_center_deg) + float(cone_half_angle_deg))
+    theta_ok = _in_angle_range(theta, theta_min, theta_max, period=None, atol=atol)
+    phi_ok = _in_angle_range(phi, phi_min, phi_max, period=360.0, atol=atol)
+    box_ok = np.nonzero(theta_ok & phi_ok)[0]
+    if box_ok.size == 0:
+        return counts
+
+    psi_map = np.asarray(psi_center, dtype=np.float64)
+    poles = np.asarray(pole_mask, dtype=np.uint8)
+    allow_pos = (poles & POLE_POSITIVE) != 0
+    allow_neg = (poles & POLE_NEGATIVE) != 0
+    half = float(cone_half_angle_deg) + atol
+    cone_full = float(cone_half_angle_deg) >= 180.0
+
+    step = max(int(chunk), 1)
+    n_angles = int(box_ok.size)
+    n_pix = int(in_play.sum())
+    report = n_angles >= _ORIENT_COUNT_PROGRESS_MIN_ANGLES
+    if report:
+        print(
+            "Counting eligible orientations at each in-play pixel "
+            f"({n_pix} pixels, {n_angles} YAML angles in the Euler box, "
+            f"chunk={step}). This is CPU-only and has no search progress bar...",
+            flush=True,
+        )
+    last_report = time.monotonic()
+    for start in range(0, n_angles, step):
+        idx = box_ok[start : start + step]
+        psi_batch = psi[idx][:, None, None]
+        if cone_full:
+            ok = np.broadcast_to(in_play, (idx.size, *in_play.shape))
+        else:
+            d0 = circular_abs_diff_deg(psi_batch, psi_map)
+            d1 = circular_abs_diff_deg(psi_batch, (psi_map + 180.0) % 360.0)
+            ok = (allow_pos & (d0 <= half)) | (allow_neg & (d1 <= half))
+            ok = ok & in_play[None, :, :]
+        counts += ok.sum(axis=0).astype(np.int32)
+        done = min(start + step, n_angles)
+        now = time.monotonic()
+        if report and (
+            start == 0
+            or done == n_angles
+            or now - last_report >= _ORIENT_COUNT_PROGRESS_INTERVAL_S
+        ):
+            pct = 100.0 * done / n_angles
+            print(
+                f"  orientation count {done}/{n_angles} ({pct:.0f}%)",
+                flush=True,
+            )
+            last_report = now
+    return counts
+
+
+def euler_ok_from_psi_center(
+    phi: float,
+    theta: float,
+    psi: float,
+    psi_center: np.ndarray,
+    pole_mask: np.ndarray,
+    cone_half_angle_deg: float,
+    theta_center_deg: float = 90.0,
+    phi_min: float = 0.0,
+    phi_max: float = 360.0,
+    atol: float = 1e-3,
+) -> np.ndarray:
+    """Return a 2-D mask of pixels where one Euler triple is allowed."""
+    angles = np.asarray([[phi, theta, psi]], dtype=np.float64)
+    counts = count_orientations_from_psi_center(
+        angles,
+        psi_center=psi_center,
+        eligible=np.ones(np.asarray(psi_center).shape, dtype=np.uint8),
+        pole_mask=pole_mask,
+        cone_half_angle_deg=cone_half_angle_deg,
+        theta_center_deg=theta_center_deg,
+        phi_min=phi_min,
+        phi_max=phi_max,
+        atol=atol,
+        chunk=1,
+    )
+    return counts > 0

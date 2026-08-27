@@ -524,6 +524,12 @@ def core_match_template_distributed(
         stats_from_valid_orientations_defocus=bool(
             kwargs.get("stats_from_valid_orientations_defocus", False)
         ),
+        psi_center=kwargs.get("psi_center"),  # type: ignore[arg-type]
+        pole_mask=kwargs.get("pole_mask"),  # type: ignore[arg-type]
+        psi_cone_half_angle_deg=kwargs.get("psi_cone_half_angle_deg"),  # type: ignore[arg-type]
+        psi_theta_center_deg=kwargs.get("psi_theta_center_deg"),  # type: ignore[arg-type]
+        psi_phi_min=kwargs.get("psi_phi_min"),  # type: ignore[arg-type]
+        psi_phi_max=kwargs.get("psi_phi_max"),  # type: ignore[arg-type]
     )
     dist.barrier()
 

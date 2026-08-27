@@ -371,3 +371,61 @@ def test_num_ccg_uses_per_pixel_defocus():
     assert len(peaks.pos_y) == 1
     assert int(peaks.pos_y[0]) == 4
     assert int(peaks.pos_x[0]) == 4
+
+
+def test_hdf5_roundtrip_psi_center(tmp_path: Path):
+    maps = rasterize_rectangle((6, 7), box=(1.0, 1.0, 3.0, 4.0), n_orientations=0)
+    psi = np.zeros((6, 7), dtype=np.float32)
+    psi[2, 3] = 90.0
+    maps.psi_center = psi
+    maps.signed_distance = np.where(maps.eligible > 0, 1.5, 0.0).astype(np.float32)
+    maps.regions[0]["polarity"] = "positive"
+    path = tmp_path / "psi_center.h5"
+    write_spatial_constraint_hdf5(str(path), maps)
+    loaded = read_spatial_constraint_hdf5(str(path))
+    assert loaded.psi_center is not None
+    np.testing.assert_allclose(loaded.psi_center, psi)
+    np.testing.assert_allclose(loaded.signed_distance, maps.signed_distance)
+    assert loaded.regions[0]["polarity"] == "positive"
+
+
+def test_psi_center_to_stats_map_coords_aligned_with_eligible():
+    maps = rasterize_rectangle((10, 10), box=(4.0, 4.0, 6.0, 6.0), n_orientations=0)
+    maps.psi_center = np.where(maps.eligible > 0, 45.0, 0.0).astype(np.float32)
+    stats = maps.to_stats_map_coords(half_template_width=2, stats_shape=(7, 7))
+    assert stats.psi_center is not None
+    assert stats.psi_center.shape == stats.eligible.shape
+    inside = stats.eligible > 0
+    np.testing.assert_allclose(stats.psi_center[inside], 45.0)
+    assert int(stats.eligible[2, 2]) == 1
+    assert stats.psi_center[2, 2] == pytest.approx(45.0)
+    assert int(stats.eligible[0, 0]) == 0
+
+
+def test_expand_orientation_psi_center_polarity_poles():
+    maps = rasterize_rectangle((1, 1), box=(0.0, 0.0, 0.0, 0.0), n_orientations=0)
+    maps.eligible[:] = 1
+    maps.region_id[:] = 1
+    maps.psi_center = np.array([[0.0]], dtype=np.float32)
+    euler = np.array(
+        [
+            [0.0, 90.0, 5.0],
+            [0.0, 90.0, 180.0],
+        ],
+        dtype=np.float64,
+    )
+    maps.set_psi_search_box(
+        cone_half_angle_deg=10.0,
+        polarity_by_region={1: "positive"},
+    )
+    maps.expand_orientation_against_grid(euler)
+    assert maps.orientation_eligible is None
+    assert int(maps.n_orientations[0, 0]) == 1
+
+    maps.set_psi_search_box(
+        cone_half_angle_deg=10.0,
+        polarity_by_region={1: "both"},
+    )
+    maps.expand_orientation_against_grid(euler)
+    assert maps.orientation_eligible is None
+    assert int(maps.n_orientations[0, 0]) == 2

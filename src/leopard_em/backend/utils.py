@@ -55,6 +55,92 @@ def combine_euler_angles(angle_a: torch.Tensor, angle_b: torch.Tensor) -> torch.
     return euler_angles_c
 
 
+def _circular_abs_diff_deg(values: torch.Tensor, center: torch.Tensor) -> torch.Tensor:
+    """Smallest absolute difference on a 360° circle, in degrees."""
+    return torch.abs(((values - center + 180.0) % 360.0) - 180.0)
+
+
+def _in_angle_range_torch(
+    values: torch.Tensor,
+    lo: float,
+    hi: float,
+    period: float | None,
+    atol: float = 1e-3,
+) -> torch.Tensor:
+    """Inclusive range test matching the numpy spatial-constraint helper."""
+    if period is None:
+        return (values >= lo - atol) & (values <= hi + atol)
+    if hi + atol >= period and lo <= atol:
+        return torch.ones_like(values, dtype=torch.bool)
+    if lo <= hi:
+        return (values >= lo - atol) & (values <= hi + atol)
+    return (values >= lo - atol) | (values <= hi + atol)
+
+
+def _orient_ok_from_psi_center(
+    euler_angles: torch.Tensor,
+    orient_idx: torch.Tensor,
+    psi_center: torch.Tensor,
+    pole_mask: torch.Tensor | None,
+    cone_half_angle_deg: float,
+    theta_center_deg: float,
+    phi_min: float,
+    phi_max: float,
+    height: int,
+    width: int,
+    atol: float = 1e-3,
+) -> torch.Tensor:
+    """Return ``(B, H, W)`` mask for this batch from per-pixel ``psi_center``."""
+    device = psi_center.device
+    angles = euler_angles[orient_idx.to(dtype=torch.int64)]
+    phi = angles[:, 0]
+    theta = angles[:, 1]
+    psi = angles[:, 2]
+    psi_map = psi_center.to(device=device, dtype=phi.dtype)
+    if tuple(psi_map.shape) != (height, width):
+        raise ValueError(
+            "psi_center shape "
+            f"{tuple(psi_map.shape)} does not match stats-map shape "
+            f"({height}, {width})."
+        )
+
+    theta_min = max(0.0, float(theta_center_deg) - float(cone_half_angle_deg))
+    theta_max = min(180.0, float(theta_center_deg) + float(cone_half_angle_deg))
+    theta_ok = _in_angle_range_torch(theta, theta_min, theta_max, period=None, atol=atol)
+    phi_ok = _in_angle_range_torch(
+        phi, float(phi_min), float(phi_max), period=360.0, atol=atol
+    )
+    box_ok = (phi_ok & theta_ok)[:, None, None]
+
+    if pole_mask is None:
+        poles = torch.full(
+            (height, width), 3, dtype=torch.uint8, device=device
+        )
+    else:
+        poles = pole_mask.to(device=device, dtype=torch.uint8)
+        if tuple(poles.shape) != (height, width):
+            raise ValueError(
+                "pole_mask shape "
+                f"{tuple(poles.shape)} does not match stats-map shape "
+                f"({height}, {width})."
+            )
+
+    if float(cone_half_angle_deg) >= 180.0:
+        psi_ok = torch.ones(
+            (orient_idx.numel(), height, width), dtype=torch.bool, device=device
+        )
+    else:
+        half = float(cone_half_angle_deg) + atol
+        psi_b = psi[:, None, None]
+        d0 = _circular_abs_diff_deg(psi_b, psi_map)
+        d1 = _circular_abs_diff_deg(psi_b, (psi_map + 180.0) % 360.0)
+        allow_pos = (poles & 1) != 0
+        allow_neg = (poles & 2) != 0
+        psi_ok = (allow_pos & (d0 <= half)) | (allow_neg & (d1 <= half))
+
+    return box_ok & psi_ok
+
+
 def attempt_torch_compilation(
     target_func: F, backend: str = "inductor", mode: str = "default"
 ) -> F:
@@ -442,6 +528,13 @@ def do_iteration_and_correlation_table_updates(
     n_orientations: int = 1,
     stats_from_valid_orientations_defocus: bool = False,
     correlation_count: torch.Tensor | None = None,
+    psi_center: torch.Tensor | None = None,
+    pole_mask: torch.Tensor | None = None,
+    euler_angles: torch.Tensor | None = None,
+    psi_cone_half_angle_deg: float | None = None,
+    psi_theta_center_deg: float | None = None,
+    psi_phi_min: float | None = None,
+    psi_phi_max: float | None = None,
 ) -> None:
     """Helper function for updating maxima, tracked statistics, and correlation table.
 
@@ -501,11 +594,24 @@ def do_iteration_and_correlation_table_updates(
     correlation_count : torch.Tensor, optional
         Running eligible-tuple count per pixel. Updated when
         ``stats_from_valid_orientations_defocus`` is True.
+    psi_center : torch.Tensor, optional
+        Per-pixel in-plane ``psi`` of the membrane normal, degrees.
+        When set, each batch orientation is tested against this field
+        instead of a dense ``orientation_eligible`` cube.
+    pole_mask : torch.Tensor, optional
+        ``uint8`` 2-bit mask: bit 0 allows ``psi_center``, bit 1 allows
+        ``psi_center + 180``.
+    euler_angles : torch.Tensor, optional
+        Full YAML Euler list ``(n_orient, 3)`` in degrees. Required when
+        ``psi_center`` is set.
+    psi_cone_half_angle_deg, psi_theta_center_deg, psi_phi_min, psi_phi_max
+        Shared Euler-box scalars used with ``psi_center``.
     """
     apply_eligibility = (
         eligible_pixels is not None
         or orientation_eligible is not None
         or defocus_eligible is not None
+        or psi_center is not None
     )
     device = cross_correlation.device
     pixel_ok = eligible_pixels
@@ -519,7 +625,28 @@ def do_iteration_and_correlation_table_updates(
     n_orient = max(int(n_orientations), 1)
     orient_ok = None
     if apply_eligibility:
-        if orientation_eligible is None:
+        if psi_center is not None:
+            if euler_angles is None:
+                raise ValueError("euler_angles is required when psi_center is set.")
+            n_orient = max(n_orient, int(euler_angles.shape[0]))
+            orient_idx = current_indexes % n_orient
+            orient_ok = _orient_ok_from_psi_center(
+                euler_angles=euler_angles.to(device=device),
+                orient_idx=orient_idx,
+                psi_center=psi_center,
+                pole_mask=pole_mask,
+                cone_half_angle_deg=(
+                    10.0 if psi_cone_half_angle_deg is None else psi_cone_half_angle_deg
+                ),
+                theta_center_deg=(
+                    90.0 if psi_theta_center_deg is None else psi_theta_center_deg
+                ),
+                phi_min=0.0 if psi_phi_min is None else psi_phi_min,
+                phi_max=360.0 if psi_phi_max is None else psi_phi_max,
+                height=valid_shape_h,
+                width=valid_shape_w,
+            )
+        elif orientation_eligible is None:
             orient_ok = torch.ones(
                 current_indexes.numel(),
                 dtype=torch.bool,

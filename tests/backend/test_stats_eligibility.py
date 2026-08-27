@@ -248,3 +248,49 @@ def test_stats_from_valid_orientations_masks_illegal_orientation():
     assert mip[0, 0] == pytest.approx(5.0)
     assert corr_sum[0, 0] == pytest.approx(5.0)
     assert corr_count[0, 0] == pytest.approx(1.0)
+
+
+def test_psi_center_masks_opposite_pole():
+    height, width = 1, 1
+    cc = torch.tensor([[[9.0]], [[3.0]]], dtype=torch.float32)
+    current_indexes = torch.tensor([0, 1], dtype=torch.int32)
+    mip = torch.full((height, width), -float("inf"))
+    best = torch.full((height, width), -1, dtype=torch.int32)
+    corr_sum = torch.zeros((height, width))
+    corr_sq = torch.zeros((height, width))
+    corr_count = torch.zeros((height, width))
+    euler_angles = torch.tensor(
+        [[0.0, 90.0, 5.0], [0.0, 90.0, 180.0]], dtype=torch.float32
+    )
+    psi_center = torch.zeros((height, width), dtype=torch.float32)
+    pole_mask = torch.full((height, width), 1, dtype=torch.uint8)
+
+    do_iteration_and_correlation_table_updates(
+        cross_correlation=cc,
+        current_indexes=current_indexes,
+        correlation_table=_empty_table(),
+        mip=mip,
+        best_global_index=best,
+        correlation_sum=corr_sum,
+        correlation_squared_sum=corr_sq,
+        threshold=5.5,
+        valid_shape_h=height,
+        valid_shape_w=width,
+        needs_valid_cropping=False,
+        compute_correlation_table=False,
+        n_orientations=2,
+        stats_from_valid_orientations_defocus=True,
+        correlation_count=corr_count,
+        psi_center=psi_center,
+        pole_mask=pole_mask,
+        euler_angles=euler_angles,
+        psi_cone_half_angle_deg=10.0,
+        psi_theta_center_deg=90.0,
+        psi_phi_min=0.0,
+        psi_phi_max=360.0,
+    )
+
+    assert mip[0, 0] == pytest.approx(9.0)
+    assert int(best[0, 0]) == 0
+    assert corr_sum[0, 0] == pytest.approx(9.0)
+    assert corr_count[0, 0] == pytest.approx(1.0)

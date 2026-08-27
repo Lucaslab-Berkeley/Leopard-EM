@@ -168,6 +168,12 @@ def core_match_template(
     orientation_eligible: torch.Tensor | None = None,
     defocus_eligible: torch.Tensor | None = None,
     stats_from_valid_orientations_defocus: bool = False,
+    psi_center: torch.Tensor | None = None,
+    pole_mask: torch.Tensor | None = None,
+    psi_cone_half_angle_deg: float | None = None,
+    psi_theta_center_deg: float | None = None,
+    psi_phi_min: float | None = None,
+    psi_phi_max: float | None = None,
 ) -> dict[str, torch.Tensor | dict | int]:
     """Core function for performing the whole-orientation search.
 
@@ -301,6 +307,10 @@ def core_match_template(
         orientation_eligible = orientation_eligible.cpu()
     if defocus_eligible is not None:
         defocus_eligible = defocus_eligible.cpu()
+    if psi_center is not None:
+        psi_center = psi_center.cpu()
+    if pole_mask is not None:
+        pole_mask = pole_mask.cpu()
 
     ##############################################################
     ### Pre-multiply the whitening filter with the CTF filters ###
@@ -358,6 +368,12 @@ def core_match_template(
             "stats_from_valid_orientations_defocus": (
                 stats_from_valid_orientations_defocus
             ),
+            "psi_center": psi_center,
+            "pole_mask": pole_mask,
+            "psi_cone_half_angle_deg": psi_cone_half_angle_deg,
+            "psi_theta_center_deg": psi_theta_center_deg,
+            "psi_phi_min": psi_phi_min,
+            "psi_phi_max": psi_phi_max,
         }
 
         kwargs_per_device.append(kwargs)
@@ -445,6 +461,12 @@ def _core_match_template_single_gpu(
     orientation_eligible: torch.Tensor | None = None,
     defocus_eligible: torch.Tensor | None = None,
     stats_from_valid_orientations_defocus: bool = False,
+    psi_center: torch.Tensor | None = None,
+    pole_mask: torch.Tensor | None = None,
+    psi_cone_half_angle_deg: float | None = None,
+    psi_theta_center_deg: float | None = None,
+    psi_phi_min: float | None = None,
+    psi_phi_max: float | None = None,
 ) -> tuple[
     torch.Tensor,
     torch.Tensor,
@@ -643,6 +665,22 @@ def _core_match_template_single_gpu(
                 f"{tuple(defocus_eligible.shape)} does not match "
                 f"{expected_defocus_shape}."
             )
+    if psi_center is not None:
+        psi_center = psi_center.to(device=device, dtype=torch.float32)
+        if tuple(psi_center.shape) != valid_correlation_shape:
+            raise ValueError(
+                "psi_center shape "
+                f"{tuple(psi_center.shape)} does not match stats-map shape "
+                f"{valid_correlation_shape}."
+            )
+    if pole_mask is not None:
+        pole_mask = pole_mask.to(device=device, dtype=torch.uint8)
+        if tuple(pole_mask.shape) != valid_correlation_shape:
+            raise ValueError(
+                "pole_mask shape "
+                f"{tuple(pole_mask.shape)} does not match stats-map shape "
+                f"{valid_correlation_shape}."
+            )
     if backend == "zipfft":
         # NOTE: zipFFT expects a pre-transformed, pre-transposed input image FFT
         # Transpose the 'image_dft' along last two dimensions into contiguous layout
@@ -735,6 +773,13 @@ def _core_match_template_single_gpu(
                         stats_from_valid_orientations_defocus
                     ),
                     correlation_count=correlation_count,
+                    psi_center=psi_center,
+                    pole_mask=pole_mask,
+                    euler_angles=euler_angles,
+                    psi_cone_half_angle_deg=psi_cone_half_angle_deg,
+                    psi_theta_center_deg=psi_theta_center_deg,
+                    psi_phi_min=psi_phi_min,
+                    psi_phi_max=psi_phi_max,
                 )
 
         except Exception as e:

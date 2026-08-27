@@ -17,6 +17,10 @@ from leopard_em.pydantic_models.config.filament_constraint import (
     filament_psi_from_image_line,
     periodic_euler_box_intervals,
 )
+from leopard_em.pydantic_models.config.spatial_constraint import (
+    rasterize_rectangle,
+    write_spatial_constraint_hdf5,
+)
 from leopard_em.pydantic_models.managers.match_template_manager import (
     MatchTemplateManager,
 )
@@ -356,3 +360,49 @@ def test_stats_flag_accepts_legacy_yaml_key():
         stats_from_valid_orientations_defocus=True,
     )
     assert current.stats_from_valid_orientations_defocus is True
+
+
+def test_psi_center_sidecar_does_not_require_filament_angle(tmp_path: Path):
+    maps = rasterize_rectangle((8, 8), box=(2.0, 2.0, 5.0, 5.0), n_orientations=0)
+    maps.psi_center = np.where(maps.eligible > 0, 0.0, 0.0).astype(np.float32)
+    maps.regions = [{"region_id": 1, "polarity": "positive"}]
+    h5_path = tmp_path / "membrane_constraint.h5"
+    write_spatial_constraint_hdf5(str(h5_path), maps)
+    yaml_path = tmp_path / "membrane_constraint.yaml"
+    yaml_path.write_text(
+        f"""
+cone_half_angle_deg: 10.0
+theta_center_deg: 90.0
+phi_min: 0.0
+phi_max: 360.0
+psi_step: 1.5
+theta_step: 2.5
+base_grid_method: uniform
+polarity: positive
+spatial_constraint_path: {h5_path}
+regions:
+  - region_id: 1
+    polarity: positive
+""",
+        encoding="utf-8",
+    )
+    loaded = FilamentConstraint.from_yaml(yaml_path)
+    assert loaded.filament_angle_deg is None
+    assert loaded.polarity == "positive"
+    euler = np.array(
+        [
+            [0.0, 90.0, 5.0],
+            [0.0, 90.0, 180.0],
+        ],
+        dtype=np.float64,
+    )
+    stats = loaded.stats_maps_for_template(
+        image_shape=(8, 8),
+        template_width=2,
+        euler_angles=euler,
+    )
+    assert stats is not None
+    assert stats.psi_center is not None
+    assert stats.orientation_eligible is None
+    assert int(stats.n_orientations.max()) == 1
+
