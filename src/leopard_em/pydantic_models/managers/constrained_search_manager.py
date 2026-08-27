@@ -433,9 +433,7 @@ class ConstrainedSearchManager(BaseModel2DTM):
             num_correlations, float(false_positives)
         )
 
-        # The "_parameters" and "_above_threshold" siblings are always CSV,
-        # named from the base of output_dataframe_path regardless of its
-        # extension (which may be .h5 when output_format is "hdf5").
+        # "_parameters" and "_above_threshold" outputs are always written as CSV.
         output_base, _ = os.path.splitext(output_dataframe_path)
         parameters_path = f"{output_base}_parameters.csv"
         above_threshold_path = f"{output_base}_above_threshold.csv"
@@ -467,7 +465,6 @@ class ConstrainedSearchManager(BaseModel2DTM):
             df_refined_above_threshold["refined_scaled_mip"] != np.nan
         ]
         # Save the above threshold dataframe
-        print(f"Saving above threshold dataframe to {above_threshold_path}")
         df_refined_above_threshold.to_csv(above_threshold_path)
 
         return result_stack
