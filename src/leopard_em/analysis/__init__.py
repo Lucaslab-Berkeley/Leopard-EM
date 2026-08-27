@@ -18,12 +18,12 @@ from .zscore_metric import (
 
 __all__ = [
     "InspectionResult",
-    "load_inspection_result",
-    "save_inspection_result",
     "MatchTemplatePeaks",
-    "match_template_peaks_to_dict",
-    "match_template_peaks_to_dataframe",
     "extract_peaks_and_statistics_p_value",
     "extract_peaks_and_statistics_zscore",
     "gaussian_noise_zscore_cutoff",
+    "load_inspection_result",
+    "match_template_peaks_to_dataframe",
+    "match_template_peaks_to_dict",
+    "save_inspection_result",
 ]

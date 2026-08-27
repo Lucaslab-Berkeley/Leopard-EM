@@ -1,6 +1,6 @@
 """Computational configuration for 2DTM."""
 
-from typing import Annotated, Literal, Optional, Union
+from typing import Annotated, Literal
 
 import torch
 from pydantic import BaseModel, Field
@@ -83,14 +83,13 @@ class ComputationalConfigMatch(BaseComputationalConfig):
     """
 
     # Type-hinting here is ensuring non-negative integers, and list of at least one
-    gpu_ids: Optional[
-        Union[
-            str,
-            NonNegativeInt,
-            Annotated[list[NonNegativeInt], Field(min_length=1)],
-            Annotated[list[str], Field(min_length=1)],
-        ]
-    ] = [0]
+    gpu_ids: (
+        str
+        | NonNegativeInt
+        | Annotated[list[NonNegativeInt], Field(min_length=1)]
+        | Annotated[list[str], Field(min_length=1)]
+        | None
+    ) = [0]
     num_cpus: Annotated[int, Field(ge=1)] = 1
     backend: Literal["streamed", "batched", "zipfft"] = "streamed"
 
@@ -127,13 +126,12 @@ class ComputationalConfigRefine(BaseComputationalConfig):
     """
 
     # Type-hinting here is ensuring non-negative integers, and list of at least one
-    gpu_ids: Optional[
-        Union[
-            str,
-            NonNegativeInt,
-            Annotated[list[NonNegativeInt], Field(min_length=1)],
-            Annotated[list[str], Field(min_length=1)],
-        ]
-    ] = [0]
+    gpu_ids: (
+        str
+        | NonNegativeInt
+        | Annotated[list[NonNegativeInt], Field(min_length=1)]
+        | Annotated[list[str], Field(min_length=1)]
+        | None
+    ) = [0]
     num_cpus: Annotated[int, Field(ge=1)] = 1
     backend: Literal["streamed", "batched"] = "batched"

@@ -4,7 +4,7 @@ import os
 import random
 import socket
 from datetime import timedelta
-from typing import Any, Optional
+from typing import Any
 
 import tensordict
 import torch
@@ -126,7 +126,7 @@ def _extract_and_broadcast_tensors(
 
     # Rank zero has all the data. No other ranks "know" the size/shape of data, so
     # first must extract the shapes before a tensor broadcast can occur.
-    broadcast_list: list[Optional[TensorShapeDataclass]] = [None]
+    broadcast_list: list[TensorShapeDataclass | None] = [None]
     if rank == 0:
         # Create a dataclass with the expected tensor shapes
         expected_shapes = TensorShapeDataclass(
@@ -356,7 +356,7 @@ def _gather_correlation_table_to_rank_zero(
     world_size: int,
     rank: int,
     correlation_table: tensordict.TensorDict,
-) -> Optional[list[dict[str, Any]]]:
+) -> list[dict[str, Any]] | None:
     """Gather the (variable-length) per-rank correlation tables onto rank zero.
 
     Parameters
@@ -376,7 +376,7 @@ def _gather_correlation_table_to_rank_zero(
     """
     correlation_table_cpu = correlation_table.cpu().to_dict()
 
-    gather_list: Optional[list[dict[str, Any]]] = (
+    gather_list: list[dict[str, Any]] | None = (
         [None] * world_size if rank == 0 else None  # type: ignore[list-item]
     )
 
@@ -571,6 +571,7 @@ def core_match_template_distributed(
                 gather_correlation_sum,
                 gather_correlation_squared_sum,
                 gather_correlation_table,
+                strict=False,
             )
         ]
     )

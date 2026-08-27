@@ -21,7 +21,7 @@ import os
 import warnings
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
-from typing import Any, ClassVar, Literal
+from typing import Any, ClassVar, Literal, Self
 
 import h5py
 import numpy as np
@@ -33,7 +33,6 @@ from torch_fourier_shift import fourier_shift_dft_2d
 from torch_grid_utils import coordinate_grid
 from torch_motion_correction.correct_motion import get_pixel_shifts
 from torch_motion_correction.deformation_field import DeformationField
-from typing_extensions import Self
 
 from leopard_em.pydantic_models.config import PreprocessingFilters
 from leopard_em.pydantic_models.custom_types import (
@@ -131,7 +130,7 @@ def _str_to_value(s: str) -> Any:
         return None
     try:
         parsed = json.loads(s)
-        if isinstance(parsed, (list, dict)):
+        if isinstance(parsed, list | dict):
             return parsed
         # Plain JSON scalars (numbers) that were originally strings stay as strings
         return s
@@ -369,7 +368,7 @@ def _get_cropped_image_regions_numpy(
         pos_x = pos_x + bs1
 
     regions = []
-    for y, x in zip(pos_y, pos_x):
+    for y, x in zip(pos_y, pos_x, strict=False):
         if (
             y < 0
             or x < 0
@@ -421,7 +420,7 @@ def _get_cropped_image_regions_torch(
         pos_x = pos_x + bs1
 
     regions = []
-    for y, x in zip(pos_y, pos_x):
+    for y, x in zip(pos_y, pos_x, strict=False):
         y = int(y.item() if hasattr(y, "item") else y)
         x = int(x.item() if hasattr(x, "item") else x)
         original_y, original_x = y, x

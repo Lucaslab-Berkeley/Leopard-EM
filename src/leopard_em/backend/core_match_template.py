@@ -8,7 +8,7 @@ import traceback
 import warnings
 from functools import partial
 from multiprocessing import set_start_method
-from typing import Any, Union
+from typing import Any
 
 import roma
 import tensordict
@@ -95,7 +95,7 @@ def monitor_match_template_progress(
 
 def setup_progress_tracking(
     index_queue: "MultiprocessWorkIndexQueue",
-    unit_scale: Union[float, int],
+    unit_scale: float | int,
     devices: list[torch.device],
 ) -> tuple[tqdm.tqdm, dict[int, tqdm.tqdm]]:
     """Setup global and per-device tqdm progress bars for template matching.

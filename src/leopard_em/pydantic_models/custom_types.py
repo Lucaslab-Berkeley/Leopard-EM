@@ -2,7 +2,7 @@
 
 import json
 import os
-from typing import Annotated, Any, ClassVar, Optional
+from typing import Annotated, Any, ClassVar
 
 import torch
 import yaml  # type: ignore
@@ -11,7 +11,7 @@ from pydantic.json_schema import SkipJsonSchema
 
 # Pydantic type-hint to exclude tensor from JSON schema/dump (still attribute)
 ExcludedTensor = SkipJsonSchema[
-    Annotated[Optional[torch.Tensor], Field(default=None, exclude=True)]
+    Annotated[torch.Tensor | None, Field(default=None, exclude=True)]
 ]
 
 # Same as ExcludedTensor, but for a name -> tensor mapping (e.g. per-column and

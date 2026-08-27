@@ -285,7 +285,7 @@ def _setup_ctf_kwargs_from_particle_stack(
         if isinstance(mag_matrix_list, list) and len(mag_matrix_list) == 4:
             # Check that all elements are valid numbers (not NaN)
             if all(
-                isinstance(x, (int, float)) and not np.isnan(x) for x in mag_matrix_list
+                isinstance(x, int | float) and not np.isnan(x) for x in mag_matrix_list
             ):
                 mag_matrix_tensor = torch.tensor(
                     [

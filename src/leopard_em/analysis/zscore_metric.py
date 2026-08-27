@@ -1,7 +1,6 @@
 """Locates peaks in the scaled mip from a match template result."""
 
 import warnings
-from typing import Optional
 
 import numpy as np
 import torch
@@ -97,7 +96,7 @@ def extract_peaks_and_statistics_zscore(
     correlation_variance: torch.Tensor,
     total_correlation_positions: int,
     false_positives: float = 1.0,
-    z_score_cutoff: Optional[float] = None,
+    z_score_cutoff: float | None = None,
     mask_radius: float = 5.0,
 ) -> MatchTemplatePeaks:
     """Returns peak locations, heights, and pose stats from match template results.

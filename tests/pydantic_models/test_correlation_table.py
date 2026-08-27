@@ -296,8 +296,8 @@ class TestFromMatchTemplateResults:
 
         xs = factory_inputs["processed_correlation_table"]["x"]
         ys = factory_inputs["processed_correlation_table"]["y"]
-        expected_mean = [corr_avg[y, x].item() for x, y in zip(xs, ys)]
-        expected_var = [corr_var[y, x].item() for x, y in zip(xs, ys)]
+        expected_mean = [corr_avg[y, x].item() for x, y in zip(xs, ys, strict=False)]
+        expected_var = [corr_var[y, x].item() for x, y in zip(xs, ys, strict=False)]
 
         assert ct.correlation_mean == pytest.approx(expected_mean)
         assert ct.correlation_variance == pytest.approx(expected_var)

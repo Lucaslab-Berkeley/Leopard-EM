@@ -5,8 +5,8 @@ from .core_match_template import core_match_template
 from .core_refine_template import core_refine_template, cross_correlate_particle_stack
 
 __all__ = [
+    "core_differentiable_refine",
     "core_match_template",
     "core_refine_template",
     "cross_correlate_particle_stack",
-    "core_differentiable_refine",
 ]

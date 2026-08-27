@@ -3,7 +3,8 @@
 import os
 import re
 import warnings
-from typing import Any, Callable, TypeVar
+from collections.abc import Callable
+from typing import Any, TypeVar
 
 import roma
 import tensordict

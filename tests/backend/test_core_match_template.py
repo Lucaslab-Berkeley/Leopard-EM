@@ -141,10 +141,10 @@ def test_core_match_template():
     assert len(diff_psi[0]) < mip.size * ACC_PCT, ">0.2 pct psi values differ"
 
     # Check 2: Overlap at least 50%
-    defocus_set = set(zip(diff_defocus[0], diff_defocus[1]))
-    phi_set = set(zip(diff_phi[0], diff_phi[1]))
-    theta_set = set(zip(diff_theta[0], diff_theta[1]))
-    psi_set = set(zip(diff_psi[0], diff_psi[1]))
+    defocus_set = set(zip(diff_defocus[0], diff_defocus[1], strict=False))
+    phi_set = set(zip(diff_phi[0], diff_phi[1], strict=False))
+    theta_set = set(zip(diff_theta[0], diff_theta[1], strict=False))
+    psi_set = set(zip(diff_psi[0], diff_psi[1], strict=False))
 
     if len(defocus_set) > 0:
         assert len(defocus_set.intersection(phi_set)) / len(defocus_set)

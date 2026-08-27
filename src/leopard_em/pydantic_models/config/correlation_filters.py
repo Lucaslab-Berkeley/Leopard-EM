@@ -1,6 +1,6 @@
 """Set of classes for configuring correlation filters in 2DTM."""
 
-from typing import Annotated, Any, Optional
+from typing import Annotated, Any
 
 import torch
 from pydantic import Field
@@ -42,14 +42,14 @@ class WhiteningFilterConfig(BaseModel2DTM):
     """
 
     enabled: bool = True
-    num_freq_bins: Optional[int] = None
-    max_freq: Optional[float] = 0.5  # in terms of Nyquist frequency
-    do_power_spectrum: Optional[bool] = True
+    num_freq_bins: int | None = None
+    max_freq: float | None = 0.5  # in terms of Nyquist frequency
+    do_power_spectrum: bool | None = True
 
     def calculate_whitening_filter(
         self,
         ref_img_rfft: torch.Tensor,
-        output_shape: Optional[tuple[int, ...]] = None,
+        output_shape: tuple[int, ...] | None = None,
         output_rfft: bool = True,
         output_fftshift: bool = False,
     ) -> torch.Tensor:
@@ -130,7 +130,7 @@ class PhaseRandomizationFilterConfig(BaseModel2DTM):
     """
 
     enabled: bool = False
-    cuton: Optional[Annotated[float, Field(ge=0.0)]] = None
+    cuton: Annotated[float, Field(ge=0.0)] | None = None
 
     def calculate_phase_randomization_filter(
         self, ref_img_rfft: torch.Tensor
@@ -192,9 +192,9 @@ class BandpassFilterConfig(BaseModel2DTM):
     """
 
     enabled: bool = False
-    low_freq_cutoff: Optional[Annotated[float, Field(ge=0.0)]] = None
-    high_freq_cutoff: Optional[Annotated[float, Field(ge=0.0)]] = None
-    falloff: Optional[Annotated[float, Field(ge=0.0)]] = None
+    low_freq_cutoff: Annotated[float, Field(ge=0.0)] | None = None
+    high_freq_cutoff: Annotated[float, Field(ge=0.0)] | None = None
+    falloff: Annotated[float, Field(ge=0.0)] | None = None
 
     @classmethod
     def from_spatial_resolution(
@@ -284,8 +284,8 @@ class ArbitraryCurveFilterConfig(BaseModel2DTM):
     """
 
     enabled: bool = False
-    frequencies: Optional[list[float]] = None  # in terms of Nyquist frequency
-    amplitudes: Optional[list[float]] = None
+    frequencies: list[float] | None = None  # in terms of Nyquist frequency
+    amplitudes: list[float] | None = None
 
     def calculate_arbitrary_curve_filter(
         self, output_shape: tuple[int, ...]

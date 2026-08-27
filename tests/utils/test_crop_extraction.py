@@ -38,7 +38,7 @@ def test_get_cropped_image_regions_numpy_fixed_positions():
     # Create example image data for testing purposes
     test_patch = get_test_patch(box_size)
     image = np.zeros((256, 256), dtype=np.float32)
-    for x, y in zip(pos_x, pos_y):
+    for x, y in zip(pos_x, pos_y, strict=False):
         image[y : y + box_size[0], x : x + box_size[1]] = test_patch
 
     # Get cropped regions using the numpy implementation
@@ -84,9 +84,9 @@ def test_get_cropped_image_regions_numpy_random_nonoverlapping():
                 break
             total_failures += 1
 
-    pos_y, pos_x = zip(*positions)
+    pos_y, pos_x = zip(*positions, strict=False)
 
-    for x, y in zip(pos_x, pos_y):
+    for x, y in zip(pos_x, pos_y, strict=False):
         image[y : y + box_size[0], x : x + box_size[1]] = test_patch
 
     cropped_regions = _get_cropped_image_regions_numpy(
@@ -113,7 +113,7 @@ def test_get_cropped_image_regions_torch_fixed_positions():
 
     test_patch = get_test_patch(box_size)
     image = np.zeros((256, 256), dtype=np.float32)
-    for x, y in zip(pos_x, pos_y):
+    for x, y in zip(pos_x, pos_y, strict=False):
         image[y : y + box_size[0], x : x + box_size[1]] = test_patch
 
     image_tensor = torch.from_numpy(image)
@@ -156,9 +156,9 @@ def test_get_cropped_image_regions_torch_random_nonoverlapping():
                 positions.append((y, x))
                 break
 
-    pos_y, pos_x = zip(*positions)
+    pos_y, pos_x = zip(*positions, strict=False)
 
-    for x, y in zip(pos_x, pos_y):
+    for x, y in zip(pos_x, pos_y, strict=False):
         image[y : y + box_size[0], x : x + box_size[1]] = test_patch
 
     image_tensor = torch.from_numpy(image)
@@ -188,7 +188,7 @@ def test_get_cropped_image_regions_defaults():
 
     test_patch = get_test_patch(box_size)
     image = np.zeros((256, 256), dtype=np.float32)
-    for x, y in zip(pos_x, pos_y):
+    for x, y in zip(pos_x, pos_y, strict=False):
         image[y : y + box_size[0], x : x + box_size[1]] = test_patch
 
     cropped_regions = get_cropped_image_regions(
@@ -213,7 +213,7 @@ def test_get_cropped_image_regions_center_top_left_consistency():
 
     test_patch = get_test_patch(box_size)
     image = np.zeros((256, 256), dtype=np.float32)
-    for x, y in zip(pos_x, pos_y):
+    for x, y in zip(pos_x, pos_y, strict=False):
         image[y : y + box_size[0], x : x + box_size[1]] = test_patch
 
     cropped_regions_center = get_cropped_image_regions(
