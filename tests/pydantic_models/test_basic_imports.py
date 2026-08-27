@@ -25,11 +25,16 @@ def test_config_imports():
             ComputationalConfigMatch,
             ComputationalConfigRefine,
             DefocusSearchConfig,
+            FilamentConstraint,
+            FilamentLine,
+            FilamentRegion,
             OrientationSearchConfig,
             PhaseRandomizationFilterConfig,
             PixelSizeSearchConfig,
             PreprocessingFilters,
             RefineOrientationConfig,
+            SpatialBox,
+            SpatialConstraintMaps,
             WhiteningFilterConfig,
         )
     except ImportError as e:

@@ -5,9 +5,10 @@ import os
 from typing import Any, ClassVar, Literal, Optional
 
 import mrcfile
+import numpy as np
 import pandas as pd
 import torch
-from pydantic import ConfigDict, field_validator
+from pydantic import ConfigDict, Field, field_validator
 
 from leopard_em.backend.core_match_template import core_match_template
 from leopard_em.backend.core_match_template_distributed import (
@@ -16,9 +17,11 @@ from leopard_em.backend.core_match_template_distributed import (
 from leopard_em.pydantic_models.config import (
     ComputationalConfigMatch,
     DefocusSearchConfig,
+    FilamentConstraint,
     MultipleOrientationConfig,
     OrientationSearchConfig,
     PreprocessingFilters,
+    SpatialConstraintMaps,
 )
 from leopard_em.pydantic_models.custom_types import BaseModel2DTM, ExcludedTensor
 from leopard_em.pydantic_models.data_structures import OpticsGroup
@@ -109,6 +112,18 @@ class MatchTemplateManager(BaseModel2DTM):
     # Non-serialized large array-like attributes
     micrograph: ExcludedTensor
     template_volume: ExcludedTensor
+    eligible_pixels: ExcludedTensor = None
+    n_orientations_map: ExcludedTensor = None
+    n_defocus_map: ExcludedTensor = None
+    defocus_eligible: ExcludedTensor = None
+    orientation_eligible: ExcludedTensor = None
+    psi_center: ExcludedTensor = None
+    pole_mask: ExcludedTensor = None
+    psi_cone_half_angle_deg: float | None = Field(default=None, exclude=True)
+    psi_theta_center_deg: float | None = Field(default=None, exclude=True)
+    psi_phi_min: float | None = Field(default=None, exclude=True)
+    psi_phi_max: float | None = Field(default=None, exclude=True)
+    stats_from_valid_orientations_defocus: bool = False
 
     ###########################
     ### Pydantic Validators ###
@@ -137,6 +152,87 @@ class MatchTemplateManager(BaseModel2DTM):
             # Load the data from the MRC files
             self.micrograph = load_mrc_image(self.micrograph_path)
             self.template_volume = load_mrc_volume(self.template_volume_path)
+
+    def apply_spatial_constraint(
+        self,
+        maps: SpatialConstraintMaps,
+        stats_from_valid_orientations_defocus: bool = False,
+    ) -> None:
+        """Install stats-map-coordinate spatial masks for the next search."""
+        self.eligible_pixels = torch.from_numpy(maps.eligible.astype(bool))
+        self.n_orientations_map = torch.from_numpy(maps.n_orientations.astype("int32"))
+        self.n_defocus_map = (
+            None
+            if maps.n_defocus is None
+            else torch.from_numpy(maps.n_defocus.astype("int32"))
+        )
+        self.defocus_eligible = (
+            None
+            if maps.defocus_eligible is None
+            else torch.from_numpy(maps.defocus_eligible.astype(bool))
+        )
+        self.orientation_eligible = (
+            None
+            if maps.orientation_eligible is None
+            else torch.from_numpy(maps.orientation_eligible.astype(bool))
+        )
+        self.psi_center = (
+            None
+            if maps.psi_center is None
+            else torch.from_numpy(np.asarray(maps.psi_center, dtype=np.float32))
+        )
+        self.pole_mask = (
+            None
+            if maps.pole_mask is None
+            else torch.from_numpy(np.asarray(maps.pole_mask, dtype=np.uint8))
+        )
+        self.psi_cone_half_angle_deg = maps.psi_cone_half_angle_deg
+        self.psi_theta_center_deg = maps.psi_theta_center_deg
+        self.psi_phi_min = maps.psi_phi_min
+        self.psi_phi_max = maps.psi_phi_max
+        self.stats_from_valid_orientations_defocus = (
+            stats_from_valid_orientations_defocus
+        )
+
+    def apply_filament_constraint(self, constraint: FilamentConstraint) -> None:
+        """Install per-pixel eligibility from a sidecar; keep the YAML search.
+
+        The match-template YAML ``orientation_search_config`` is the FFT grid.
+        The sidecar Euler box and optional HDF5 only subset which
+        (pixel, orientation, defocus) tuples may win the MIP.
+        """
+        print(
+            "Applying spatial constraint: load maps, convert to stats-map "
+            "coordinates, then count eligible orientations (CPU; can take "
+            "several minutes, no GPU yet)...",
+            flush=True,
+        )
+        if self.micrograph is None:
+            self.micrograph = load_mrc_image(self.micrograph_path)
+        image = self.micrograph
+        image_shape = (int(image.shape[-2]), int(image.shape[-1]))
+        template_width = int(mrcfile.open(self.template_volume_path).header.nx)
+        euler_angles = self.orientation_search_config.euler_angles
+        maps = constraint.stats_maps_for_template(
+            image_shape,
+            template_width,
+            defocus_values=self.defocus_search_config.defocus_values,
+            euler_angles=euler_angles,
+        )
+        if maps is not None:
+            self.apply_spatial_constraint(
+                maps,
+                stats_from_valid_orientations_defocus=(
+                    constraint.stats_from_valid_orientations_defocus
+                ),
+            )
+            return
+
+        mask_1d = constraint.orientation_allowed_mask(euler_angles)
+        self.orientation_eligible = torch.as_tensor(mask_1d, dtype=torch.bool)
+        self.stats_from_valid_orientations_defocus = (
+            constraint.stats_from_valid_orientations_defocus
+        )
 
     ############################################
     ### Functional (data processing) methods ###
@@ -224,6 +320,38 @@ class MatchTemplateManager(BaseModel2DTM):
             "pixel_values": pixel_size_offsets,
             "device": self.computational_config.gpu_devices,
             "mag_matrix": self.optics_group.mag_matrix_tensor,
+            "eligible_pixels": (
+                None
+                if self.eligible_pixels is None
+                else torch.as_tensor(self.eligible_pixels, dtype=torch.bool)
+            ),
+            "defocus_eligible": (
+                None
+                if self.defocus_eligible is None
+                else torch.as_tensor(self.defocus_eligible, dtype=torch.bool)
+            ),
+            "orientation_eligible": (
+                None
+                if self.orientation_eligible is None
+                else torch.as_tensor(self.orientation_eligible, dtype=torch.bool)
+            ),
+            "psi_center": (
+                None
+                if self.psi_center is None
+                else torch.as_tensor(self.psi_center, dtype=torch.float32)
+            ),
+            "pole_mask": (
+                None
+                if self.pole_mask is None
+                else torch.as_tensor(self.pole_mask, dtype=torch.uint8)
+            ),
+            "psi_cone_half_angle_deg": self.psi_cone_half_angle_deg,
+            "psi_theta_center_deg": self.psi_theta_center_deg,
+            "psi_phi_min": self.psi_phi_min,
+            "psi_phi_max": self.psi_phi_max,
+            "stats_from_valid_orientations_defocus": (
+                self.stats_from_valid_orientations_defocus
+            ),
         }
 
     def run_match_template(
@@ -437,12 +565,30 @@ class MatchTemplateManager(BaseModel2DTM):
         pd.DataFrame
             DataFrame containing the match template results.
         """
-        # Short circuit if no kwargs and peaks have already been located
-        if locate_peaks_kwargs is None:
-            if self.match_template_result.match_template_peaks is None:
-                self.match_template_result.locate_peaks()
-        else:
-            self.match_template_result.locate_peaks(**locate_peaks_kwargs)
+        locate_kwargs = dict(locate_peaks_kwargs or {})
+        if self.n_orientations_map is not None:
+            n_orients = self.n_orientations_map
+            if not isinstance(n_orients, torch.Tensor):
+                n_orients = torch.as_tensor(n_orients)
+            locate_kwargs.setdefault("n_orientations_map", n_orients)
+            locate_kwargs.setdefault(
+                "n_defocus", int(self.match_template_result.total_defocus) or 1
+            )
+            if self.n_defocus_map is not None:
+                n_def_map = self.n_defocus_map
+                if not isinstance(n_def_map, torch.Tensor):
+                    n_def_map = torch.as_tensor(n_def_map)
+                locate_kwargs.setdefault("n_defocus_map", n_def_map)
+            n_cs = 1
+            total_orient = int(self.match_template_result.total_orientations) or 1
+            total_proj = int(self.match_template_result.total_projections)
+            total_def = int(self.match_template_result.total_defocus) or 1
+            if total_orient > 0 and total_def > 0 and total_proj > 0:
+                n_cs = max(1, total_proj // (total_orient * total_def))
+            locate_kwargs.setdefault("n_cs", n_cs)
+
+        if locate_kwargs or self.match_template_result.match_template_peaks is None:
+            self.match_template_result.locate_peaks(**locate_kwargs)
 
         # DataFrame comes with the following columns :
         # ['mip', 'scaled_mip', 'correlation_mean', 'correlation_variance',

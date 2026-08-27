@@ -331,6 +331,41 @@ def test_export_results_alias(hdf5_result):
         assert "tensors" in f
 
 
+def test_mrc_export_results_without_correlation_table_path(mrc_result):
+    """MRC export_results writes maps and does not require a correlation table path."""
+    import os
+
+    mrc_result.allow_file_overwrite = True
+    mrc_result.export_results()
+    assert os.path.exists(mrc_result.mip_path)
+    assert mrc_result.correlation_table_path is None
+
+
+def test_mrc_export_results_replaces_nonfinite_on_disk(tmp_path, tensors):
+    """Ineligible MIP sentinels stay -inf in memory but are finite in the MRC file."""
+    from leopard_em.utils.data_io import load_mrc_image
+
+    tensors = {name: t.clone() for name, t in tensors.items()}
+    tensors["mip"][0, 0] = float("-inf")
+    tensors["scaled_mip"][0, 0] = float("nan")
+    result = MatchTemplateResultMRC(
+        **_mrc_paths(tmp_path),
+        allow_file_overwrite=True,
+        **tensors,
+    )
+    result.export_results()
+
+    assert torch.isneginf(result.mip[0, 0])
+    assert torch.isnan(result.scaled_mip[0, 0])
+
+    loaded_mip = load_mrc_image(result.mip_path)
+    loaded_scaled = load_mrc_image(result.scaled_mip_path)
+    assert loaded_mip[0, 0] == 0
+    assert loaded_scaled[0, 0] == 0
+    assert torch.isfinite(loaded_mip).all()
+    assert torch.isfinite(loaded_scaled).all()
+
+
 # ---------------------------------------------------------------------------
 # apply_valid_cropping (inherited from base)
 # ---------------------------------------------------------------------------

@@ -503,6 +503,7 @@ def core_match_template_distributed(
         correlation_sum,
         correlation_squared_sum,
         correlation_table,
+        correlation_count,
     ) = _core_match_template_single_gpu(
         rank=rank,
         index_queue=distributed_queue,  # type: ignore
@@ -517,6 +518,18 @@ def core_match_template_distributed(
         backend=backend,
         device=device,
         compute_correlation_table=compute_correlation_table,
+        eligible_pixels=kwargs.get("eligible_pixels"),  # type: ignore[arg-type]
+        orientation_eligible=kwargs.get("orientation_eligible"),  # type: ignore[arg-type]
+        defocus_eligible=kwargs.get("defocus_eligible"),  # type: ignore[arg-type]
+        stats_from_valid_orientations_defocus=bool(
+            kwargs.get("stats_from_valid_orientations_defocus", False)
+        ),
+        psi_center=kwargs.get("psi_center"),  # type: ignore[arg-type]
+        pole_mask=kwargs.get("pole_mask"),  # type: ignore[arg-type]
+        psi_cone_half_angle_deg=kwargs.get("psi_cone_half_angle_deg"),  # type: ignore[arg-type]
+        psi_theta_center_deg=kwargs.get("psi_theta_center_deg"),  # type: ignore[arg-type]
+        psi_phi_min=kwargs.get("psi_phi_min"),  # type: ignore[arg-type]
+        psi_phi_max=kwargs.get("psi_phi_max"),  # type: ignore[arg-type]
     )
     dist.barrier()
 
@@ -533,6 +546,17 @@ def core_match_template_distributed(
         best_global_index=best_global_index,
         correlation_sum=correlation_sum,
         correlation_squared_sum=correlation_squared_sum,
+    )
+    if rank == 0:
+        gather_correlation_count = [
+            torch.zeros_like(correlation_count) for _ in range(world_size)
+        ]
+    else:
+        gather_correlation_count = None
+    dist.gather(
+        tensor=correlation_count,
+        gather_list=gather_correlation_count,
+        dst=0,
     )
 
     # Gather the variable-length correlation tables to rank zero
@@ -555,6 +579,7 @@ def core_match_template_distributed(
     assert gather_correlation_sum is not None
     assert gather_correlation_squared_sum is not None
     assert gather_correlation_table is not None
+    assert gather_correlation_count is not None
 
     aggregated_results = aggregate_distributed_results(
         results=[
@@ -563,13 +588,15 @@ def core_match_template_distributed(
                 "best_global_index": gidx,
                 "correlation_sum": corr_sum,
                 "correlation_squared_sum": corr_sq_sum,
+                "correlation_count": corr_count,
                 "correlation_table": corr_table,
             }
-            for mip, gidx, corr_sum, corr_sq_sum, corr_table in zip(
+            for mip, gidx, corr_sum, corr_sq_sum, corr_count, corr_table in zip(
                 gather_mip,
                 gather_best_global_index,
                 gather_correlation_sum,
                 gather_correlation_squared_sum,
+                gather_correlation_count,
                 gather_correlation_table,
             )
         ]
@@ -605,12 +632,21 @@ def core_match_template_distributed(
     )
 
     mip_scaled = torch.empty_like(mip)
+    scale_divisor: int | torch.Tensor = total_projections
+    if kwargs.get("stats_from_valid_orientations_defocus"):
+        correlation_count = aggregated_results.get("correlation_count")
+        if correlation_count is None:
+            raise RuntimeError(
+                "stats_from_valid_orientations_defocus=True but no "
+                "correlation_count map was returned from the search."
+            )
+        scale_divisor = correlation_count.cpu()
     mip, mip_scaled, correlation_mean, correlation_variance = scale_mip(
         mip=mip,
         mip_scaled=mip_scaled,
         correlation_sum=correlation_sum,
         correlation_squared_sum=correlation_squared_sum,
-        total_correlation_positions=total_projections,
+        total_correlation_positions=scale_divisor,
     )
 
     return {

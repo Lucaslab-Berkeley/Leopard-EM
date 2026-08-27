@@ -99,6 +99,10 @@ def extract_peaks_and_statistics_zscore(
     false_positives: float = 1.0,
     z_score_cutoff: Optional[float] = None,
     mask_radius: float = 5.0,
+    n_orientations_map: Optional[torch.Tensor] = None,
+    n_defocus: int = 1,
+    n_defocus_map: Optional[torch.Tensor] = None,
+    n_cs: int = 1,
 ) -> MatchTemplatePeaks:
     """Returns peak locations, heights, and pose stats from match template results.
 
@@ -131,15 +135,50 @@ def extract_peaks_and_statistics_zscore(
         the Gaussian noise model. Default is None.
     mask_radius : float, optional
         Radius of the mask to apply around the peak, in units of pixels. Default is 5.0.
+    n_orientations_map : torch.Tensor, optional
+        Per-pixel count of allowed orientations. If provided, the z-score cutoff
+        uses ``sum(n_orientations * n_defocus) * n_cs`` and pixels with count 0
+        are not peak candidates.
+    n_defocus : int, optional
+        Number of defocus values in the search. Used with ``n_orientations_map``
+        when ``n_defocus_map`` is not provided.
+    n_defocus_map : torch.Tensor, optional
+        Per-pixel count of allowed defocus values. If provided with
+        ``n_orientations_map``, ``num_ccg`` is
+        ``sum(n_orientations * n_defocus) * n_cs``.
+    n_cs : int, optional
+        Number of pixel-size / Cs values. Used with ``n_orientations_map``.
 
     Returns
     -------
     MatchTemplatePeaks
         Named tuple containing the peak locations, heights, and pose statistics.
     """
+    if n_orientations_map is not None:
+        orient_map = n_orientations_map.to(device=scaled_mip.device)
+        peak_ok = orient_map > 0
+        if n_defocus_map is not None:
+            defocus_map = n_defocus_map.to(
+                device=scaled_mip.device, dtype=orient_map.dtype
+            )
+            n_allowed = int(
+                (orient_map.to(torch.int64) * defocus_map.to(torch.int64)).sum().item()
+            )
+            num_ccg = n_allowed * int(n_cs)
+            peak_ok = peak_ok & (defocus_map > 0)
+        else:
+            n_allowed = int(orient_map.to(torch.int64).sum().item())
+            num_ccg = n_allowed * int(n_defocus) * int(n_cs)
+        scaled_mip = scaled_mip.clone()
+        scaled_mip = torch.where(
+            peak_ok, scaled_mip, torch.full_like(scaled_mip, -float("inf"))
+        )
+    else:
+        num_ccg = mip.numel() * total_correlation_positions
+
     if z_score_cutoff is None:
         z_score_cutoff = gaussian_noise_zscore_cutoff(
-            num_ccg=mip.numel() * total_correlation_positions,
+            num_ccg=max(num_ccg, 1),
             false_positives=false_positives,
         )
 

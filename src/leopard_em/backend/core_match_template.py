@@ -164,6 +164,16 @@ def core_match_template(
     backend: str = "streamed",
     mag_matrix: torch.Tensor | None = None,
     compute_correlation_table: bool = True,
+    eligible_pixels: torch.Tensor | None = None,
+    orientation_eligible: torch.Tensor | None = None,
+    defocus_eligible: torch.Tensor | None = None,
+    stats_from_valid_orientations_defocus: bool = False,
+    psi_center: torch.Tensor | None = None,
+    pole_mask: torch.Tensor | None = None,
+    psi_cone_half_angle_deg: float | None = None,
+    psi_theta_center_deg: float | None = None,
+    psi_phi_min: float | None = None,
+    psi_phi_max: float | None = None,
 ) -> dict[str, torch.Tensor | dict | int]:
     """Core function for performing the whole-orientation search.
 
@@ -225,6 +235,17 @@ def core_match_template(
         Whether to track cross-correlation values which surpass the correlation table
         threshold. If False, this (comparatively expensive) computation is skipped and
         the returned "correlation_table" will be empty. Default is True.
+    eligible_pixels : torch.Tensor, optional
+        Boolean stats-map mask of pixels in play. If None, all pixels are eligible.
+    orientation_eligible : torch.Tensor, optional
+        Boolean mask of allowed YAML orientations. Shape ``(n_orient, H, W)``
+        or ``(n_orient,)``. If None, every searched orientation is allowed.
+    defocus_eligible : torch.Tensor, optional
+        Boolean ``(n_defocus, H, W)`` mask of allowed defocus values per pixel.
+        If None, every defocus in this run is allowed.
+    stats_from_valid_orientations_defocus : bool, optional
+        If True, mean and variance use only eligible (pixel, orientation,
+        defocus) tuples and a per-pixel count divisor. Default is False.
 
     Returns
     -------
@@ -280,6 +301,16 @@ def core_match_template(
     # Move mag_matrix to CPU if it's not None
     if mag_matrix is not None:
         mag_matrix = mag_matrix.cpu()
+    if eligible_pixels is not None:
+        eligible_pixels = eligible_pixels.cpu()
+    if orientation_eligible is not None:
+        orientation_eligible = orientation_eligible.cpu()
+    if defocus_eligible is not None:
+        defocus_eligible = defocus_eligible.cpu()
+    if psi_center is not None:
+        psi_center = psi_center.cpu()
+    if pole_mask is not None:
+        pole_mask = pole_mask.cpu()
 
     ##############################################################
     ### Pre-multiply the whitening filter with the CTF filters ###
@@ -331,6 +362,18 @@ def core_match_template(
             "device": d,
             "mag_matrix": mag_matrix,
             "compute_correlation_table": compute_correlation_table,
+            "eligible_pixels": eligible_pixels,
+            "orientation_eligible": orientation_eligible,
+            "defocus_eligible": defocus_eligible,
+            "stats_from_valid_orientations_defocus": (
+                stats_from_valid_orientations_defocus
+            ),
+            "psi_center": psi_center,
+            "pole_mask": pole_mask,
+            "psi_cone_half_angle_deg": psi_cone_half_angle_deg,
+            "psi_theta_center_deg": psi_theta_center_deg,
+            "psi_phi_min": psi_phi_min,
+            "psi_phi_max": psi_phi_max,
         }
 
         kwargs_per_device.append(kwargs)
@@ -355,12 +398,21 @@ def core_match_template(
     )
 
     mip_scaled = torch.empty_like(mip)
+    scale_divisor: int | torch.Tensor = total_projections
+    if stats_from_valid_orientations_defocus:
+        correlation_count = aggregated_results.get("correlation_count")
+        if correlation_count is None:
+            raise RuntimeError(
+                "stats_from_valid_orientations_defocus=True but no "
+                "correlation_count map was returned from the search."
+            )
+        scale_divisor = correlation_count
     mip, mip_scaled, correlation_mean, correlation_variance = scale_mip(
         mip=mip,
         mip_scaled=mip_scaled,
         correlation_sum=correlation_sum,
         correlation_squared_sum=correlation_squared_sum,
-        total_correlation_positions=total_projections,
+        total_correlation_positions=scale_divisor,
     )
 
     # Process the correlation table into a more interpretable format
@@ -405,8 +457,23 @@ def _core_match_template_single_gpu(
     device: torch.device,
     mag_matrix: torch.Tensor | None = None,
     compute_correlation_table: bool = True,
+    eligible_pixels: torch.Tensor | None = None,
+    orientation_eligible: torch.Tensor | None = None,
+    defocus_eligible: torch.Tensor | None = None,
+    stats_from_valid_orientations_defocus: bool = False,
+    psi_center: torch.Tensor | None = None,
+    pole_mask: torch.Tensor | None = None,
+    psi_cone_half_angle_deg: float | None = None,
+    psi_theta_center_deg: float | None = None,
+    psi_phi_min: float | None = None,
+    psi_phi_max: float | None = None,
 ) -> tuple[
-    torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, tensordict.TensorDict
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    tensordict.TensorDict,
+    torch.Tensor,
 ]:
     """Single-GPU call for template matching.
 
@@ -453,6 +520,17 @@ def _core_match_template_single_gpu(
         Whether to track cross-correlation values which surpass the correlation table
         threshold. If False, this (comparatively expensive) computation is skipped and
         the returned correlation table will be empty. Default is True.
+    eligible_pixels : torch.Tensor, optional
+        Boolean stats-map mask of pixels in play. If None, all pixels are eligible.
+    orientation_eligible : torch.Tensor, optional
+        Boolean mask of allowed YAML orientations. Shape ``(n_orient, H, W)``
+        or ``(n_orient,)``. If None, every searched orientation is allowed.
+    defocus_eligible : torch.Tensor, optional
+        Boolean ``(n_defocus, H, W)`` mask of allowed defocus values per pixel.
+        If None, every defocus in this run is allowed.
+    stats_from_valid_orientations_defocus : bool, optional
+        If True, running sums use only eligible (pixel, orientation, defocus)
+        tuples. Default is False.
 
     Returns
     -------
@@ -551,6 +629,58 @@ def _core_match_template_single_gpu(
         dtype=DEFAULT_STATISTIC_DTYPE,
         device=device,
     )
+    correlation_count = torch.zeros(
+        size=valid_correlation_shape,
+        dtype=DEFAULT_STATISTIC_DTYPE,
+        device=device,
+    )
+    if eligible_pixels is not None:
+        eligible_pixels = eligible_pixels.to(device=device, dtype=torch.bool)
+        if tuple(eligible_pixels.shape) != valid_correlation_shape:
+            raise ValueError(
+                "eligible_pixels shape "
+                f"{tuple(eligible_pixels.shape)} does not match stats-map shape "
+                f"{valid_correlation_shape}."
+            )
+    if orientation_eligible is not None:
+        orientation_eligible = orientation_eligible.to(
+            device=device, dtype=torch.bool
+        )
+        if orientation_eligible.ndim == 1:
+            expected_orient_shape = (num_orientations,)
+        else:
+            expected_orient_shape = (num_orientations, *valid_correlation_shape)
+        if tuple(orientation_eligible.shape) != expected_orient_shape:
+            raise ValueError(
+                "orientation_eligible shape "
+                f"{tuple(orientation_eligible.shape)} does not match "
+                f"{expected_orient_shape}."
+            )
+    if defocus_eligible is not None:
+        defocus_eligible = defocus_eligible.to(device=device, dtype=torch.bool)
+        expected_defocus_shape = (num_defocus, *valid_correlation_shape)
+        if tuple(defocus_eligible.shape) != expected_defocus_shape:
+            raise ValueError(
+                "defocus_eligible shape "
+                f"{tuple(defocus_eligible.shape)} does not match "
+                f"{expected_defocus_shape}."
+            )
+    if psi_center is not None:
+        psi_center = psi_center.to(device=device, dtype=torch.float32)
+        if tuple(psi_center.shape) != valid_correlation_shape:
+            raise ValueError(
+                "psi_center shape "
+                f"{tuple(psi_center.shape)} does not match stats-map shape "
+                f"{valid_correlation_shape}."
+            )
+    if pole_mask is not None:
+        pole_mask = pole_mask.to(device=device, dtype=torch.uint8)
+        if tuple(pole_mask.shape) != valid_correlation_shape:
+            raise ValueError(
+                "pole_mask shape "
+                f"{tuple(pole_mask.shape)} does not match stats-map shape "
+                f"{valid_correlation_shape}."
+            )
     if backend == "zipfft":
         # NOTE: zipFFT expects a pre-transformed, pre-transposed input image FFT
         # Transpose the 'image_dft' along last two dimensions into contiguous layout
@@ -635,6 +765,21 @@ def _core_match_template_single_gpu(
                     valid_shape_w=valid_correlation_shape[1],
                     needs_valid_cropping=(backend != "zipfft"),
                     compute_correlation_table=compute_correlation_table,
+                    eligible_pixels=eligible_pixels,
+                    orientation_eligible=orientation_eligible,
+                    defocus_eligible=defocus_eligible,
+                    n_orientations=num_orientations,
+                    stats_from_valid_orientations_defocus=(
+                        stats_from_valid_orientations_defocus
+                    ),
+                    correlation_count=correlation_count,
+                    psi_center=psi_center,
+                    pole_mask=pole_mask,
+                    euler_angles=euler_angles,
+                    psi_cone_half_angle_deg=psi_cone_half_angle_deg,
+                    psi_theta_center_deg=psi_theta_center_deg,
+                    psi_phi_min=psi_phi_min,
+                    psi_phi_max=psi_phi_max,
                 )
 
         except Exception as e:
@@ -655,6 +800,7 @@ def _core_match_template_single_gpu(
         correlation_sum,
         correlation_squared_sum,
         correlation_table,
+        correlation_count,
     )
 
 
@@ -676,6 +822,7 @@ def _core_match_template_multiprocess_wrapper(
         correlation_sum,
         correlation_squared_sum,
         correlation_table,
+        correlation_count,
     ) = _core_match_template_single_gpu(rank, **kwargs)  # type: ignore[arg-type]
 
     # NOTE: Need to send all tensors back to the CPU as numpy arrays for the shared
@@ -685,6 +832,7 @@ def _core_match_template_multiprocess_wrapper(
         "best_global_index": best_global_index.cpu().numpy(),
         "correlation_sum": correlation_sum.cpu().numpy(),
         "correlation_squared_sum": correlation_squared_sum.cpu().numpy(),
+        "correlation_count": correlation_count.cpu().numpy(),
         "correlation_table": correlation_table.cpu(),
     }
 

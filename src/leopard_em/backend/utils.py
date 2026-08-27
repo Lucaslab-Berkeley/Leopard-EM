@@ -55,6 +55,92 @@ def combine_euler_angles(angle_a: torch.Tensor, angle_b: torch.Tensor) -> torch.
     return euler_angles_c
 
 
+def _circular_abs_diff_deg(values: torch.Tensor, center: torch.Tensor) -> torch.Tensor:
+    """Smallest absolute difference on a 360° circle, in degrees."""
+    return torch.abs(((values - center + 180.0) % 360.0) - 180.0)
+
+
+def _in_angle_range_torch(
+    values: torch.Tensor,
+    lo: float,
+    hi: float,
+    period: float | None,
+    atol: float = 1e-3,
+) -> torch.Tensor:
+    """Inclusive range test matching the numpy spatial-constraint helper."""
+    if period is None:
+        return (values >= lo - atol) & (values <= hi + atol)
+    if hi + atol >= period and lo <= atol:
+        return torch.ones_like(values, dtype=torch.bool)
+    if lo <= hi:
+        return (values >= lo - atol) & (values <= hi + atol)
+    return (values >= lo - atol) | (values <= hi + atol)
+
+
+def _orient_ok_from_psi_center(
+    euler_angles: torch.Tensor,
+    orient_idx: torch.Tensor,
+    psi_center: torch.Tensor,
+    pole_mask: torch.Tensor | None,
+    cone_half_angle_deg: float,
+    theta_center_deg: float,
+    phi_min: float,
+    phi_max: float,
+    height: int,
+    width: int,
+    atol: float = 1e-3,
+) -> torch.Tensor:
+    """Return ``(B, H, W)`` mask for this batch from per-pixel ``psi_center``."""
+    device = psi_center.device
+    angles = euler_angles[orient_idx.to(dtype=torch.int64)]
+    phi = angles[:, 0]
+    theta = angles[:, 1]
+    psi = angles[:, 2]
+    psi_map = psi_center.to(device=device, dtype=phi.dtype)
+    if tuple(psi_map.shape) != (height, width):
+        raise ValueError(
+            "psi_center shape "
+            f"{tuple(psi_map.shape)} does not match stats-map shape "
+            f"({height}, {width})."
+        )
+
+    theta_min = max(0.0, float(theta_center_deg) - float(cone_half_angle_deg))
+    theta_max = min(180.0, float(theta_center_deg) + float(cone_half_angle_deg))
+    theta_ok = _in_angle_range_torch(theta, theta_min, theta_max, period=None, atol=atol)
+    phi_ok = _in_angle_range_torch(
+        phi, float(phi_min), float(phi_max), period=360.0, atol=atol
+    )
+    box_ok = (phi_ok & theta_ok)[:, None, None]
+
+    if pole_mask is None:
+        poles = torch.full(
+            (height, width), 3, dtype=torch.uint8, device=device
+        )
+    else:
+        poles = pole_mask.to(device=device, dtype=torch.uint8)
+        if tuple(poles.shape) != (height, width):
+            raise ValueError(
+                "pole_mask shape "
+                f"{tuple(poles.shape)} does not match stats-map shape "
+                f"({height}, {width})."
+            )
+
+    if float(cone_half_angle_deg) >= 180.0:
+        psi_ok = torch.ones(
+            (orient_idx.numel(), height, width), dtype=torch.bool, device=device
+        )
+    else:
+        half = float(cone_half_angle_deg) + atol
+        psi_b = psi[:, None, None]
+        d0 = _circular_abs_diff_deg(psi_b, psi_map)
+        d1 = _circular_abs_diff_deg(psi_b, (psi_map + 180.0) % 360.0)
+        allow_pos = (poles & 1) != 0
+        allow_neg = (poles & 2) != 0
+        psi_ok = (allow_pos & (d0 <= half)) | (allow_neg & (d1 <= half))
+
+    return box_ok & psi_ok
+
+
 def attempt_torch_compilation(
     target_func: F, backend: str = "inductor", mode: str = "default"
 ) -> F:
@@ -191,6 +277,87 @@ def normalize_template_projection(
 
 @torch.compile  # type: ignore[misc]
 # pylint: disable=too-many-locals
+# pylint: disable=too-many-arguments
+# pylint: disable=too-many-positional-arguments
+def _stats_reductions(
+    cc_reshaped: torch.Tensor,
+    mip: torch.Tensor,
+    valid_shape_h: int,
+    valid_shape_w: int,
+    apply_eligibility: bool = False,
+    pixel_ok: torch.Tensor | None = None,
+    orient_ok: torch.Tensor | None = None,
+    defocus_ok: torch.Tensor | None = None,
+    stats_from_valid_orientations_defocus: bool = False,
+) -> tuple[
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor,
+    torch.Tensor | None,
+]:
+    """Compiled max / sum reductions. Avoids ``torch.where`` (Triton int32)."""
+    if apply_eligibility:
+        assert pixel_ok is not None
+        assert orient_ok is not None
+        pixel_ok_b = pixel_ok.to(dtype=torch.bool)
+        orient_ok_b = orient_ok.to(dtype=torch.bool)
+        if orient_ok_b.ndim == 1:
+            eligible = torch.logical_and(
+                orient_ok_b[:, None, None], pixel_ok_b[None, :, :]
+            )
+        else:
+            eligible = torch.logical_and(orient_ok_b, pixel_ok_b[None, :, :])
+        if defocus_ok is not None:
+            eligible = torch.logical_and(eligible, defocus_ok.to(dtype=torch.bool))
+        # finfo.min is finite, so 0/1 arithmetic is NaN-safe (unlike ±inf).
+        elig_f = eligible.to(dtype=cc_reshaped.dtype)
+        neg_large = torch.finfo(cc_reshaped.dtype).min
+        cc_for_mip = cc_reshaped * elig_f + neg_large * (1.0 - elig_f)
+        max_values, max_indices = torch.max(cc_for_mip, dim=0)
+        any_allowed = eligible.any(dim=0)
+        update_mask = torch.logical_and(max_values > mip, any_allowed)
+        if stats_from_valid_orientations_defocus:
+            cc_for_stats = cc_reshaped * elig_f
+            corr_count = elig_f.sum(dim=0)
+        else:
+            cc_for_stats = cc_reshaped
+            corr_count = torch.zeros(
+                (valid_shape_h, valid_shape_w),
+                dtype=cc_reshaped.dtype,
+                device=cc_reshaped.device,
+            )
+    else:
+        max_values, max_indices = torch.max(cc_reshaped, dim=0)
+        update_mask = max_values > mip
+        cc_for_stats = cc_reshaped
+        corr_count = torch.zeros(
+            (valid_shape_h, valid_shape_w),
+            dtype=cc_reshaped.dtype,
+            device=cc_reshaped.device,
+        )
+        eligible = None
+
+    corr_sum = cc_for_stats.sum(dim=0)
+    corr_sq_sum = (cc_for_stats * cc_for_stats).sum(dim=0)
+    return (
+        max_values,
+        max_indices,
+        update_mask,
+        corr_sum,
+        corr_sq_sum,
+        corr_count,
+        cc_reshaped,
+        eligible,
+    )
+
+
+# pylint: disable=too-many-locals
+# pylint: disable=too-many-arguments
+# pylint: disable=too-many-positional-arguments
 def _stats_and_table_core(
     cross_correlation: torch.Tensor,
     current_indexes: torch.Tensor,
@@ -201,6 +368,11 @@ def _stats_and_table_core(
     valid_shape_w: int,
     needs_valid_cropping: bool = True,
     compute_correlation_table: bool = True,
+    apply_eligibility: bool = False,
+    pixel_ok: torch.Tensor | None = None,
+    orient_ok: torch.Tensor | None = None,
+    defocus_ok: torch.Tensor | None = None,
+    stats_from_valid_orientations_defocus: bool = False,
 ) -> tuple[
     torch.Tensor,
     torch.Tensor,
@@ -210,8 +382,9 @@ def _stats_and_table_core(
     torch.Tensor,
     torch.Tensor,
     torch.Tensor,
+    torch.Tensor,
 ]:
-    """Compiled function to find new maxima and do correlation table updates.
+    """Find new maxima and do correlation table updates.
 
     Parameters
     ----------
@@ -244,6 +417,20 @@ def _stats_and_table_core(
         shape.
     compute_correlation_table : bool, optional
         Whether to find and return threshold exceedances for the correlation table.
+    apply_eligibility : bool, optional
+        If True, mask illegal (pixel, orientation, defocus) tuples before
+        taking the MIP max.
+    pixel_ok : torch.Tensor, optional
+        Boolean mask of shape (H, W). True where the pixel is in play.
+    orient_ok : torch.Tensor, optional
+        Boolean mask of shape ``(B,)``, ``(B, 1, 1)``, or ``(B, H, W)``.
+        True where this batch index's orientation is allowed at that pixel.
+    defocus_ok : torch.Tensor, optional
+        Boolean mask of shape (B, H, W). True where this batch index's defocus
+        is allowed at that pixel.
+    stats_from_valid_orientations_defocus : bool, optional
+        If True, running sums use only eligible (pixel, orientation, defocus)
+        tuples. Default False uses all searched angles and defocus values.
     """
     # create cropped view as in existing functions
     if needs_valid_cropping:
@@ -263,23 +450,41 @@ def _stats_and_table_core(
             -1, cross_correlation.shape[-2], cross_correlation.shape[-1]
         )
 
-    # per-pixel maxima across the unraveled batch dimension
-    max_values, max_indices = torch.max(cc_reshaped, dim=0)
-
-    # masked mip / index updates (do not modify originals here; return updated tensors)
-    update_mask = max_values > mip
-    new_mip = torch.where(update_mask, max_values, mip)
-    new_best_global_index = torch.where(
-        update_mask, current_indexes[max_indices], best_global_index
+    (
+        max_values,
+        max_indices,
+        update_mask,
+        corr_sum,
+        corr_sq_sum,
+        corr_count,
+        cc_reshaped,
+        eligible,
+    ) = _stats_reductions(
+        cc_reshaped,
+        mip,
+        valid_shape_h,
+        valid_shape_w,
+        apply_eligibility=apply_eligibility,
+        pixel_ok=pixel_ok,
+        orient_ok=orient_ok,
+        defocus_ok=defocus_ok,
+        stats_from_valid_orientations_defocus=stats_from_valid_orientations_defocus,
     )
 
-    # sums used for statistics
-    corr_sum = cc_reshaped.sum(dim=0)
-    corr_sq_sum = (cc_reshaped * cc_reshaped).sum(dim=0)
+    # Eager masked selects: inductor lowers torch.where to tl.where(int32)
+    # which Triton now warns on (and will error in a future release).
+    new_mip = torch.where(update_mask, max_values, mip)
+    picked_index = torch.gather(
+        current_indexes, 0, max_indices.reshape(-1).to(dtype=torch.int64)
+    ).reshape(max_indices.shape)
+    new_best_global_index = torch.where(update_mask, picked_index, best_global_index)
 
     # find threshold exceedances (for correlation table)
     if compute_correlation_table:
-        batch_idxs, y_idxs, x_idxs = torch.where(cc_reshaped > threshold)
+        table_mask = cc_reshaped > threshold
+        if apply_eligibility:
+            table_mask = torch.logical_and(table_mask, eligible)
+        batch_idxs, y_idxs, x_idxs = torch.where(table_mask)
         values = cc_reshaped[batch_idxs, y_idxs, x_idxs]
         global_idxs = current_indexes[batch_idxs]
     else:
@@ -293,6 +498,7 @@ def _stats_and_table_core(
         new_best_global_index,
         corr_sum,
         corr_sq_sum,
+        corr_count,
         global_idxs,
         y_idxs,
         x_idxs,
@@ -316,6 +522,19 @@ def do_iteration_and_correlation_table_updates(
     valid_shape_w: int,
     needs_valid_cropping: bool = True,
     compute_correlation_table: bool = True,
+    eligible_pixels: torch.Tensor | None = None,
+    orientation_eligible: torch.Tensor | None = None,
+    defocus_eligible: torch.Tensor | None = None,
+    n_orientations: int = 1,
+    stats_from_valid_orientations_defocus: bool = False,
+    correlation_count: torch.Tensor | None = None,
+    psi_center: torch.Tensor | None = None,
+    pole_mask: torch.Tensor | None = None,
+    euler_angles: torch.Tensor | None = None,
+    psi_cone_half_angle_deg: float | None = None,
+    psi_theta_center_deg: float | None = None,
+    psi_phi_min: float | None = None,
+    psi_phi_max: float | None = None,
 ) -> None:
     """Helper function for updating maxima, tracked statistics, and correlation table.
 
@@ -357,13 +576,103 @@ def do_iteration_and_correlation_table_updates(
     compute_correlation_table : bool, optional
         Whether to threshold the cross-correlation values and add exceedances to the
         correlation table.
+    eligible_pixels : torch.Tensor, optional
+        Boolean (H, W) mask of pixels in play. If None, all pixels are eligible.
+    orientation_eligible : torch.Tensor, optional
+        Boolean mask of allowed YAML orientations. Shape ``(n_orient, H, W)``
+        for per-pixel sets, or ``(n_orient,)`` for the same set at every
+        in-play pixel. If None, every orientation in this run is allowed.
+    defocus_eligible : torch.Tensor, optional
+        Boolean ``(n_defocus, H, W)`` mask. If None, every defocus in this run
+        is allowed at every pixel.
+    n_orientations : int, optional
+        Number of orientations in the global search. Used to decode the
+        orientation and defocus indexes from ``current_indexes``. Default 1.
+    stats_from_valid_orientations_defocus : bool, optional
+        If True, accumulate sums and a per-pixel count over eligible
+        (pixel, orientation, defocus) tuples only.
+    correlation_count : torch.Tensor, optional
+        Running eligible-tuple count per pixel. Updated when
+        ``stats_from_valid_orientations_defocus`` is True.
+    psi_center : torch.Tensor, optional
+        Per-pixel in-plane ``psi`` of the membrane normal, degrees.
+        When set, each batch orientation is tested against this field
+        instead of a dense ``orientation_eligible`` cube.
+    pole_mask : torch.Tensor, optional
+        ``uint8`` 2-bit mask: bit 0 allows ``psi_center``, bit 1 allows
+        ``psi_center + 180``.
+    euler_angles : torch.Tensor, optional
+        Full YAML Euler list ``(n_orient, 3)`` in degrees. Required when
+        ``psi_center`` is set.
+    psi_cone_half_angle_deg, psi_theta_center_deg, psi_phi_min, psi_phi_max
+        Shared Euler-box scalars used with ``psi_center``.
     """
-    # call compiled core
+    apply_eligibility = (
+        eligible_pixels is not None
+        or orientation_eligible is not None
+        or defocus_eligible is not None
+        or psi_center is not None
+    )
+    device = cross_correlation.device
+    pixel_ok = eligible_pixels
+    if apply_eligibility and pixel_ok is None:
+        pixel_ok = torch.ones(
+            (valid_shape_h, valid_shape_w),
+            dtype=torch.bool,
+            device=device,
+        )
+
+    n_orient = max(int(n_orientations), 1)
+    orient_ok = None
+    if apply_eligibility:
+        if psi_center is not None:
+            if euler_angles is None:
+                raise ValueError("euler_angles is required when psi_center is set.")
+            n_orient = max(n_orient, int(euler_angles.shape[0]))
+            orient_idx = current_indexes % n_orient
+            orient_ok = _orient_ok_from_psi_center(
+                euler_angles=euler_angles.to(device=device),
+                orient_idx=orient_idx,
+                psi_center=psi_center,
+                pole_mask=pole_mask,
+                cone_half_angle_deg=(
+                    10.0 if psi_cone_half_angle_deg is None else psi_cone_half_angle_deg
+                ),
+                theta_center_deg=(
+                    90.0 if psi_theta_center_deg is None else psi_theta_center_deg
+                ),
+                phi_min=0.0 if psi_phi_min is None else psi_phi_min,
+                phi_max=360.0 if psi_phi_max is None else psi_phi_max,
+                height=valid_shape_h,
+                width=valid_shape_w,
+            )
+        elif orientation_eligible is None:
+            orient_ok = torch.ones(
+                current_indexes.numel(),
+                dtype=torch.bool,
+                device=device,
+            )
+        else:
+            orientation_eligible = orientation_eligible.to(
+                device=device, dtype=torch.bool
+            )
+            n_orient = max(n_orient, int(orientation_eligible.shape[0]))
+            orient_idx = current_indexes % n_orient
+            orient_ok = orientation_eligible[orient_idx]
+
+    defocus_ok = None
+    if defocus_eligible is not None:
+        defocus_eligible = defocus_eligible.to(device=device, dtype=torch.bool)
+        n_defocus = int(defocus_eligible.shape[0])
+        defocus_idx = (current_indexes % (n_defocus * n_orient)) // n_orient
+        defocus_ok = defocus_eligible[defocus_idx]
+
     (
         new_mip,
         new_best_global_index,
         corr_sum,
         corr_sq_sum,
+        corr_count,
         global_idxs,
         y_idxs,
         x_idxs,
@@ -378,6 +687,11 @@ def do_iteration_and_correlation_table_updates(
         valid_shape_w,
         needs_valid_cropping=needs_valid_cropping,
         compute_correlation_table=compute_correlation_table,
+        apply_eligibility=apply_eligibility,
+        pixel_ok=pixel_ok,
+        orient_ok=orient_ok,
+        defocus_ok=defocus_ok,
+        stats_from_valid_orientations_defocus=stats_from_valid_orientations_defocus,
     )
 
     # update inplace the statistics tensors
@@ -386,6 +700,8 @@ def do_iteration_and_correlation_table_updates(
 
     correlation_sum += corr_sum
     correlation_squared_sum += corr_sq_sum
+    if correlation_count is not None and stats_from_valid_orientations_defocus:
+        correlation_count += corr_count
 
     # update correlation_table (tensordict operations not compiled)
     if global_idxs.numel() > 0:

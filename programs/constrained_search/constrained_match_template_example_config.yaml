@@ -1,0 +1,74 @@
+############################################################
+### Constrained (filament Euler-box) match template config ###
+############################################################
+# Same schema as match_template. If you pass a sidecar from
+# napari_choose_constraint.py to run_constrained_match_template.py, that
+# sidecar replaces orientation_search_config below.
+template_volume_path: /some/path/to/template.mrc
+micrograph_path:      /some/path/to/micrograph.mrc
+match_template_result:
+  allow_file_overwrite: true
+  mip_path:                   /some/path/to/output_mip.mrc
+  scaled_mip_path:            /some/path/to/output_scaled_mip.mrc
+  orientation_psi_path:       /some/path/to/output_orientation_psi.mrc
+  orientation_theta_path:     /some/path/to/output_orientation_theta.mrc
+  orientation_phi_path:       /some/path/to/output_orientation_phi.mrc
+  relative_defocus_path:      /some/path/to/output_relative_defocus.mrc
+  correlation_average_path:   /some/path/to/output_correlation_average.mrc
+  correlation_variance_path:  /some/path/to/output_correlation_variance.mrc
+optics_group:
+  label: some_label
+  voltage: 300.0
+  pixel_size: 1.06   # in Angstroms
+  defocus_u: 5200.0  # in Angstroms
+  defocus_v: 4950.0  # in Angstroms
+  astigmatism_angle: 25.0  # in degrees
+  spherical_aberration: 2.7  # in millimeters
+  amplitude_contrast_ratio: 0.07
+  phase_shift: 0.0
+  ctf_B_factor: 60.0  # in Angstroms^2
+defocus_search_config:
+  defocus_max:  1200.0  # in Angstroms, relative to the defocus_u and defocus_v values
+  defocus_min: -1200.0  # in Angstroms, relative to the defocus_u and defocus_v values
+  defocus_step: 200.0   # in Angstroms
+  enabled: true
+# Placeholder: replaced at runtime by the napari sidecar when
+# CONSTRAINT_YAML_PATH is set in run_constrained_match_template.py.
+# symmetry must be null when angle ranges are set explicitly.
+orientation_search_config:
+  orientation_configs:
+    - psi_step: 1.5
+      theta_step: 2.5
+      symmetry: null
+      phi_min: 0.0
+      phi_max: 360.0
+      theta_min: 80.0
+      theta_max: 100.0
+      psi_min: 0.0
+      psi_max: 20.0
+      base_grid_method: uniform
+    - psi_step: 1.5
+      theta_step: 2.5
+      symmetry: null
+      phi_min: 0.0
+      phi_max: 360.0
+      theta_min: 80.0
+      theta_max: 100.0
+      psi_min: 180.0
+      psi_max: 200.0
+      base_grid_method: uniform
+preprocessing_filters:
+  whitening_filter:
+    enabled: true
+    do_power_spectrum: true
+    max_freq: 0.5  # In terms of Nyquist frequency
+    num_freq_bins: null
+  bandpass_filter:
+    enabled: false
+    falloff: null
+    high_freq_cutoff: null
+    low_freq_cutoff: null
+computational_config:
+  gpu_ids:
+  - 0
+  num_cpus: 1
