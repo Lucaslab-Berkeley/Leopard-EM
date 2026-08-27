@@ -57,7 +57,7 @@ output_path = manager.run_and_save_peak_inspection(
 ### Output modes
 
 - `"cross_correlation"` (default) — returns the full local cross-correlation map for every hypothesis, shape `(N, n_px, n_defocus, n_orient, H, W)`.
-- `"frc"` — returns local Fourier ring correlation spectra instead of full 2-D maps, shape `(N, n_px, n_defocus, n_orient, n_freq)`, which is far more compact for large searches.
+- `"frc"` — returns local Fourier ring correlation spectra instead of full 2-D maps, shape `(N, n_px, n_defocus, n_orient, n_freq)`.
 
 See [Data from peak & frame inspection](../data_formats.md#data-from-peak-frame-inspection) for the full `.npz` file layout and how to load results back with `leopard_em.analysis.load_inspection_result`.
 

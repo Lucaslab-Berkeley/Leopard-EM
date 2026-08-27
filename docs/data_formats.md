@@ -150,7 +150,7 @@ Because this is a dense tensor rather than a sparse table, results are saved as 
 The main array (`InspectionResult.scores`) has one of two shapes depending on `output_mode`:
 
 - `"cross_correlation"` mode: `(N, n_px, n_defocus, n_orient, H, W)` — local cross-correlation maps (valid-mode, same shapes as described in [the note on correlation modes](#a-note-on-correlation-modes-and-output-shapes)) for every searched hypothesis.
-- `"frc"` mode: `(N, n_px, n_defocus, n_orient, n_freq)` — local Fourier ring correlation spectra instead of full 2-D maps, which is far more compact for large searches.
+- `"frc"` mode: `(N, n_px, n_defocus, n_orient, n_freq)` — local Fourier ring correlation spectra instead of full 2-D maps.
 
 Per-frame inspection (`FrameInspectionManager`) inserts an additional `frame` axis immediately after the particle axis: `(N, T, n_px, n_defocus, n_orient, H, W)` or `(N, T, n_px, n_defocus, n_orient, n_freq)` for `T` movie frames.
 
