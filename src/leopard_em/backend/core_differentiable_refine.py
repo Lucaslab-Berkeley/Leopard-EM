@@ -17,7 +17,10 @@ from leopard_em.backend.cross_correlation import (
     do_batched_orientation_cross_correlate,
 )
 from leopard_em.backend.utils import EULER_ANGLE_FMT, combine_euler_angles
-from leopard_em.utils.ctf_utils import calculate_ctf_filter_stack_full_args
+from leopard_em.utils.ctf_utils import (
+    calculate_ctf_filter_stack_full_args,
+    move_ctf_kwargs_tensors_to_device,
+)
 
 
 # NOTE: Disabling pylint for too many arguments because we are taking a data-oriented
@@ -544,13 +547,16 @@ def _core_refine_template_single_thread(
 
     default_rot_matrix = default_rot_matrix.to(torch.float32)
     # Calculate the CTF filters with the relative offsets
+    ctf_dev_kwargs = move_ctf_kwargs_tensors_to_device(
+        ctf_kwargs, particle_image_dft.device
+    )
     ctf_filters = calculate_ctf_filter_stack_full_args(
         defocus_u=defocus_u,  # in Angstrom
         defocus_v=defocus_v,  # in Angstrom
         astigmatism_angle=defocus_angle,  # in degrees
         defocus_offsets=defocus_offsets,  # in Angstrom
         pixel_size_offsets=pixel_size_offsets,  # in Angstrom
-        **ctf_kwargs,
+        **ctf_dev_kwargs,
     )
 
     # Combine the single projective filter with the CTF filter

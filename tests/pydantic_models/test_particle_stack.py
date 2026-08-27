@@ -4,8 +4,15 @@ import mrcfile
 import numpy as np
 import pandas as pd
 import pytest
+import torch
 
-from leopard_em.pydantic_models.data_structures.particle_stack import ParticleStack
+from leopard_em.pydantic_models.data_structures.particle_stack import (
+    ParticleStack,
+    ParticleStackHDF5,
+)
+
+# Tests construct minimal ParticleStack instances by assigning their backing frames.
+# pylint: disable=protected-access
 
 REQUIRED_COLUMNS = [
     "particle_index",
@@ -374,3 +381,219 @@ def test_particle_stack_top_left_and_center_self_consistency():
     assert np.allclose(extracted_mips_tl[1], mip2_tl)
     assert np.allclose(extracted_mips_center[0], mip1_center)
     assert np.allclose(extracted_mips_center[1], mip2_center)
+
+
+def test_construct_particle_movie_stack_assumes_aligned_without_motion_source():
+    """Per-frame movie extraction should support already aligned movies."""
+    df = make_minimal_df(num_rows=1)
+    df["pos_x"] = [1]
+    df["pos_y"] = [1]
+    df["pixel_size"] = [1.0]
+
+    particle_stack = ParticleStack(
+        df_path="",
+        extracted_box_size=(2, 2),
+        original_template_size=(2, 2),
+        skip_df_load=True,
+    )
+    particle_stack._df = df
+    movie = torch.arange(2 * 4 * 4, dtype=torch.float32).reshape(2, 4, 4)
+
+    with pytest.warns(UserWarning, match="movie is already aligned"):
+        particle_movie = particle_stack.construct_particle_movie_stack(
+            movie=movie,
+            use_gradient_checkpointing=False,
+        )
+
+    mean_zero_movie = movie - torch.mean(movie, dim=(-2, -1), keepdim=True)
+    expected = mean_zero_movie[:, None, 1:3, 1:3]
+    assert particle_movie.shape == (2, 1, 2, 2)
+    assert torch.allclose(particle_movie, expected)
+
+
+def test_construct_image_stack_from_movie_preserves_summed_output_shape(monkeypatch):
+    """The existing movie stack API should still return one image per particle."""
+    df = make_minimal_df(num_rows=1)
+    df["pos_x"] = [1]
+    df["pos_y"] = [1]
+    df["pixel_size"] = [1.0]
+    df["voltage"] = [300.0]
+
+    particle_stack = ParticleStack(
+        df_path="",
+        extracted_box_size=(2, 2),
+        original_template_size=(2, 2),
+        skip_df_load=True,
+    )
+    particle_stack._df = df
+    movie = torch.arange(2 * 4 * 4, dtype=torch.float32).reshape(2, 4, 4)
+    particle_shifts = torch.zeros((2, 1, 2), dtype=torch.float32)
+    dose_weight_calls = []
+
+    def fake_dose_weight_movie_to_micrograph(
+        movie_fft, pixel_size, pre_exposure, fluence_per_frame, voltage
+    ):
+        dose_weight_calls.append((pixel_size, pre_exposure, fluence_per_frame, voltage))
+        return torch.fft.irfftn(  # pylint: disable=not-callable
+            movie_fft, s=(2, 2), dim=(-2, -1)
+        ).sum(dim=0)
+
+    monkeypatch.setattr(
+        "leopard_em.pydantic_models.data_structures.particle_stack."
+        "dose_weight_movie_to_micrograph",
+        fake_dose_weight_movie_to_micrograph,
+    )
+
+    image_stack = particle_stack.construct_image_stack_from_movie(
+        movie=movie,
+        particle_shifts=particle_shifts,
+        use_gradient_checkpointing=False,
+    )
+
+    assert image_stack.shape == (1, 2, 2)
+    assert particle_stack.image_stack.shape == (1, 2, 2)
+    assert len(dose_weight_calls) == 1
+
+
+def test_get_local_stat_maps_does_not_mutate_image_stack():
+    """Ensure get_local_stat_maps doesn't clobber image_stack like construct does."""
+    df, _r1, _r2, mip1, mip2 = make_reference_example_df()
+    h, w = (32, 32)
+    box_h, box_w = (34, 34)
+
+    ps = ParticleStack(
+        df_path="",
+        extracted_box_size=(box_h, box_w),
+        original_template_size=(h, w),
+        skip_df_load=True,
+    )
+    ps._df = df
+
+    sentinel = torch.full((2, box_h, box_w), -1.0)
+    ps.image_stack = sentinel
+
+    stat_maps = ps.get_local_stat_maps(columns=["mip_path"])
+
+    # image_stack must be untouched
+    assert ps.image_stack is sentinel
+    assert torch.equal(ps.image_stack, sentinel)
+
+    mip1_ground_truth = np.array([[0, 0, 0], [0, mip1, 0], [0, 0, 0]], dtype=np.float32)
+    mip2_ground_truth = np.array([[0, 0, 0], [0, mip2, 0], [0, 0, 0]], dtype=np.float32)
+
+    assert stat_maps["mip_path"].shape == (2, 3, 3)
+    assert np.allclose(stat_maps["mip_path"][0].numpy(), mip1_ground_truth)
+    assert np.allclose(stat_maps["mip_path"][1].numpy(), mip2_ground_truth)
+
+
+def test_hdf5_get_local_stat_maps_returns_stored_values(tmp_path):
+    """When present in local_stats, stored tensors are returned as-is, not re-derived.
+
+    The referenced path columns point at files that do not exist; if
+    ``get_local_stat_maps`` fell back to loading from disk this would raise.
+    Also covers a non-correlation column (``mip_path``) to show storage isn't
+    limited to correlation average/variance.
+    """
+    df = make_minimal_df(num_rows=2)
+    df["correlation_average_path"] = "/nonexistent/does_not_exist.mrc"
+    df["correlation_variance_path"] = "/nonexistent/does_not_exist.mrc"
+    df["mip_path"] = "/nonexistent/does_not_exist.mrc"
+    df.index = pd.Index(["particle_00000", "particle_00001"], name="particle_id")
+
+    stored_avg = torch.arange(2 * 3 * 3, dtype=torch.float32).reshape(2, 3, 3)
+    stored_var = torch.ones(2, 3, 3)
+    stored_mip = torch.full((2, 3, 3), 7.0)
+
+    ps = ParticleStackHDF5(
+        hdf5_path=str(tmp_path / "particles.h5"),
+        extracted_box_size=(34, 34),
+        original_template_size=(32, 32),
+        local_stats_stored=True,
+        local_stats={
+            "correlation_average_path": stored_avg,
+            "correlation_variance_path": stored_var,
+            "mip_path": stored_mip,
+        },
+        skip_df_load=True,
+    )
+    ps._df = df
+
+    stat_maps = ps.get_local_stat_maps(
+        columns=["correlation_average_path", "correlation_variance_path", "mip_path"]
+    )
+
+    assert torch.equal(stat_maps["correlation_average_path"], stored_avg)
+    assert torch.equal(stat_maps["correlation_variance_path"], stored_var)
+    assert torch.equal(stat_maps["mip_path"], stored_mip)
+
+
+def test_hdf5_to_hdf5_local_stats_requires_non_empty(tmp_path):
+    """to_hdf5(include_local_stats=True) raises when local_stats is empty."""
+    df = make_minimal_df(num_rows=2)
+    df.index = pd.Index(["particle_00000", "particle_00001"], name="particle_id")
+
+    ps = ParticleStackHDF5(
+        hdf5_path=str(tmp_path / "particles.h5"),
+        extracted_box_size=(34, 34),
+        original_template_size=(32, 32),
+        skip_df_load=True,
+    )
+    ps._df = df
+
+    with pytest.raises(ValueError, match="local_stats is empty"):
+        ps.to_hdf5(include_local_stats=True)
+
+
+def test_hdf5_local_stats_roundtrip_stores_all_columns(tmp_path):
+    """to_hdf5/from_hdf5 round-trips every entry in local_stats, not just avg/var."""
+    df = make_minimal_df(num_rows=2)
+    df.index = pd.Index(["particle_00000", "particle_00001"], name="particle_id")
+
+    local_stats = {
+        "correlation_average_path": torch.zeros(2, 3, 3),
+        "correlation_variance_path": torch.ones(2, 3, 3),
+        "mip_path": torch.full((2, 3, 3), 2.0),
+        "psi_path": torch.full((2, 3, 3), 3.0),
+        "theta_path": torch.full((2, 3, 3), 4.0),
+        "phi_path": torch.full((2, 3, 3), 5.0),
+    }
+
+    hdf5_path = str(tmp_path / "particles.h5")
+    ps = ParticleStackHDF5(
+        hdf5_path=hdf5_path,
+        extracted_box_size=(34, 34),
+        original_template_size=(32, 32),
+        local_stats=dict(local_stats),
+        skip_df_load=True,
+    )
+    ps._df = df
+    ps.to_hdf5(include_local_stats=True)
+
+    loaded = ParticleStackHDF5.from_hdf5(hdf5_path)
+
+    assert loaded.local_stats_stored is True
+    assert set(loaded.local_stats.keys()) == set(local_stats.keys())
+    for column, tensor in local_stats.items():
+        assert torch.equal(loaded.local_stats[column], tensor)
+
+
+def test_hdf5_get_local_stat_maps_falls_back_when_not_stored(tmp_path):
+    """Without local_stats_stored, columns are still loaded/cropped from disk."""
+    df, _r1, _r2, mip1, mip2 = make_reference_example_df()
+    df.index = pd.Index(["particle_00000", "particle_00001"], name="particle_id")
+
+    ps = ParticleStackHDF5(
+        hdf5_path=str(tmp_path / "particles.h5"),
+        extracted_box_size=(34, 34),
+        original_template_size=(32, 32),
+        skip_df_load=True,
+    )
+    ps._df = df
+
+    stat_maps = ps.get_local_stat_maps(columns=["mip_path"])
+
+    mip1_ground_truth = np.array([[0, 0, 0], [0, mip1, 0], [0, 0, 0]], dtype=np.float32)
+    mip2_ground_truth = np.array([[0, 0, 0], [0, mip2, 0], [0, 0, 0]], dtype=np.float32)
+
+    assert np.allclose(stat_maps["mip_path"][0].numpy(), mip1_ground_truth)
+    assert np.allclose(stat_maps["mip_path"][1].numpy(), mip2_ground_truth)

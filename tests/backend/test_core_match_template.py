@@ -33,8 +33,16 @@ ZENODO_URL = "https://zenodo.org/records/17069838"
 ORIENTATION_BATCH_SIZE = 20
 
 
-def download_comparison_data() -> None:
-    """Downloads the example data from Zenodo."""
+def download_comparison_data(force_download: bool = False) -> None:
+    """Downloads the example data from Zenodo, skipping if already present.
+
+    Parameters
+    ----------
+    force_download : bool
+        If True, re-download the data even if it appears to already be present.
+    """
+    if YAML_PATH.exists() and not force_download:
+        return
     subprocess.run(["zenodo_get", "--output-dir=tests/tmp", ZENODO_URL], check=True)
 
 
@@ -64,6 +72,11 @@ def test_core_match_template():
         orientation_batch_size=ORIENTATION_BATCH_SIZE,
         do_result_export=True,  # Saves the statistics immediately upon completion
     )
+
+    corr_table = mt_manager.match_template_result.correlation_table
+    import pandas as pd
+
+    pd.DataFrame(corr_table).to_csv("tests/tmp/test_corr_table.csv")
 
     # Ensure the MIPs are the same, if they are not then there's an issue...
     assert mrcfile_allclose(
@@ -128,26 +141,30 @@ def test_core_match_template():
     assert len(diff_psi[0]) < mip.size * ACC_PCT, ">0.2 pct psi values differ"
 
     # Check 2: Overlap at least 50%
-    defocus_set = set(zip(diff_defocus[0], diff_defocus[1]))
-    phi_set = set(zip(diff_phi[0], diff_phi[1]))
-    theta_set = set(zip(diff_theta[0], diff_theta[1]))
-    psi_set = set(zip(diff_psi[0], diff_psi[1]))
+    defocus_set = set(zip(diff_defocus[0], diff_defocus[1], strict=False))
+    phi_set = set(zip(diff_phi[0], diff_phi[1], strict=False))
+    theta_set = set(zip(diff_theta[0], diff_theta[1], strict=False))
+    psi_set = set(zip(diff_psi[0], diff_psi[1], strict=False))
 
-    assert len(defocus_set.intersection(phi_set)) / len(defocus_set)
-    assert len(defocus_set.intersection(theta_set)) / len(defocus_set)
-    assert len(defocus_set.intersection(psi_set)) / len(defocus_set)
+    if len(defocus_set) > 0:
+        assert len(defocus_set.intersection(phi_set)) / len(defocus_set)
+        assert len(defocus_set.intersection(theta_set)) / len(defocus_set)
+        assert len(defocus_set.intersection(psi_set)) / len(defocus_set)
 
-    assert len(phi_set.intersection(defocus_set)) / len(phi_set)
-    assert len(phi_set.intersection(theta_set)) / len(phi_set)
-    assert len(phi_set.intersection(psi_set)) / len(phi_set)
+    if len(phi_set) > 0:
+        assert len(phi_set.intersection(defocus_set)) / len(phi_set)
+        assert len(phi_set.intersection(theta_set)) / len(phi_set)
+        assert len(phi_set.intersection(psi_set)) / len(phi_set)
 
-    assert len(theta_set.intersection(defocus_set)) / len(theta_set)
-    assert len(theta_set.intersection(phi_set)) / len(theta_set)
-    assert len(theta_set.intersection(psi_set)) / len(theta_set)
+    if len(theta_set) > 0:
+        assert len(theta_set.intersection(defocus_set)) / len(theta_set)
+        assert len(theta_set.intersection(phi_set)) / len(theta_set)
+        assert len(theta_set.intersection(psi_set)) / len(theta_set)
 
-    assert len(psi_set.intersection(defocus_set)) / len(psi_set)
-    assert len(psi_set.intersection(phi_set)) / len(psi_set)
-    assert len(psi_set.intersection(theta_set)) / len(psi_set)
+    if len(psi_set) > 0:
+        assert len(psi_set.intersection(defocus_set)) / len(psi_set)
+        assert len(psi_set.intersection(phi_set)) / len(psi_set)
+        assert len(psi_set.intersection(theta_set)) / len(psi_set)
 
 
 if __name__ == "__main__":

@@ -1,10 +1,12 @@
 """Backend functions related to correlating and refining particle stacks."""
 
 # Following pylint error ignored because torc.fft.* is not recognized as callable
-# pylint: disable=E1102
+# pylint: disable=E1102,too-many-lines
 
 import math
-from typing import Literal
+from collections.abc import Iterator
+from contextlib import AbstractContextManager, nullcontext
+from typing import Literal, NamedTuple, cast
 
 import roma
 import torch
@@ -22,7 +24,101 @@ from leopard_em.backend.utils import (
     normalize_template_projection,
 )
 from leopard_em.utils.cross_correlation import handle_correlation_mode
-from leopard_em.utils.ctf_utils import calculate_ctf_filter_stack_full_args
+from leopard_em.utils.ctf_utils import (
+    calculate_ctf_filter_stack_full_args,
+    move_ctf_kwargs_tensors_to_device,
+)
+
+
+def _make_device_streams(
+    device: torch.device, num_cuda_streams: int
+) -> list[torch.cuda.Stream | None]:
+    """Create CUDA streams when running on CUDA, otherwise a CPU placeholder."""
+    if device.type == "cuda":
+        return [torch.cuda.Stream(device=device) for _ in range(num_cuda_streams)]
+    return [None]
+
+
+def _synchronize_device_streams(streams: list[torch.cuda.Stream | None]) -> None:
+    """Synchronize CUDA streams and no-op for CPU placeholders."""
+    for stream in streams:
+        if stream is not None:
+            stream.synchronize()
+
+
+class _RefineTemplateStackOnDevice(NamedTuple):
+    """All per-device tensors for one refine- or inspect-template GPU chunk."""
+
+    particle_stack_dft: torch.Tensor
+    particle_indices: torch.Tensor
+    template_dft: torch.Tensor
+    euler_angles: torch.Tensor
+    euler_angle_offsets: torch.Tensor
+    defocus_u: torch.Tensor
+    defocus_v: torch.Tensor
+    defocus_angle: torch.Tensor
+    defocus_offsets: torch.Tensor
+    pixel_size_offsets: torch.Tensor
+    corr_mean: torch.Tensor
+    corr_std: torch.Tensor
+    projective_filters: torch.Tensor
+    mag_matrix: torch.Tensor | None
+
+
+# pylint: disable=too-many-arguments,too-many-positional-arguments
+def _move_refine_template_stack_to_device(
+    device: torch.device,
+    particle_stack_dft: torch.Tensor,
+    particle_indices: torch.Tensor,
+    template_dft: torch.Tensor,
+    euler_angles: torch.Tensor,
+    euler_angle_offsets: torch.Tensor,
+    defocus_u: torch.Tensor,
+    defocus_v: torch.Tensor,
+    defocus_angle: torch.Tensor,
+    defocus_offsets: torch.Tensor,
+    pixel_size_offsets: torch.Tensor,
+    corr_mean: torch.Tensor,
+    corr_std: torch.Tensor,
+    projective_filters: torch.Tensor,
+    mag_matrix: torch.Tensor | None,
+) -> _RefineTemplateStackOnDevice:
+    """Move stack, template, and search grids to ``device`` (refine and inspect)."""
+    return _RefineTemplateStackOnDevice(
+        particle_stack_dft=particle_stack_dft.to(device),
+        particle_indices=particle_indices.to(device),
+        template_dft=template_dft.to(device),
+        euler_angles=euler_angles.to(device),
+        euler_angle_offsets=euler_angle_offsets.to(device),
+        defocus_u=defocus_u.to(device),
+        defocus_v=defocus_v.to(device),
+        defocus_angle=defocus_angle.to(device),
+        defocus_offsets=defocus_offsets.to(device),
+        pixel_size_offsets=pixel_size_offsets.to(device),
+        corr_mean=corr_mean.to(device),
+        corr_std=corr_std.to(device),
+        projective_filters=projective_filters.to(device),
+        mag_matrix=mag_matrix.to(device) if mag_matrix is not None else None,
+    )
+
+
+def _tqdm_for_refine_particle_loop(
+    num_particles: int,
+    device: torch.device,
+    device_id: int,
+    desc_verb: str,
+) -> tqdm.tqdm:
+    """Progress bar over particle index for a single device (refine or inspect)."""
+    return tqdm.tqdm(
+        range(num_particles),
+        total=num_particles,
+        desc=f"{desc_verb} particles on device {device.index}...",
+        leave=True,
+        position=device_id,
+        dynamic_ncols=True,
+        unit="particle",
+        smoothing=0.1,
+    )
 
 
 # NOTE: Disabling pylint for too many arguments because we are taking a data-oriented
@@ -146,35 +242,37 @@ def core_refine_template(
     img_w = 2 * (img_w - 1)
     template_w = 2 * (template_w - 1)
 
+    ordered_results = [results[k] for k in sorted(results.keys(), key=int)]
+
     # Concatenate results from all devices
     refined_cross_correlation = torch.cat(
-        [torch.from_numpy(r["refined_cross_correlation"]) for r in results.values()]
+        [torch.from_numpy(r["refined_cross_correlation"]) for r in ordered_results]
     )
     refined_z_score = torch.cat(
-        [torch.from_numpy(r["refined_z_score"]) for r in results.values()]
+        [torch.from_numpy(r["refined_z_score"]) for r in ordered_results]
     )
     refined_euler_angles = torch.cat(
-        [torch.from_numpy(r["refined_euler_angles"]) for r in results.values()]
+        [torch.from_numpy(r["refined_euler_angles"]) for r in ordered_results]
     )
     refined_defocus_offset = torch.cat(
-        [torch.from_numpy(r["refined_defocus_offset"]) for r in results.values()]
+        [torch.from_numpy(r["refined_defocus_offset"]) for r in ordered_results]
     )
     refined_pixel_size_offset = torch.cat(
-        [torch.from_numpy(r["refined_pixel_size_offset"]) for r in results.values()]
+        [torch.from_numpy(r["refined_pixel_size_offset"]) for r in ordered_results]
     )
     refined_pos_y = torch.cat(
-        [torch.from_numpy(r["refined_pos_y"]) for r in results.values()]
+        [torch.from_numpy(r["refined_pos_y"]) for r in ordered_results]
     )
     refined_pos_x = torch.cat(
-        [torch.from_numpy(r["refined_pos_x"]) for r in results.values()]
+        [torch.from_numpy(r["refined_pos_x"]) for r in ordered_results]
     )
 
     # Ensure the results are sorted back to the original particle order
     # (If particles were split across devices, we need to reorder the results)
     particle_indices = torch.cat(
-        [torch.from_numpy(r["particle_indices"]) for r in results.values()]
+        [torch.from_numpy(r["particle_indices"]) for r in ordered_results]
     )
-    angle_idx = torch.cat([torch.from_numpy(r["angle_idx"]) for r in results.values()])
+    angle_idx = torch.cat([torch.from_numpy(r["angle_idx"]) for r in ordered_results])
     sort_indices = torch.argsort(particle_indices)
 
     refined_cross_correlation = refined_cross_correlation[sort_indices]
@@ -291,26 +389,32 @@ def construct_multi_gpu_refine_template_kwargs(
 
         # Split tensors for this device. All these tensors are per-particle, that is
         # the i-th element in each tensor corresponds to the i-th particle in the stack.
-        device_particle_stack_dft = particle_stack_dft[start_idx:end_idx]
-        device_euler_angles = euler_angles[start_idx:end_idx]
-        device_defocus_u = defocus_u[start_idx:end_idx]
-        device_defocus_v = defocus_v[start_idx:end_idx]
-        device_defocus_angle = defocus_angle[start_idx:end_idx]
-        device_projective_filters = projective_filters[start_idx:end_idx]
-        device_corr_mean = corr_mean[start_idx:end_idx]
-        device_corr_std = corr_std[start_idx:end_idx]
+        #
+        # Move to CPU before passing to child processes: Python multiprocessing uses
+        # fork on Linux, and CUDA tensors shared across forked processes via CUDA IPC
+        # are unreliable (they silently read as zeros for non-primary GPUs). Sending CPU
+        # tensors avoids CUDA IPC entirely; each worker does a clean CPU-->GPU transfer
+        # via _move_refine_template_stack_to_device.
+        device_particle_stack_dft = particle_stack_dft[start_idx:end_idx].cpu()
+        device_euler_angles = euler_angles[start_idx:end_idx].cpu()
+        device_defocus_u = defocus_u[start_idx:end_idx].cpu()
+        device_defocus_v = defocus_v[start_idx:end_idx].cpu()
+        device_defocus_angle = defocus_angle[start_idx:end_idx].cpu()
+        device_projective_filters = projective_filters[start_idx:end_idx].cpu()
+        device_corr_mean = corr_mean[start_idx:end_idx].cpu()
+        device_corr_std = corr_std[start_idx:end_idx].cpu()
 
         kwargs = {
             "particle_stack_dft": device_particle_stack_dft,
             "particle_indices": particle_indices,
-            "template_dft": template_dft,
+            "template_dft": template_dft.cpu(),
             "euler_angles": device_euler_angles,
-            "euler_angle_offsets": euler_angle_offsets,
+            "euler_angle_offsets": euler_angle_offsets.cpu(),
             "defocus_u": device_defocus_u,
             "defocus_v": device_defocus_v,
             "defocus_angle": device_defocus_angle,
-            "defocus_offsets": defocus_offsets,
-            "pixel_size_offsets": pixel_size_offsets,
+            "defocus_offsets": defocus_offsets.cpu(),
+            "pixel_size_offsets": pixel_size_offsets.cpu(),
             "corr_mean": device_corr_mean,
             "corr_std": device_corr_std,
             "projective_filters": device_projective_filters,
@@ -318,7 +422,7 @@ def construct_multi_gpu_refine_template_kwargs(
             "batch_size": batch_size,
             "num_cuda_streams": num_cuda_streams,
             "device": device,
-            "mag_matrix": mag_matrix,
+            "mag_matrix": mag_matrix.cpu() if mag_matrix is not None else None,
         }
 
         kwargs_per_device.append(kwargs)
@@ -396,47 +500,32 @@ def _core_refine_template_single_gpu(
         Anisotropic magnification matrix of shape (2, 2). If None,
         no magnification transform is applied. Default is None.
     """
-    streams = [torch.cuda.Stream(device=device) for _ in range(num_cuda_streams)]
+    if device.type == "cuda":
+        torch.cuda.set_device(device)
 
-    ######################################
-    ### Send all tensors to the device ###
-    ######################################
+    streams = _make_device_streams(device, num_cuda_streams)
 
-    particle_stack_dft = particle_stack_dft.to(device)
-    particle_indices = particle_indices.to(device)
-    template_dft = template_dft.to(device)
-    euler_angles = euler_angles.to(device)
-    euler_angle_offsets = euler_angle_offsets.to(device)
-    defocus_u = defocus_u.to(device)
-    defocus_v = defocus_v.to(device)
-    defocus_angle = defocus_angle.to(device)
-    defocus_offsets = defocus_offsets.to(device)
-    pixel_size_offsets = pixel_size_offsets.to(device)
-    corr_mean = corr_mean.to(device)
-    corr_std = corr_std.to(device)
-    projective_filters = projective_filters.to(device)
-    mag_matrix = mag_matrix.to(device) if mag_matrix is not None else None
+    refine_stack = _move_refine_template_stack_to_device(
+        device,
+        particle_stack_dft,
+        particle_indices,
+        template_dft,
+        euler_angles,
+        euler_angle_offsets,
+        defocus_u,
+        defocus_v,
+        defocus_angle,
+        defocus_offsets,
+        pixel_size_offsets,
+        corr_mean,
+        corr_std,
+        projective_filters,
+        mag_matrix,
+    )
 
-    ########################################
-    ### Setup constants and progress bar ###
-    ########################################
-
-    num_particles, _, img_w = particle_stack_dft.shape
-    _, _, template_w = template_dft.shape
-    # account for RFFT
-    img_w = 2 * (img_w - 1)
-    template_w = 2 * (template_w - 1)
-
-    # tqdm progress bar
-    pbar_iter = tqdm.tqdm(
-        range(num_particles),
-        total=num_particles,
-        desc=f"Refining particles on device {device.index}...",
-        leave=True,
-        position=device_id,
-        dynamic_ncols=True,
-        unit="particle",
-        smoothing=0.1,
+    num_particles = refine_stack.particle_stack_dft.shape[0]
+    pbar_iter = _tqdm_for_refine_particle_loop(
+        num_particles, device, device_id, "Refining"
     )
 
     #############################################################################
@@ -445,36 +534,37 @@ def _core_refine_template_single_gpu(
 
     refined_statistics = []
     for i in pbar_iter:
-        particle_image_dft = particle_stack_dft[i]
-        particle_index = int(particle_indices[i])  # Original particle index
+        particle_image_dft = refine_stack.particle_stack_dft[i]
 
         # Distribute different particles across streams
-        stream = streams[i % num_cuda_streams]
-        with torch.cuda.stream(stream):
+        stream = streams[i % len(streams)]
+        stream_context: AbstractContextManager[None] = (
+            nullcontext()
+            if stream is None
+            else cast(AbstractContextManager[None], torch.cuda.stream(stream))
+        )
+        with stream_context:
             refined_stats = _core_refine_template_single_thread(
                 particle_image_dft=particle_image_dft,
-                particle_index=particle_index,
-                template_dft=template_dft,
-                euler_angles=euler_angles[i, :],
-                euler_angle_offsets=euler_angle_offsets,
-                defocus_u=defocus_u[i],
-                defocus_v=defocus_v[i],
-                defocus_angle=defocus_angle[i],
-                defocus_offsets=defocus_offsets,
-                pixel_size_offsets=pixel_size_offsets,
+                template_dft=refine_stack.template_dft,
+                euler_angles=refine_stack.euler_angles[i, :],
+                euler_angle_offsets=refine_stack.euler_angle_offsets,
+                defocus_u=refine_stack.defocus_u[i],
+                defocus_v=refine_stack.defocus_v[i],
+                defocus_angle=refine_stack.defocus_angle[i],
+                defocus_offsets=refine_stack.defocus_offsets,
+                pixel_size_offsets=refine_stack.pixel_size_offsets,
                 ctf_kwargs=ctf_kwargs,
-                corr_mean=corr_mean[i],
-                corr_std=corr_std[i],
-                projective_filter=projective_filters[i],
+                corr_mean=refine_stack.corr_mean[i],
+                corr_std=refine_stack.corr_std[i],
+                projective_filter=refine_stack.projective_filters[i],
                 batch_size=batch_size,
-                mag_matrix=mag_matrix,
-                device_id=device_id,
+                mag_matrix=refine_stack.mag_matrix,
             )
             refined_statistics.append(refined_stats)
 
     # Wait for all streams to finish
-    for stream in streams:
-        stream.synchronize()
+    _synchronize_device_streams(streams)
 
     # For each particle, calculate the new best orientation, defocus, and position
     refined_cross_correlation = torch.tensor(
@@ -511,10 +601,10 @@ def _core_refine_template_single_gpu(
                     stats["refined_theta_offset"],
                     stats["refined_psi_offset"],
                 ],
-                dtype=euler_angles.dtype,
+                dtype=refine_stack.euler_angles.dtype,
                 device=device,
             ),
-            euler_angles[i, :],  # original angle
+            refine_stack.euler_angles[i, :],  # original angle
         )
         refined_euler_angles[i, :] = composed_refined_angle
 
@@ -544,17 +634,174 @@ def _core_refine_template_single_gpu(
         "refined_pixel_size_offset": refined_pixel_size_offset.cpu().numpy(),
         "refined_pos_y": refined_pos_y.cpu().numpy(),
         "refined_pos_x": refined_pos_x.cpu().numpy(),
-        "particle_indices": particle_indices.cpu().numpy(),  # Original idxs for sorting
+        "particle_indices": refine_stack.particle_indices.cpu().numpy(),  # sort keys
         "angle_idx": angle_idx.cpu().numpy(),
     }
 
     result_dict[device_id] = result
 
 
+def _iter_refine_particle_correlation_batches(
+    particle_image_dft: torch.Tensor,
+    template_dft: torch.Tensor,
+    euler_angles: torch.Tensor,
+    euler_angle_offsets: torch.Tensor,
+    defocus_u: float,
+    defocus_v: float,
+    defocus_angle: float,
+    defocus_offsets: torch.Tensor,
+    pixel_size_offsets: torch.Tensor,
+    ctf_kwargs: dict,
+    projective_filter: torch.Tensor,
+    batch_size: int = 32,
+    mag_matrix: torch.Tensor | None = None,
+    apply_projection_normalization: bool = True,
+) -> Iterator[tuple[int, torch.Tensor, torch.Tensor, int, int]]:
+    """Yield batched local correlations for one particle using refine semantics.
+
+    Note
+    ----
+    Only correlations are computed here, z-score normalization must happen externally to
+    this function.
+    """
+    img_h, img_w = particle_image_dft.shape
+    _, template_h, template_w = template_dft.shape
+    img_w = 2 * (img_w - 1)
+    template_w = 2 * (template_w - 1)
+    crop_h = img_h - template_h + 1
+    crop_w = img_w - template_w + 1
+
+    default_rot_matrix = roma.euler_to_rotmat(
+        EULER_ANGLE_FMT, euler_angles, degrees=True, device=particle_image_dft.device
+    )
+    default_rot_matrix = default_rot_matrix.to(torch.float32)
+
+    ctf_dev_kwargs = move_ctf_kwargs_tensors_to_device(
+        ctf_kwargs, particle_image_dft.device
+    )
+    ctf_filters = calculate_ctf_filter_stack_full_args(
+        defocus_u=defocus_u,
+        defocus_v=defocus_v,
+        astigmatism_angle=defocus_angle,
+        defocus_offsets=defocus_offsets,
+        pixel_size_offsets=pixel_size_offsets,
+        **ctf_dev_kwargs,
+    )
+    combined_projective_filter = projective_filter[None, None, ...] * ctf_filters
+
+    num_batches = math.ceil(euler_angle_offsets.shape[0] / batch_size)
+    for i in range(num_batches):
+        start_idx = i * batch_size
+        end_idx = min((i + 1) * batch_size, euler_angle_offsets.shape[0])
+        euler_angle_offsets_batch = euler_angle_offsets[start_idx:end_idx]
+        rot_matrix_batch = roma.euler_to_rotmat(
+            EULER_ANGLE_FMT,
+            euler_angle_offsets_batch,
+            degrees=True,
+            device=particle_image_dft.device,
+        )
+        rot_matrix_batch = rot_matrix_batch.to(torch.float32)
+        rot_matrix_batch = roma.rotmat_composition(
+            (rot_matrix_batch, default_rot_matrix)
+        )
+
+        if particle_image_dft.device.type == "cuda":
+            cross_correlation = do_batched_orientation_cross_correlate(
+                image_dft=particle_image_dft,
+                template_dft=template_dft,
+                rotation_matrices=rot_matrix_batch,
+                projective_filters=combined_projective_filter,
+                apply_normalization=apply_projection_normalization,
+                mag_matrix=mag_matrix,
+            )
+        else:
+            cross_correlation = do_batched_orientation_cross_correlate_cpu(
+                image_dft=particle_image_dft,
+                template_dft=template_dft,
+                rotation_matrices=rot_matrix_batch,
+                projective_filters=combined_projective_filter,
+                apply_normalization=apply_projection_normalization,
+                mag_matrix=mag_matrix,
+            )
+
+        cross_correlation = cross_correlation[..., :crop_h, :crop_w]
+
+        yield (
+            start_idx,
+            euler_angle_offsets_batch,
+            cross_correlation,
+            crop_h,
+            crop_w,
+        )
+
+
+def _reduce_refine_best_zscore(
+    correlation_batches: Iterator[tuple[int, torch.Tensor, torch.Tensor, int, int]],
+    corr_mean: torch.Tensor,
+    corr_std: torch.Tensor,
+    defocus_offsets: torch.Tensor,
+    pixel_size_offsets: torch.Tensor,
+) -> dict[str, float | int]:
+    """Reduce local correlation batches to the current refine-template best result."""
+    max_cc = -1e9
+    max_z_score = -1e9
+    refined_phi_offset = 0.0
+    refined_theta_offset = 0.0
+    refined_psi_offset = 0.0
+    full_angle_idx = 0
+    refined_defocus_offset = 0.0
+    refined_pixel_size_offset = 0.0
+    refined_pos_y = 0
+    refined_pos_x = 0
+
+    for (
+        start_idx,
+        euler_angle_offsets_batch,
+        cross_correlation,
+        crop_h,
+        crop_w,
+    ) in correlation_batches:
+        z_score = (cross_correlation - corr_mean) / corr_std
+
+        if z_score.max() > max_z_score:
+            max_cc = cross_correlation.max()
+            max_z_score = z_score.max()
+            max_values, max_indices = torch.max(z_score.view(-1, crop_h, crop_w), dim=0)
+            _, max_pos = torch.max(max_values.view(-1), dim=0)
+            y_idx, x_idx = max_pos // crop_w, max_pos % crop_w
+
+            flat_idx = max_indices[y_idx, x_idx]
+            num_angles_batch = len(euler_angle_offsets_batch)
+            px_idx = flat_idx // (len(defocus_offsets) * num_angles_batch)
+            defocus_idx = (flat_idx // num_angles_batch) % len(defocus_offsets)
+            angle_idx = flat_idx % num_angles_batch
+
+            refined_phi_offset = euler_angle_offsets_batch[angle_idx, 0]
+            refined_theta_offset = euler_angle_offsets_batch[angle_idx, 1]
+            refined_psi_offset = euler_angle_offsets_batch[angle_idx, 2]
+            refined_defocus_offset = defocus_offsets[defocus_idx]
+            refined_pixel_size_offset = pixel_size_offsets[px_idx]
+            refined_pos_y = y_idx
+            refined_pos_x = x_idx
+            full_angle_idx = angle_idx + start_idx
+
+    return {
+        "max_cc": max_cc,
+        "max_z_score": max_z_score,
+        "refined_phi_offset": refined_phi_offset,
+        "refined_theta_offset": refined_theta_offset,
+        "refined_psi_offset": refined_psi_offset,
+        "refined_defocus_offset": refined_defocus_offset,
+        "refined_pixel_size_offset": refined_pixel_size_offset,
+        "refined_pos_y": refined_pos_y,
+        "refined_pos_x": refined_pos_x,
+        "angle_idx": full_angle_idx,
+    }
+
+
 # pylint: disable=too-many-locals, too-many-statements
 def _core_refine_template_single_thread(
     particle_image_dft: torch.Tensor,
-    particle_index: int,
     template_dft: torch.Tensor,
     euler_angles: torch.Tensor,
     euler_angle_offsets: torch.Tensor,
@@ -568,7 +815,6 @@ def _core_refine_template_single_thread(
     ctf_kwargs: dict,
     projective_filter: torch.Tensor,
     batch_size: int = 32,
-    device_id: int = 0,
     mag_matrix: torch.Tensor | None = None,
 ) -> dict[str, float | int]:
     """Run the single-threaded core refine template function.
@@ -577,8 +823,6 @@ def _core_refine_template_single_thread(
     ----------
     particle_image_dft : torch.Tensor
         The real-Fourier transformed particle image. Shape of (H, W).
-    particle_index : int
-        The index of the particle in the stack.
     template_dft : torch.Tensor
         The template volume to extract central slices from. Real-Fourier transformed
         and fftshifted.
@@ -608,8 +852,6 @@ def _core_refine_template_single_thread(
         Projective filters to apply to the Fourier slice particle. Shape of (h, w).
     batch_size : int, optional
         The number of orientations to cross-correlate at once. Default is 32.
-    device_id : int, optional
-        The ID of the device/process. Default is 0.
     mag_matrix : torch.Tensor | None, optional
         Anisotropic magnification matrix of shape (2, 2). If None,
         no magnification transform is applied. Default is None.
@@ -619,152 +861,29 @@ def _core_refine_template_single_thread(
     dict[str, float | int]
         The refined statistics for the particle.
     """
-    img_h, img_w = particle_image_dft.shape
-    _, template_h, template_w = template_dft.shape
-    # account for RFFT
-    img_w = 2 * (img_w - 1)
-    template_w = 2 * (template_w - 1)
-    # valid crop shape
-    crop_h = img_h - template_h + 1
-    crop_w = img_w - template_w + 1
-
-    # Output best statistics
-    max_cc = -1e9
-    max_z_score = -1e9
-    refined_phi_offset = 0.0
-    refined_theta_offset = 0.0
-    refined_psi_offset = 0.0
-    full_angle_idx = 0
-    refined_defocus_offset = 0.0
-    refined_pixel_size_offset = 0.0
-    refined_pos_y = 0
-    refined_pos_x = 0
-
-    # The "best" Euler angle from the match template program
-    default_rot_matrix = roma.euler_to_rotmat(
-        EULER_ANGLE_FMT, euler_angles, degrees=True, device=particle_image_dft.device
+    correlation_batches = _iter_refine_particle_correlation_batches(
+        particle_image_dft=particle_image_dft,
+        template_dft=template_dft,
+        euler_angles=euler_angles,
+        euler_angle_offsets=euler_angle_offsets,
+        defocus_u=defocus_u,
+        defocus_v=defocus_v,
+        defocus_angle=defocus_angle,
+        defocus_offsets=defocus_offsets,
+        pixel_size_offsets=pixel_size_offsets,
+        ctf_kwargs=ctf_kwargs,
+        projective_filter=projective_filter,
+        batch_size=batch_size,
+        mag_matrix=mag_matrix,
     )
 
-    default_rot_matrix = default_rot_matrix.to(torch.float32)
-    # Calculate the CTF filters with the relative offsets
-    ctf_filters = calculate_ctf_filter_stack_full_args(
-        defocus_u=defocus_u,  # in Angstrom
-        defocus_v=defocus_v,  # in Angstrom
-        astigmatism_angle=defocus_angle,  # in degrees
-        defocus_offsets=defocus_offsets,  # in Angstrom
-        pixel_size_offsets=pixel_size_offsets,  # in Angstrom
-        **ctf_kwargs,
+    return _reduce_refine_best_zscore(
+        correlation_batches=correlation_batches,
+        corr_mean=corr_mean,
+        corr_std=corr_std,
+        defocus_offsets=defocus_offsets,
+        pixel_size_offsets=pixel_size_offsets,
     )
-
-    # Combine the single projective filter with the CTF filter
-    combined_projective_filter = projective_filter[None, None, ...] * ctf_filters
-
-    # Iterate over the Euler angle offsets in batches
-    # The tqdm iterator is over batches, but we want to report cross-correlations/sec.
-    # We therefore scale by the number of cross-correlations per batch.
-    num_batches = math.ceil(euler_angle_offsets.shape[0] / batch_size)
-    cross_corr_per_batch = len(defocus_offsets) * len(pixel_size_offsets) * batch_size
-
-    tqdm_iter = tqdm.tqdm(
-        range(num_batches),
-        total=num_batches,
-        desc=f"Refining particle {particle_index} on device {device_id}",
-        leave=False,
-        position=device_id + torch.cuda.device_count(),
-        unit="corr",
-        unit_scale=cross_corr_per_batch,
-    )
-
-    for i in tqdm_iter:
-        start_idx = i * batch_size
-        end_idx = min((i + 1) * batch_size, euler_angle_offsets.shape[0])
-        euler_angle_offsets_batch = euler_angle_offsets[start_idx:end_idx]
-        rot_matrix_batch = roma.euler_to_rotmat(
-            EULER_ANGLE_FMT,
-            euler_angle_offsets_batch,
-            degrees=True,
-            device=particle_image_dft.device,
-        )
-        rot_matrix_batch = rot_matrix_batch.to(torch.float32)
-
-        # Rotate the default (best) orientation by the offsets
-        rot_matrix_batch = roma.rotmat_composition(
-            (rot_matrix_batch, default_rot_matrix)
-        )
-
-        # Calculate the cross-correlation
-        if particle_image_dft.device.type == "cuda":
-            # NOTE: Here we are setting to only a single stream, but this can easily
-            # be extended to multiple streams if needed.
-            cross_correlation = do_batched_orientation_cross_correlate(
-                image_dft=particle_image_dft,
-                template_dft=template_dft,
-                rotation_matrices=rot_matrix_batch,
-                projective_filters=combined_projective_filter,
-                mag_matrix=mag_matrix,
-            )
-        else:
-            cross_correlation = do_batched_orientation_cross_correlate_cpu(
-                image_dft=particle_image_dft,
-                template_dft=template_dft,
-                rotation_matrices=rot_matrix_batch,
-                projective_filters=combined_projective_filter,
-                mag_matrix=mag_matrix,
-            )
-
-        cross_correlation = cross_correlation[..., :crop_h, :crop_w]  # valid crop
-
-        # Scale cross_correlation to be "z-score"-like
-        z_score = (cross_correlation - corr_mean) / corr_std
-
-        # shape xc is (num_Cs, num_defocus, num_orientations, y, x)
-        # where num_Cs is the number of different pixel size offsets,
-        # num_defocus is the number of defocus offsets,
-        # and num_orientations is the number of Euler angle offsets.
-        # Update the best refined statistics (only if max is greater than previous)
-        if z_score.max() > max_z_score:
-            max_cc = cross_correlation.max()
-            max_z_score = z_score.max()
-
-            # Find the maximum value and its indices
-            max_values, max_indices = torch.max(z_score.view(-1, crop_h, crop_w), dim=0)
-
-            # Get the overall maximum value and its position
-            _, max_pos = torch.max(max_values.view(-1), dim=0)
-            y_idx, x_idx = max_pos // crop_w, max_pos % crop_w
-
-            # Calculate the indices for each dimension
-            flat_idx = max_indices[y_idx, x_idx]
-            px_idx = flat_idx // (len(defocus_offsets) * len(euler_angle_offsets_batch))
-            defocus_idx = (flat_idx // len(euler_angle_offsets_batch)) % len(
-                defocus_offsets
-            )
-            angle_idx = flat_idx % len(euler_angle_offsets_batch)
-
-            refined_phi_offset = euler_angle_offsets_batch[angle_idx, 0]
-            refined_theta_offset = euler_angle_offsets_batch[angle_idx, 1]
-            refined_psi_offset = euler_angle_offsets_batch[angle_idx, 2]
-            refined_defocus_offset = defocus_offsets[defocus_idx]
-            refined_pixel_size_offset = pixel_size_offsets[px_idx]
-            refined_pos_y = y_idx
-            refined_pos_x = x_idx
-            full_angle_idx = angle_idx + start_idx
-
-    # Return the refined statistics
-    refined_stats = {
-        "max_cc": max_cc,
-        "max_z_score": max_z_score,
-        "refined_phi_offset": refined_phi_offset,
-        "refined_theta_offset": refined_theta_offset,
-        "refined_psi_offset": refined_psi_offset,
-        "refined_defocus_offset": refined_defocus_offset,
-        "refined_pixel_size_offset": refined_pixel_size_offset,
-        "refined_pos_y": refined_pos_y,
-        "refined_pos_x": refined_pos_x,
-        "angle_idx": full_angle_idx,
-    }
-
-    return refined_stats
 
 
 # pylint: disable=too-many-locals

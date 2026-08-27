@@ -1,6 +1,6 @@
 """Set of classes for configuring correlation filters in 2DTM."""
 
-from typing import Annotated, Any, Optional
+from typing import Annotated, Any
 
 import torch
 from pydantic import Field
@@ -42,14 +42,14 @@ class WhiteningFilterConfig(BaseModel2DTM):
     """
 
     enabled: bool = True
-    num_freq_bins: Optional[int] = None
-    max_freq: Optional[float] = 0.5  # in terms of Nyquist frequency
-    do_power_spectrum: Optional[bool] = True
+    num_freq_bins: int | None = None
+    max_freq: float | None = 0.5  # in terms of Nyquist frequency
+    do_power_spectrum: bool | None = True
 
     def calculate_whitening_filter(
         self,
         ref_img_rfft: torch.Tensor,
-        output_shape: Optional[tuple[int, ...]] = None,
+        output_shape: tuple[int, ...] | None = None,
         output_rfft: bool = True,
         output_fftshift: bool = False,
     ) -> torch.Tensor:
@@ -130,7 +130,7 @@ class PhaseRandomizationFilterConfig(BaseModel2DTM):
     """
 
     enabled: bool = False
-    cuton: Optional[Annotated[float, Field(ge=0.0)]] = None
+    cuton: Annotated[float, Field(ge=0.0)] | None = None
 
     def calculate_phase_randomization_filter(
         self, ref_img_rfft: torch.Tensor
@@ -192,9 +192,9 @@ class BandpassFilterConfig(BaseModel2DTM):
     """
 
     enabled: bool = False
-    low_freq_cutoff: Optional[Annotated[float, Field(ge=0.0)]] = None
-    high_freq_cutoff: Optional[Annotated[float, Field(ge=0.0)]] = None
-    falloff: Optional[Annotated[float, Field(ge=0.0)]] = None
+    low_freq_cutoff: Annotated[float, Field(ge=0.0)] | None = None
+    high_freq_cutoff: Annotated[float, Field(ge=0.0)] | None = None
+    falloff: Annotated[float, Field(ge=0.0)] | None = None
 
     @classmethod
     def from_spatial_resolution(
@@ -284,8 +284,8 @@ class ArbitraryCurveFilterConfig(BaseModel2DTM):
     """
 
     enabled: bool = False
-    frequencies: Optional[list[float]] = None  # in terms of Nyquist frequency
-    amplitudes: Optional[list[float]] = None
+    frequencies: list[float] | None = None  # in terms of Nyquist frequency
+    amplitudes: list[float] | None = None
 
     def calculate_arbitrary_curve_filter(
         self, output_shape: tuple[int, ...]
@@ -336,6 +336,50 @@ class ArbitraryCurveFilterConfig(BaseModel2DTM):
         return filter_ndim
 
 
+class RandomFourierDropoutConfig(BaseModel2DTM):
+    """Configuration for random Fourier dropout (masking).
+
+    NOTE: A manual random seed *must* be provided to ensure the post-processing stage
+    knows which Fourier coefficients were dropped during template matching. You can
+    choose a seed here randomly.
+
+    Attributes
+    ----------
+    enabled : bool
+        If True, apply random Fourier dropout to the input image and template
+        projections. Default is False.
+    dropout_fraction : float
+        Fraction of Fourier coefficients to randomly set to zero. Must be between
+        0 and 1.
+    """
+
+    enabled: bool = False
+    dropout_fraction: Annotated[float, Field(ge=0.0, le=1.0)] = 0.1
+    seed: int
+
+    def calculate_dropout_mask(self, output_shape: tuple[int, ...]) -> torch.Tensor:
+        """Calculates a random dropout mask for the desired output shape.
+
+        Parameters
+        ----------
+        output_shape : tuple[int, ...]
+            Desired output shape of the dropout mask (in terms of fourier-space shape).
+
+        Returns
+        -------
+        torch.Tensor
+            The dropout mask for the desired output shape.
+        """
+        if not self.enabled:
+            return torch.ones(output_shape, dtype=torch.float32)
+
+        gen = torch.Generator().manual_seed(self.seed)
+        probs = torch.rand(size=output_shape, generator=gen)
+        mask = probs > self.dropout_fraction
+
+        return mask.float()
+
+
 class PreprocessingFilters(BaseModel2DTM):
     """Configuration class for all preprocessing filters.
 
@@ -362,9 +406,15 @@ class PreprocessingFilters(BaseModel2DTM):
         PhaseRandomizationFilterConfig()
     )
     arbitrary_curve_filter: ArbitraryCurveFilterConfig = ArbitraryCurveFilterConfig()
+    random_fourier_dropout: RandomFourierDropoutConfig = RandomFourierDropoutConfig(
+        seed=0
+    )
 
     def get_combined_filter(
-        self, ref_img_rfft: torch.Tensor, output_shape: tuple[int, ...]
+        self,
+        ref_img_rfft: torch.Tensor,
+        output_shape: tuple[int, ...],
+        apply_random_dropout: bool = False,
     ) -> torch.Tensor:
         """Combine all filters into a single filter.
 
@@ -376,6 +426,10 @@ class PreprocessingFilters(BaseModel2DTM):
             Desired output shape of the combined filter in Fourier space. This is the
             filter shape in Fourier space *not* real space (like in the
             torch_fourier_filter package).
+        apply_random_dropout : bool, optional
+            Whether to include the random Fourier dropout mask in the combined filter.
+            Pass ``True`` to include dropout (e.g. for the template side of
+            match-template). Defaults to ``False``.
 
         Returns
         -------
@@ -406,5 +460,11 @@ class PreprocessingFilters(BaseModel2DTM):
             * bandpass_filter_tensor
             * arbitrary_curve_filter_tensor
         )
+
+        if apply_random_dropout:
+            random_dropout_mask = self.random_fourier_dropout.calculate_dropout_mask(
+                output_shape=output_shape
+            ).to(device)
+            combined_filter = combined_filter * random_dropout_mask
 
         return combined_filter

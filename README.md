@@ -88,18 +88,18 @@ Further information on development and contributing to the repo can be found in 
 
 If you use Leopard-EM in your research, please include the following citations in your biblography:
 
-- [Leopard-EM pre-print](https://doi.org/10.1101/2025.08.26.672452)
+- [Leopard-EM Manuscript](https://doi.org/10.1107/S2059798325009982)
 > ```
-> @article {Giammar2025.08.26.672452,
->	author = {Giammar, Matthew David and Dickerson, Joshua Luke and Hall, Laina Nicole and Lucas, Bronwyn Ayla},
->	title = {Leopard-EM: An extensible 2DTM package to accelerate in situ structural biology},
->	elocation-id = {2025.08.26.672452},
->	year = {2025},
->	doi = {10.1101/2025.08.26.672452},
->	publisher = {Cold Spring Harbor Laboratory},
->	URL = {https://www.biorxiv.org/content/early/2025/08/29/2025.08.26.672452},
->	eprint = {https://www.biorxiv.org/content/early/2025/08/29/2025.08.26.672452.full.pdf},
->	journal = {bioRxiv}
+> @article{Giammar:rr5256,
+>   author = "Giammar, Matthew D. and Dickerson, Joshua L. and Hall, Laina N. and Lucas, Bronwyn A.",
+>   title = "{{\it Leopard-EM}: an extensible 2D template-matching package to accelerate {\it in situ} structural biology}",
+>   journal = "Acta Crystallographica Section D",
+>   year = "2026",
+>   volume = "82",
+>   number = "1",
+>   pages = "30--42",
+>   month = "Jan",
+>   doi = {10.1107/S2059798325009982},
+>   url = {https://doi.org/10.1107/S2059798325009982},
 > }
 > ```
-
