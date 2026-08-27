@@ -414,7 +414,7 @@ class PreprocessingFilters(BaseModel2DTM):
         self,
         ref_img_rfft: torch.Tensor,
         output_shape: tuple[int, ...],
-        apply_random_dropout: bool = True,
+        apply_random_dropout: bool = False,
     ) -> torch.Tensor:
         """Combine all filters into a single filter.
 
@@ -428,8 +428,8 @@ class PreprocessingFilters(BaseModel2DTM):
             torch_fourier_filter package).
         apply_random_dropout : bool, optional
             Whether to include the random Fourier dropout mask in the combined filter.
-            Pass ``False`` to skip dropout (e.g. for the image side of match-template)
-            without mutating the configured dropout state. Defaults to ``True``.
+            Pass ``True`` to include dropout (e.g. for the template side of
+            match-template). Defaults to ``False``.
 
         Returns
         -------

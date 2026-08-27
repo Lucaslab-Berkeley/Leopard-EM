@@ -183,6 +183,7 @@ class MatchTemplateManager(BaseModel2DTM):
         cumulative_filter_template = self.preprocessing_filters.get_combined_filter(
             ref_img_rfft=image_dft,
             output_shape=(template.shape[-2], template.shape[-1] // 2 + 1),
+            apply_random_dropout=True,
         )
 
         # Apply the pre-processing and normalization
