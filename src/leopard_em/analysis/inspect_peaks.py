@@ -5,13 +5,13 @@
 # pylint: disable=duplicate-code
 import math
 from collections.abc import Iterator
-from typing import Literal
+from contextlib import AbstractContextManager, nullcontext
+from typing import Literal, cast
 
 import roma
 import torch
 
 from leopard_em.backend.core_refine_template import (
-    _device_stream_context,
     _iter_refine_particle_correlation_batches,
     _make_device_streams,
     _move_refine_template_stack_to_device,
@@ -263,7 +263,12 @@ def _core_inspect_template_single_gpu(
     frc_frequency_bins: torch.Tensor | None = None
     for i in pbar_iter:
         stream = streams[i % len(streams)]
-        with _device_stream_context(stream):
+        stream_context: AbstractContextManager[None] = (
+            nullcontext()
+            if stream is None
+            else cast(AbstractContextManager[None], torch.cuda.stream(stream))
+        )
+        with stream_context:
             inspection_stack = _core_inspect_template_single_thread(
                 particle_image_dft=refine_stack.particle_stack_dft[i],
                 template_dft=refine_stack.template_dft,

@@ -39,15 +39,6 @@ def _make_device_streams(
     return [None]
 
 
-def _device_stream_context(
-    stream: torch.cuda.Stream | None,
-) -> AbstractContextManager[None]:
-    """Return the appropriate stream context for CUDA or CPU execution."""
-    if stream is None:
-        return nullcontext()
-    return cast(AbstractContextManager[None], torch.cuda.stream(stream))
-
-
 def _synchronize_device_streams(streams: list[torch.cuda.Stream | None]) -> None:
     """Synchronize CUDA streams and no-op for CPU placeholders."""
     for stream in streams:
@@ -547,7 +538,12 @@ def _core_refine_template_single_gpu(
 
         # Distribute different particles across streams
         stream = streams[i % len(streams)]
-        with _device_stream_context(stream):
+        stream_context: AbstractContextManager[None] = (
+            nullcontext()
+            if stream is None
+            else cast(AbstractContextManager[None], torch.cuda.stream(stream))
+        )
+        with stream_context:
             refined_stats = _core_refine_template_single_thread(
                 particle_image_dft=particle_image_dft,
                 template_dft=refine_stack.template_dft,
