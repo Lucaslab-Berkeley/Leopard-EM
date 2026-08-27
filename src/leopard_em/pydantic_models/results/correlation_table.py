@@ -29,10 +29,38 @@ def derive_orientation_grid_from_full_angles(
           orientation, in the order they appear in the search.
         - ``psi_angles``: list of unique psi values, in the order they cycle within each
           (phi, theta) group.
+
+    Raises
+    ------
+    ValueError
+        If ``euler_angles`` is not consistent with a Cartesian-product ordering,
+        i.e. its length is not evenly divisible by the number of unique psi
+        values, or the (phi, theta) / psi values do not repeat identically in
+        every consecutive block.
     """
     n_orientations = euler_angles.shape[0]
     n_psi = int(torch.unique(euler_angles[:, 2]).shape[0])
+
+    if n_orientations % n_psi != 0:
+        raise ValueError(
+            f"euler_angles has {n_orientations} rows, which is not evenly "
+            f"divisible by the {n_psi} unique psi values found. Expected a "
+            "Cartesian-product ordering of (phi, theta) x psi."
+        )
     n_phi_theta = n_orientations // n_psi
+
+    reshaped = euler_angles.view(n_phi_theta, n_psi, 3)
+    if not torch.all(reshaped[:, :, :2] == reshaped[:, :1, :2]):
+        raise ValueError(
+            "euler_angles is not a valid Cartesian product: not every block of "
+            f"{n_psi} consecutive rows shares the same (phi, theta) pair."
+        )
+    if not torch.all(reshaped[:, :, 2] == reshaped[:1, :, 2]):
+        raise ValueError(
+            "euler_angles is not a valid Cartesian product: the psi angle cycle "
+            f"differs across (phi, theta) blocks (expected the same {n_psi} psi "
+            "values to repeat identically in every block)."
+        )
 
     phi_theta_angles = [
         (float(euler_angles[i * n_psi, 0]), float(euler_angles[i * n_psi, 1]))
