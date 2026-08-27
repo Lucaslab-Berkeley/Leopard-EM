@@ -2,7 +2,7 @@
 
 import json
 import os
-from typing import Any, ClassVar, Literal, Optional
+from typing import Any, ClassVar, Literal
 
 import mrcfile
 import pandas as pd
@@ -230,8 +230,7 @@ class MatchTemplateManager(BaseModel2DTM):
         self,
         orientation_batch_size: int = 16,
         do_result_export: bool = True,
-        do_valid_cropping: bool = False,
-        compute_correlation_table: bool = True,
+        compute_correlation_table: bool = False,
     ) -> None:
         """Runs the base match template in pytorch.
 
@@ -242,15 +241,10 @@ class MatchTemplateManager(BaseModel2DTM):
         do_result_export : bool
             If True, call the `MatchTemplateResult.export_results` method to save the
             results to disk directly after running the match template. Default is True.
-        do_valid_cropping : bool
-            If True, then apply valid cropping to the result maps based on the relative
-            size of the image and template (N-n+1 along each axis). The backend of
-            Leopard-EM will automatically do this, so generally set this to False. The
-            default is False.
         compute_correlation_table : bool
             If True, track cross-correlation values which surpass the correlation
             table threshold during the search. If False, the `CorrelationTable` will be
-            empty. Default is True.
+            empty. Incurs a small runtime overhead when enabled. Default is False.
 
         Returns
         -------
@@ -271,7 +265,6 @@ class MatchTemplateManager(BaseModel2DTM):
             defocus_values=core_kwargs["defocus_values"],
             euler_angles=core_kwargs["euler_angles"],
             do_result_export=do_result_export,
-            do_valid_cropping=do_valid_cropping,
         )
 
     def run_match_template_distributed(
@@ -281,8 +274,7 @@ class MatchTemplateManager(BaseModel2DTM):
         local_rank: int,
         orientation_batch_size: int = 16,
         do_result_export: bool = True,
-        do_valid_cropping: bool = False,
-        compute_correlation_table: bool = True,
+        compute_correlation_table: bool = False,
     ) -> None:
         """Runs the base match template in a distributed, multi-node environment.
 
@@ -299,15 +291,10 @@ class MatchTemplateManager(BaseModel2DTM):
         do_result_export : bool
             If True, call the `MatchTemplateResult.export_results` method to save the
             results to disk directly after running the match template. Default is True.
-        do_valid_cropping : bool
-            If True, then apply valid cropping to the result maps based on the relative
-            size of the image and template (N-n+1 along each axis). The backend of
-            Leopard-EM will automatically do this, so generally set this to False. The
-            default is False.
         compute_correlation_table : bool
             If True, track cross-correlation values which surpass the correlation
             table threshold during the search. If False, the `CorrelationTable` will be
-            empty. Default is True.
+            empty. Incurs a small runtime overhead when enabled. Default is False.
 
         Raises
         ------
@@ -352,7 +339,6 @@ class MatchTemplateManager(BaseModel2DTM):
                 defocus_values=core_kwargs["defocus_values"],
                 euler_angles=core_kwargs["euler_angles"],
                 do_result_export=do_result_export,
-                do_valid_cropping=do_valid_cropping,
             )
 
     def _populate_match_template_result(
@@ -361,7 +347,6 @@ class MatchTemplateManager(BaseModel2DTM):
         defocus_values: torch.Tensor,
         euler_angles: torch.Tensor,
         do_result_export: bool = True,
-        do_valid_cropping: bool = False,
     ) -> None:
         """Helper function to populate the MatchTemplateResult object post-core call."""
         # Place results into the `MatchTemplateResult` object
@@ -393,12 +378,6 @@ class MatchTemplateManager(BaseModel2DTM):
             )
         )
 
-        # Apply the valid cropping mode to the results
-        # NOTE: zipFFT already applies valid cropping internally
-        if do_valid_cropping:
-            nx = self.template_volume.shape[-1]
-            self.match_template_result.apply_valid_cropping((nx, nx))
-
         # Export the results to disk, if requested
         if do_result_export:
             self.match_template_result.export_results()
@@ -406,8 +385,8 @@ class MatchTemplateManager(BaseModel2DTM):
     def results_to_dataframe(
         self,
         half_template_width_pos_shift: bool = True,
-        exclude_columns: Optional[list] = None,
-        locate_peaks_kwargs: Optional[dict] = None,
+        exclude_columns: list | None = None,
+        locate_peaks_kwargs: dict | None = None,
     ) -> pd.DataFrame:
         """Converts the match template results to a DataFrame with additional info.
 

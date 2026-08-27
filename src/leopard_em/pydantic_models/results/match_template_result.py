@@ -18,13 +18,12 @@ metadata, and all analysis methods and is not intended to be used directly.
 
 import os
 from importlib.metadata import PackageNotFoundError, version
-from typing import ClassVar
+from typing import ClassVar, Self
 
 import h5py
 import pandas as pd
 import torch
 from pydantic import ConfigDict, Field, model_validator
-from typing_extensions import Self
 
 from leopard_em.analysis import (
     MatchTemplatePeaks,
@@ -167,9 +166,10 @@ class _MatchTemplateResultBase(BaseModel2DTM):
         -------
         None
         """
-        # NOTE: Assuming all statistic files have the same shape (which should be true)
-        # NOTE: Assuming we the correlation maps have not already been cropped, which
-        #       is not true for the zipFFT backend.
+        # NOTE: Assuming all statistic files have the same shape (which should be true).
+        # NOTE: Current match_template runs already return valid-cropped tensors from
+        #       the backend regardless of correlation backend, so this method is only
+        #       needed for manually cropping legacy (pre-v1.3) uncropped result files.
         img_h, img_w = self.mip.shape
         h, w = template_shape
         slice_obj = (slice(img_h - h + 1), slice(img_w - w + 1))
@@ -182,6 +182,23 @@ class _MatchTemplateResultBase(BaseModel2DTM):
         self.orientation_theta = self.orientation_theta[slice_obj]
         self.orientation_phi = self.orientation_phi[slice_obj]
         self.relative_defocus = self.relative_defocus[slice_obj]
+
+    def export_correlation_table(self) -> None:
+        """Write the held CorrelationTable to ``self.correlation_table_path``.
+
+        No-op if ``correlation_table_path`` is not set.
+        """
+        if self.correlation_table is None:
+            raise ValueError("No correlation_table to export.")
+        if self.correlation_table_path is None:
+            return
+        self.correlation_table.to_hdf5(self.correlation_table_path)
+
+    def load_correlation_table_from_path(self) -> None:
+        """Load CorrelationTable from HDF5 file at ``self.correlation_table_path``."""
+        if self.correlation_table_path is None:
+            raise ValueError("No correlation_table_path specified to load from.")
+        self.correlation_table = CorrelationTable.from_hdf5(self.correlation_table_path)
 
     def locate_peaks(self, **kwargs) -> MatchTemplatePeaks:  # type: ignore
         """Locate peaks and store results in ``match_template_peaks``.
@@ -333,21 +350,8 @@ class MatchTemplateResultMRC(_MatchTemplateResultBase):
                 overwrite=self.allow_file_overwrite,
             )
 
-        self.export_correlation_table()
-
-    def export_correlation_table(self) -> None:
-        """Write the held CorrelationTable to ``self.correlation_table_path``."""
-        if self.correlation_table is None:
-            raise ValueError("No correlation_table to export.")
-        if self.correlation_table_path is None:
-            raise ValueError("No correlation_table_path specified to export to.")
-        self.correlation_table.to_hdf5(self.correlation_table_path)
-
-    def load_correlation_table_from_path(self) -> None:
-        """Load CorrelationTable from HDF5 file at ``self.correlation_table_path``."""
-        if self.correlation_table_path is None:
-            raise ValueError("No correlation_table_path specified to load from.")
-        self.correlation_table = CorrelationTable.from_hdf5(self.correlation_table_path)
+        if self.correlation_table_path is not None:
+            self.export_correlation_table()
 
 
 class MatchTemplateResultHDF5(_MatchTemplateResultBase):
@@ -426,8 +430,10 @@ class MatchTemplateResultHDF5(_MatchTemplateResultBase):
     ######################
 
     def export_results(self) -> None:
-        """Write tensors and metadata to ``hdf5_path``.  Alias for ``to_hdf5``."""
+        """Write tensors and metadata to ``hdf5_path``, plus the correlation table."""
         self.to_hdf5()
+        if self.correlation_table_path is not None:
+            self.export_correlation_table()
 
     def to_hdf5(self) -> None:
         """Write tensors and scalar metadata to ``hdf5_path``.

@@ -113,7 +113,7 @@ When using `MatchTemplateResultHDF5`, the `*_path` columns in the [match templat
 Where the statistics maps above only retain the _best_ value at each `(x, y)` position, an instance of a `CorrelationTable` object records every search index (defocus offset x out-of-plane orientation x in-plane orientation) whose cross-correlation exceeded a configured threshold, anywhere in the search space.
 This is useful for downstream analysis of near-threshold or secondary peaks that don't show up in the per-pixel best-statistic maps — for example, distinguishing a single strong detection from several correlated-but-weaker hypotheses at nearby search indices.
 
-By default, `MatchTemplateManager.run_match_template(...)` computes a `CorrelationTable` for every run (`compute_correlation_table=True`) and stores it on `match_template_result.correlation_table`; pass `compute_correlation_table=False` to skip this and leave it empty.
+By default, `MatchTemplateManager.run_match_template(...)` does not compute a `CorrelationTable` (`compute_correlation_table=False`); pass `compute_correlation_table=True` to track it and store it on `match_template_result.correlation_table`.
 Computing and storing the correlation table does incur a few percent overhead in total runtime.
 
 ### Correlation table HDF5 layout
@@ -137,11 +137,10 @@ Computing and storing the correlation table does incur a few percent overhead in
 
 ### Exporting and loading a correlation table
 
-!!! warning "Correlation table export is currently MRC-specific"
+!!! note "Correlation table export is automatic when `correlation_table_path` is set"
 
-    `export_correlation_table()` and `load_correlation_table_from_path()` — which read/write via the `correlation_table_path` field — are only implemented on `MatchTemplateResultMRC`.
-    `MatchTemplateResultMRC.export_results()` calls `export_correlation_table()` automatically, so setting `correlation_table_path` in your MRC-backed config is enough.
-    For `MatchTemplateResultHDF5`, `export_results()` does **not** currently export the correlation table automatically — call `.to_hdf5(...)` on the `CorrelationTable` directly, as shown below.
+    `export_correlation_table()` and `load_correlation_table_from_path()` — which read/write via the `correlation_table_path` field — are available on both `MatchTemplateResultMRC` and `MatchTemplateResultHDF5`.
+    Both back-ends' `export_results()` call `export_correlation_table()` automatically whenever `correlation_table_path` is set, and skip it (no error) when the path is left as its default `None`.
 
 ```python
 # MRC back-end: correlation_table_path is exported/loaded automatically
@@ -149,9 +148,9 @@ mrc_result.correlation_table_path = "./output_correlation_table.h5"
 mrc_result.export_results()  # writes the 8 mrc files AND the correlation table
 mrc_result.load_correlation_table_from_path()
 
-# HDF5 back-end: export the correlation table explicitly (not done by export_results)
-hdf5_result.export_results()  # writes hdf5_path only
-hdf5_result.correlation_table.to_hdf5("./output_correlation_table.h5")
+# HDF5 back-end
+hdf5_result.correlation_table_path = "./output_correlation_table.h5"
+hdf5_result.export_results()  # writes hdf5_path AND the correlation table
 
 # Loading a correlation table directly, regardless of back-end
 from leopard_em.pydantic_models.results import CorrelationTable
@@ -160,4 +159,4 @@ table = CorrelationTable.from_hdf5("./output_correlation_table.h5")
 table_df = table.to_dataframe()  # one row per detection
 ```
 
-In both cases, `mrc_result`/`hdf5_result` are `MatchTemplateResult*` instances populated by `MatchTemplateManager.run_match_template(...)` (with `compute_correlation_table=True`, the default) — `match_template_result.correlation_table` is set automatically after the run.
+In both cases, `mrc_result`/`hdf5_result` are `MatchTemplateResult*` instances populated by `MatchTemplateManager.run_match_template(..., compute_correlation_table=True)` — `match_template_result.correlation_table` is set automatically after the run.
