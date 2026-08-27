@@ -79,7 +79,6 @@ dev = [
     "pre-commit",
     "rich",       # https://github.com/Textualize/rich
     "ruff",
-    "mypy",
     "pylint",
 ]
 # Documentation dependencies
