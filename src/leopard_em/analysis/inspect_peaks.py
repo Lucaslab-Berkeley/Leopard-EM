@@ -127,10 +127,16 @@ def core_inspect_template(
         kwargs["apply_projection_normalization"] = apply_projection_normalization
         kwargs["output_mode"] = output_mode
 
-    results = run_multiprocess_jobs(
-        target=_core_inspect_template_single_gpu,
-        kwargs_list=kwargs_per_device,
-    )
+    # Single-GPU: run in-process to avoid CUDA IPC failures from forking/spawning
+    # after the parent has already initialized CUDA (e.g. pidfd_getfd errors).
+    if len(kwargs_per_device) == 1:
+        results: dict = {}
+        _core_inspect_template_single_gpu(results, 0, **kwargs_per_device[0])
+    else:
+        results = run_multiprocess_jobs(
+            target=_core_inspect_template_single_gpu,
+            kwargs_list=kwargs_per_device,
+        )
 
     for dev in device:
         if dev.type == "cuda":

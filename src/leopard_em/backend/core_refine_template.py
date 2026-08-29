@@ -225,10 +225,17 @@ def core_refine_template(
         mag_matrix=mag_matrix,
     )
 
-    results = run_multiprocess_jobs(
-        target=_core_refine_template_single_gpu,
-        kwargs_list=kwargs_per_device,
-    )
+    # Single-GPU: run in-process. Spawning a child after the parent has already
+    # initialized CUDA can fail with CUDA IPC errors (e.g. pidfd_getfd:
+    # Operation not permitted) and empty worker results.
+    if len(kwargs_per_device) == 1:
+        results: dict = {}
+        _core_refine_template_single_gpu(results, 0, **kwargs_per_device[0])
+    else:
+        results = run_multiprocess_jobs(
+            target=_core_refine_template_single_gpu,
+            kwargs_list=kwargs_per_device,
+        )
 
     # Synchronize all devices to ensure all computations are complete
     for dev in device:
