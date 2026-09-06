@@ -1,11 +1,18 @@
 """Storage of sparse particle detections in a 2DTM search."""
 
+import warnings
+
 import h5py
 import numpy as np
 import pandas as pd
 import torch
 
+from leopard_em.backend.process_results import decode_global_search_index
 from leopard_em.pydantic_models.custom_types import BaseModel2DTM
+
+# Bumped whenever the on-disk HDF5 layout changes incompatibly. Version 2 added
+# /search_space/euler_angles, which makes decoding independent of grid ordering.
+CORRELATION_TABLE_FORMAT_VERSION = 2
 
 
 def derive_orientation_grid_from_full_angles(
@@ -13,8 +20,16 @@ def derive_orientation_grid_from_full_angles(
 ) -> tuple[list[tuple[float, float]], list[float]]:
     """Extract unique (phi, theta) pairs and psi values from a grid angles tensor.
 
-    Assumes ``euler_angles`` is ordered as a Cartesian product: all psi values for
-    the first (phi, theta) pair, then all psi values for the second pair, etc.
+    ``euler_angles`` is a Cartesian product of out-of-plane (phi, theta) pairs and
+    in-plane psi values, but which of the two varies fastest depends on how the grid
+    was generated. Both layouts are detected here rather than assumed:
+
+    - *psi-outer* (what ``torch_so3`` produces): all (phi, theta) pairs for the first
+      psi, then all pairs for the next psi, and so on.
+    - *psi-inner*: all psi values for the first (phi, theta) pair, then the next pair.
+
+    Assuming the wrong one silently returns nonsense -- notably a ``psi_angles`` list
+    of identical values.
 
     Parameters
     ----------
@@ -27,18 +42,34 @@ def derive_orientation_grid_from_full_angles(
     tuple[list[tuple[float, float]], list[float]]
         - ``phi_theta_angles``: list of unique (phi, theta) pairs, one per out-of-plane
           orientation, in the order they appear in the search.
-        - ``psi_angles``: list of unique psi values, in the order they cycle within each
-          (phi, theta) group.
+        - ``psi_angles``: list of unique psi values used in the search.
+
+    Notes
+    -----
+    These axes are descriptive metadata. The authoritative way to map a
+    ``search_index`` back to angles is to index the full ``euler_angles`` array, which
+    does not depend on the layout at all -- see
+    :meth:`CorrelationTable.to_detections_dataframe`.
     """
     n_orientations = euler_angles.shape[0]
     n_psi = int(torch.unique(euler_angles[:, 2]).shape[0])
     n_phi_theta = n_orientations // n_psi
 
+    # If psi is constant across the first n_phi_theta rows then (phi, theta) is the
+    # fast axis, i.e. the grid is psi-outer.
+    psi_is_outer = bool(torch.all(euler_angles[:n_phi_theta, 2] == euler_angles[0, 2]))
+
+    if psi_is_outer:
+        phi_theta_source = euler_angles[:n_phi_theta]
+        psi_source = euler_angles[::n_phi_theta, 2]
+    else:
+        phi_theta_source = euler_angles[::n_psi]
+        psi_source = euler_angles[:n_psi, 2]
+
     phi_theta_angles = [
-        (float(euler_angles[i * n_psi, 0]), float(euler_angles[i * n_psi, 1]))
-        for i in range(n_phi_theta)
+        (float(row[0]), float(row[1])) for row in phi_theta_source[:n_phi_theta]
     ]
-    psi_angles = euler_angles[:n_psi, 2].tolist()
+    psi_angles = psi_source[:n_psi].tolist()
 
     return phi_theta_angles, psi_angles
 
@@ -62,11 +93,21 @@ class CorrelationTable(BaseModel2DTM):
     psi_angles : list[float]
         List of in-plane rotation angles (in degrees, Euler angle psi, in ZYZ
         convention) used in the search.
+    euler_angles : list[tuple[float, float, float]] | None
+        Every orientation searched, shape (num_orientations, 3), as ZYZ Euler angles in
+        degrees and in the exact order the search used them. This is what makes
+        `search_index` decodable regardless of how the orientation grid was laid out;
+        prefer it over `phi_theta_angles`/`psi_angles`. `None` only for tables loaded
+        from files written before format version 2.
     search_index : list[int]
-        Global search index defining defocus offset, phi/theta angles, and psi angle for
-        each detection. Calculated as `i * (n_j * n_k) + j * n_k + k`, where `i` is the
-        index of the defocus offset, `j` is the index of the phi/theta angles, and `k`
-        is the index of the psi angle. Length will be equal to `num_observations`.
+        Global search index identifying the defocus offset and orientation of each
+        detection, as `defocus_index * num_orientations + orientation_index`. Length
+        will be equal to `num_observations`.
+
+        Decode it by indexing `euler_angles` directly (see
+        `to_detections_dataframe`), *not* by combining `phi_theta_angles` and
+        `psi_angles` -- the relative order of those two axes depends on how the grid
+        was generated and is not recoverable from the axes alone.
     x : list[int]
         List of x-coordinates (in pixels) of the detections in the micrograph.
     y : list[int]
@@ -77,8 +118,14 @@ class CorrelationTable(BaseModel2DTM):
         List of mean cross-correlation values for each detection, calculated across all
         search indices for the same x/y coordinates.
     correlation_variance : list[float]
-        List of variance of cross-correlation values for each detection, calculated
-        across all search indices for the same x/y coordinates.
+        Spread of the cross-correlation values for each detection, calculated across
+        all search indices for the same x/y coordinates.
+
+        Despite the name -- kept for consistency with the `correlation_variance` map
+        written by `match_template` -- this holds the **standard deviation**, not the
+        variance: `scale_mip` square-roots it in place. A z-score is therefore
+        `(correlation_value - correlation_mean) / correlation_variance`, dividing
+        directly rather than by a square root.
 
     Methods
     -------
@@ -93,10 +140,13 @@ class CorrelationTable(BaseModel2DTM):
     num_observations: int
 
     # Defining and indexing search space
-    defocus_offsets: list[float]  # index 'i'
-    phi_theta_angles: list[tuple[float, float]]  # index 'j', out-of-plane rotations
-    psi_angles: list[float]  # index 'k', in-plane rotations
-    search_index: list[int]  # i * (n_j * n_k) + j * n_k + k, length == num_observations
+    defocus_offsets: list[float]
+    phi_theta_angles: list[tuple[float, float]]  # descriptive: out-of-plane rotations
+    psi_angles: list[float]  # descriptive: in-plane rotations
+    # Authoritative orientation axis; None only for legacy (pre-v2) files.
+    euler_angles: list[tuple[float, float, float]] | None = None
+    # defocus_index * num_orientations + orientation_index, length == num_observations
+    search_index: list[int]
 
     # Other detection attributes
     x: list[int]
@@ -132,6 +182,7 @@ class CorrelationTable(BaseModel2DTM):
         df.attrs["defocus_offsets"] = self.defocus_offsets
         df.attrs["phi_theta_angles"] = self.phi_theta_angles
         df.attrs["psi_angles"] = self.psi_angles
+        df.attrs["euler_angles"] = self.euler_angles
         return df
 
     @classmethod
@@ -154,6 +205,11 @@ class CorrelationTable(BaseModel2DTM):
             defocus_offsets=list(df.attrs["defocus_offsets"]),
             phi_theta_angles=[tuple(pair) for pair in df.attrs["phi_theta_angles"]],
             psi_angles=list(df.attrs["psi_angles"]),
+            euler_angles=(
+                [tuple(row) for row in df.attrs["euler_angles"]]
+                if df.attrs.get("euler_angles") is not None
+                else None
+            ),
             search_index=df["search_index"].tolist(),
             x=df["x"].tolist(),
             y=df["y"].tolist(),
@@ -162,16 +218,119 @@ class CorrelationTable(BaseModel2DTM):
             correlation_variance=df["correlation_variance"].tolist(),
         )
 
+    def to_detections_dataframe(
+        self, euler_angles: torch.Tensor | None = None
+    ) -> pd.DataFrame:
+        """Decode every detection into explicit angles, defocus, and z-score.
+
+        Unlike ``to_dataframe``, which round-trips the raw storage, this resolves each
+        ``search_index`` into the orientation and defocus offset it refers to. Decoding
+        indexes the full orientation list directly, so it does not care how the grid
+        was laid out.
+
+        Parameters
+        ----------
+        euler_angles : torch.Tensor | None
+            All orientations used in the search, shape (num_orientations, 3), ZYZ in
+            degrees. Only needed for legacy tables that predate format version 2 and
+            therefore did not store the grid; otherwise the stored grid is used.
+
+        Returns
+        -------
+        pd.DataFrame
+            One row per detection with columns ``search_index``, ``x``, ``y``,
+            ``phi``, ``theta``, ``psi``, ``relative_defocus``, ``correlation_value``,
+            ``correlation_mean``, ``correlation_variance`` and ``z_score``.
+
+        Raises
+        ------
+        ValueError
+            If no orientation grid is available, if it does not match the stored
+            search indices, or if the table came from a search over multiple pixel
+            sizes (not representable in this format).
+
+        Notes
+        -----
+        ``correlation_variance`` holds the *standard deviation* of the correlation
+        distribution, not the variance, matching the map of the same name written by
+        ``match_template``. The z-score therefore divides by it directly.
+        """
+        if euler_angles is None:
+            if self.euler_angles is None:
+                raise ValueError(
+                    "This correlation table predates format version 2 and does not "
+                    "store its orientation grid, so its detections cannot be decoded. "
+                    "Pass the search's Euler angles explicitly via 'euler_angles' -- "
+                    "regenerating them from the original config's "
+                    "OrientationSearchConfig.euler_angles reproduces them exactly."
+                )
+            euler_angles = torch.tensor(self.euler_angles, dtype=torch.float64)
+
+        euler_angles = torch.as_tensor(euler_angles, dtype=torch.float64)
+        if euler_angles.ndim != 2 or euler_angles.shape[1] != 3:
+            raise ValueError(
+                f"euler_angles must have shape (num_orientations, 3), got "
+                f"{tuple(euler_angles.shape)}."
+            )
+
+        defocus_values = torch.tensor(self.defocus_offsets, dtype=torch.float64)
+        search_index = torch.tensor(self.search_index, dtype=torch.int64)
+
+        num_slots = int(defocus_values.shape[0]) * int(euler_angles.shape[0])
+        if search_index.numel() > 0 and int(search_index.max()) >= num_slots:
+            raise ValueError(
+                f"Largest search index ({int(search_index.max())}) exceeds the "
+                f"{num_slots} (defocus x orientation) combinations implied by the "
+                "provided grid. Either the grid does not match this table, or the "
+                "search used multiple pixel sizes, which this format cannot express."
+            )
+
+        phi, theta, psi, defocus, _ = decode_global_search_index(
+            search_index,
+            torch.zeros(1, dtype=torch.float64),
+            defocus_values,
+            euler_angles,
+        )
+
+        correlation_value = np.asarray(self.correlation_value, dtype=np.float64)
+        correlation_mean = np.asarray(self.correlation_mean, dtype=np.float64)
+        # Named "variance" for consistency with the match_template output map, but the
+        # stored quantity is a standard deviation (see scale_mip in backend).
+        correlation_std = np.asarray(self.correlation_variance, dtype=np.float64)
+
+        return pd.DataFrame(
+            {
+                "search_index": search_index.numpy(),
+                "x": np.asarray(self.x, dtype=np.int64),
+                "y": np.asarray(self.y, dtype=np.int64),
+                "phi": phi.numpy(),
+                "theta": theta.numpy(),
+                "psi": psi.numpy(),
+                "relative_defocus": defocus.numpy(),
+                "correlation_value": correlation_value,
+                "correlation_mean": correlation_mean,
+                "correlation_variance": correlation_std,
+                "z_score": np.divide(
+                    correlation_value - correlation_mean,
+                    correlation_std,
+                    out=np.zeros_like(correlation_value),
+                    where=correlation_std != 0,
+                ),
+            }
+        )
+
     def to_hdf5(self, file_path: str) -> None:
         """Write this CorrelationTable to an HDF5 file.
 
         Layout::
 
-            /metadata              (attrs: correlation_threshold, num_observations)
+            /metadata              (attrs: correlation_threshold, num_observations,
+                                    format_version)
             /search_space/
                 defocus_offsets    float32 1-D
                 phi_theta_angles   float32 (n, 2)
                 psi_angles         float32 1-D
+                euler_angles       float32 (num_orientations, 3)  [format_version >= 2]
             /detections/
                 search_index       int32 1-D
                 x                  int32 1-D
@@ -189,8 +348,14 @@ class CorrelationTable(BaseModel2DTM):
             meta = f.create_group("metadata")
             meta.attrs["correlation_threshold"] = self.correlation_threshold
             meta.attrs["num_observations"] = self.num_observations
+            meta.attrs["format_version"] = CORRELATION_TABLE_FORMAT_VERSION
 
             search_space = f.create_group("search_space")
+            if self.euler_angles is not None:
+                search_space.create_dataset(
+                    "euler_angles",
+                    data=np.array(self.euler_angles, dtype=np.float32),
+                )
             search_space.create_dataset(
                 "defocus_offsets",
                 data=np.array(self.defocus_offsets, dtype=np.float32),
@@ -246,6 +411,24 @@ class CorrelationTable(BaseModel2DTM):
             phi_theta_angles = [(float(row[0]), float(row[1])) for row in phi_theta_raw]
             psi_angles = f["search_space/psi_angles"][:].tolist()
 
+            euler_angles = None
+            if "search_space/euler_angles" in f:
+                euler_angles = [
+                    (float(row[0]), float(row[1]), float(row[2]))
+                    for row in f["search_space/euler_angles"][:]
+                ]
+            else:
+                warnings.warn(
+                    f"'{file_path}' predates correlation table format version 2 and "
+                    "does not store the full orientation grid, so detections cannot "
+                    "be decoded to angles. Its 'psi_angles' and 'phi_theta_angles' "
+                    "axes were written by a version that assumed the wrong grid "
+                    "ordering and are very likely incorrect (a tell-tale sign is "
+                    "every psi value being identical). Pass the search's Euler angles "
+                    "to to_detections_dataframe() to decode it correctly.",
+                    stacklevel=2,
+                )
+
             search_index = f["detections/search_index"][:].tolist()
             x = f["detections/x"][:].tolist()
             y = f["detections/y"][:].tolist()
@@ -259,6 +442,7 @@ class CorrelationTable(BaseModel2DTM):
             defocus_offsets=defocus_offsets,
             phi_theta_angles=phi_theta_angles,
             psi_angles=psi_angles,
+            euler_angles=euler_angles,
             search_index=search_index,
             x=x,
             y=y,
@@ -331,6 +515,9 @@ class CorrelationTable(BaseModel2DTM):
             defocus_offsets=defocus_offsets,
             phi_theta_angles=phi_theta_angles,
             psi_angles=psi_angles,
+            euler_angles=[
+                (float(row[0]), float(row[1]), float(row[2])) for row in euler_angles
+            ],
             search_index=search_index,
             x=list(pos_x),
             y=list(pos_y),
