@@ -71,8 +71,13 @@ def get_rfft_slices_from_volume(
         The Fourier slices of the volume.
 
     """
+    # NOTE: This *must* be an rfftn, not a full fftn. `extract_central_slices_rfft_3d`
+    # infers the original volume shape from the passed tensor as
+    # ``(d, d, (w - 1) * 2)``; handing it a full FFT of shape (d, d, d) makes it build
+    # the sampling grid for a volume of depth 2d - 2, producing a wrongly-sized and
+    # geometrically incorrect projection.
     volume_rfft = torch.fft.fftshift(volume, dim=(-3, -2, -1))  # pylint: disable=not-callable
-    volume_rfft = torch.fft.fftn(volume_rfft, dim=(-3, -2, -1))  # pylint: disable=not-callable
+    volume_rfft = torch.fft.rfftn(volume_rfft, dim=(-3, -2, -1))  # pylint: disable=not-callable
     volume_rfft = torch.fft.fftshift(volume_rfft, dim=(-3, -2))  # pylint: disable=not-callable
 
     # Use roma to keep angles on same device
