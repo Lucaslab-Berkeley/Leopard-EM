@@ -596,6 +596,49 @@ class MatchTemplateManager(BaseModel2DTM):
         # 'relative_defocus', ]
         df = self.match_template_result.peaks_to_dataframe()
 
+        return self.annotate_dataframe_metadata(
+            df,
+            half_template_width_pos_shift=half_template_width_pos_shift,
+            exclude_columns=exclude_columns,
+        )
+
+    def annotate_dataframe_metadata(
+        self,
+        df: pd.DataFrame,
+        half_template_width_pos_shift: bool = True,
+        exclude_columns: Optional[list] = None,
+        column_order: Optional[list] = None,
+    ) -> pd.DataFrame:
+        """Add this run's optics, CTF and file-path columns to a table of peaks.
+
+        Everything a downstream program needs to re-extract and re-score a particle
+        comes from the run rather than from the peak itself, so any table of peaks --
+        picked from the statistics maps, or from a ``CorrelationTable`` -- needs the
+        same block of columns bolted on before it can be used as a particle stack.
+
+        Parameters
+        ----------
+        df : pd.DataFrame
+            Peaks, with at least ``pos_x`` and ``pos_y``.
+        half_template_width_pos_shift : bool, optional
+            If True, image position columns are shifted by half a template width so
+            they refer to the centre of the particle rather than the top-left corner
+            of the template. Leave True unless you know the positions are already
+            centred.
+        exclude_columns : list, optional
+            Columns to drop from the result.
+        column_order : list, optional
+            Column order to apply. Defaults to ``MATCH_TEMPLATE_DF_COLUMN_ORDER``.
+            Note that reindexing *drops* anything not listed, so pass an extended
+            order to carry extra columns through.
+
+        Returns
+        -------
+        pd.DataFrame
+            The annotated, reordered DataFrame.
+        """
+        df = df.copy()
+
         # DataFrame currently contains pixel coordinates for results. Coordinates in
         # image correspond with upper left corner of the template. Need to translate
         # coordinates by half template width to get to particle center in image.
@@ -674,7 +717,11 @@ class MatchTemplateManager(BaseModel2DTM):
         df["particle_index"] = df.index
 
         # Reorder columns
-        df = df.reindex(columns=MATCH_TEMPLATE_DF_COLUMN_ORDER)
+        df = df.reindex(
+            columns=(
+                MATCH_TEMPLATE_DF_COLUMN_ORDER if column_order is None else column_order
+            )
+        )
 
         # Drop columns if requested
         if exclude_columns is not None:

@@ -53,6 +53,23 @@ MATCH_TEMPLATE_DF_COLUMN_ORDER = [
     "correlation_variance_path",
 ]
 
+# Columns summarising the cluster of detections behind each orientation-aware peak.
+MULTIPEAK_STATISTIC_COLUMNS = [
+    "search_index",
+    "z_score",
+    "n_detections",
+    "sum_z_score",
+    "phi_spread_deg",
+    "theta_spread_deg",
+    "psi_spread_deg",
+    "defocus_spread",
+    "n_defocus_planes",
+]
+
+# Peaks picked from a CorrelationTable: a valid match-template table (so it loads as a
+# ParticleStack and feeds refine_template unchanged) plus the cluster statistics.
+MULTIPEAK_DF_COLUMN_ORDER = MATCH_TEMPLATE_DF_COLUMN_ORDER + MULTIPEAK_STATISTIC_COLUMNS
+
 REFINED_DF_COLUMN_ORDER = [
     "particle_index",
     "mip",

@@ -27,6 +27,7 @@ nav = [
     { "Optimize Template details"  = "programs/optimize_template.md" },
     { "Constrained Search details" = "programs/constrained_search.md" },
     { "Peak & Frame Inspection"    = "programs/inspect_peaks.md" },
+    { "Microtubule Lattice"        = "programs/microtubule_lattice.md" },
   ]},
   { "Program Output Formats" = [
     { "Overview"                             = "data_formats.md" },
