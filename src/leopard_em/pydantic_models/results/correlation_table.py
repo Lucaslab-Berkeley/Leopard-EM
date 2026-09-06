@@ -525,3 +525,131 @@ class CorrelationTable(BaseModel2DTM):
             correlation_mean=det_mean,
             correlation_variance=det_variance,
         )
+
+
+def detections_from_hdf5(
+    file_path: str,
+    euler_angles: torch.Tensor | None = None,
+    min_z_score: float | None = None,
+    chunk_size: int = 20_000_000,
+) -> pd.DataFrame:
+    """Stream a correlation table off disk straight into a decoded DataFrame.
+
+    :meth:`CorrelationTable.from_hdf5` materialises every column as a Python list,
+    which a full-micrograph table does not survive: 250 million detections need roughly
+    40 GB that way against 6 GB as arrays. This reads in chunks, applies the score cut
+    during the read so only survivors are ever held, and decodes as it goes.
+
+    Parameters
+    ----------
+    file_path : str
+        Correlation table written by ``match_template``.
+    euler_angles : torch.Tensor | None
+        Orientation grid, shape (num_orientations, 3). Only needed for tables written
+        before format version 2, which did not store it.
+    min_z_score : float | None
+        Discard detections at or below this z-score while reading. Set it well below
+        any analysis threshold -- the point of the table is to hold detections that a
+        per-pixel maximum would have thrown away.
+    chunk_size : int
+        Detections per read.
+
+    Returns
+    -------
+    pd.DataFrame
+        Same columns as :meth:`CorrelationTable.to_detections_dataframe`.
+
+    Raises
+    ------
+    ValueError
+        If no orientation grid is available, or it does not match the stored indices.
+    """
+    with h5py.File(file_path, "r") as handle:
+        defocus = torch.tensor(
+            handle["search_space/defocus_offsets"][:], dtype=torch.float64
+        )
+        if "search_space/euler_angles" in handle:
+            euler_angles = torch.tensor(
+                handle["search_space/euler_angles"][:], dtype=torch.float64
+            )
+        elif euler_angles is None:
+            raise ValueError(
+                f"'{file_path}' predates format version 2 and stores no orientation "
+                "grid; pass euler_angles explicitly."
+            )
+
+        grid = torch.as_tensor(euler_angles, dtype=torch.float64)
+        num_slots = int(defocus.shape[0]) * int(grid.shape[0])
+        detections = handle["detections"]
+        total = detections["search_index"].shape[0]
+
+        frames = []
+        for start in range(0, total, chunk_size):
+            stop = min(start + chunk_size, total)
+            value = detections["correlation_value"][start:stop]
+            mean = detections["correlation_mean"][start:stop]
+            spread = detections["correlation_variance"][start:stop]
+            z_score = np.divide(
+                value - mean,
+                spread,
+                out=np.zeros_like(value),
+                where=spread != 0,
+            )
+
+            keep = (
+                np.ones(len(z_score), dtype=bool)
+                if min_z_score is None
+                else z_score > min_z_score
+            )
+            if not keep.any():
+                continue
+
+            index = detections["search_index"][start:stop][keep].astype(np.int64)
+            if int(index.max()) >= num_slots:
+                raise ValueError(
+                    f"Largest search index ({int(index.max())}) exceeds the "
+                    f"{num_slots} combinations the supplied grid allows; the grid "
+                    "does not match this table."
+                )
+            phi, theta, psi, relative_defocus, _ = decode_global_search_index(
+                torch.from_numpy(index),
+                torch.zeros(1, dtype=torch.float64),
+                defocus,
+                grid,
+            )
+            frames.append(
+                pd.DataFrame(
+                    {
+                        "search_index": index,
+                        "x": detections["x"][start:stop][keep].astype(np.int64),
+                        "y": detections["y"][start:stop][keep].astype(np.int64),
+                        "phi": phi.numpy(),
+                        "theta": theta.numpy(),
+                        "psi": psi.numpy(),
+                        "relative_defocus": relative_defocus.numpy(),
+                        "correlation_value": value[keep],
+                        "correlation_mean": mean[keep],
+                        "correlation_variance": spread[keep],
+                        "z_score": z_score[keep],
+                    }
+                )
+            )
+
+    if not frames:
+        return pd.DataFrame(
+            columns=[
+                "search_index",
+                "x",
+                "y",
+                "phi",
+                "theta",
+                "psi",
+                "relative_defocus",
+                "correlation_value",
+                "correlation_mean",
+                "correlation_variance",
+                "z_score",
+            ]
+        )
+
+    return pd.concat(frames, ignore_index=True)
