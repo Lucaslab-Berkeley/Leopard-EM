@@ -33,6 +33,7 @@ from leopard_em.analysis import (
     estimate_lattice_rise,
     estimate_polarity,
     estimate_protofilament_number,
+    extract_lattice_sites,
     filament_coordinates,
     find_peaks_orientation_aware,
     fit_filament_axis,
@@ -44,11 +45,11 @@ from leopard_em.analysis.filament_lattice import (
     unwrap_helical_axial_coordinate,
 )
 from leopard_em.pydantic_models.config.orientation_search import OrientationSearchConfig
-from leopard_em.pydantic_models.results.correlation_table import CorrelationTable
-
-CORRELATION_TABLE_PATH = (
-    "results_cropped/output_correlation_table_2rings_constrained.h5"
+from leopard_em.pydantic_models.results.correlation_table import (
+    detections_from_hdf5,
 )
+
+CORRELATION_TABLE_PATH = "results_full/output_correlation_table_2rings_full.h5"
 TEMPLATE_MODEL_PATH = "models/6dpu_2rings_aligned_zero.pdb"
 TEMPLATE_VOLUME_PATH = "maps/GMPCPP_2rings_0.9194_bscale0.5.mrc"
 PIXEL_SIZE_ANGSTROM = 0.9194
@@ -57,7 +58,16 @@ PIXEL_SIZE_ANGSTROM = 0.9194
 # not store the orientation grid. Regenerating it from the search config is exact.
 PSI_STEP, THETA_STEP = 2.5, 3.5
 
+# Only the initial lattice fit uses a score cut; sites are then read wherever the model
+# predicts them, however weak. Set this high -- it should see confident detections only.
+BOOTSTRAP_SCORE_THRESHOLD = 8.5
+
+# Used for polarity and protofilament number, which are not site-based.
 SCORE_THRESHOLD = 8.0
+
+# Applied while reading the table. Keep it low: site extraction reaches below any
+# analysis threshold, and this only exists to bound memory.
+READ_MIN_Z_SCORE = 5.0
 
 
 def main() -> None:
@@ -93,15 +103,15 @@ def main() -> None:
     )
     print(f"  subunit contrast {contrast:.3f} -- {verdict}")
 
-    table = CorrelationTable.from_hdf5(CORRELATION_TABLE_PATH)
-    euler_angles = (
-        None
-        if table.euler_angles is not None
-        else OrientationSearchConfig(
+    # Streamed and thresholded during the read: a full-micrograph table holds
+    # hundreds of millions of detections and will not fit in memory as Python lists.
+    detections = detections_from_hdf5(
+        CORRELATION_TABLE_PATH,
+        euler_angles=OrientationSearchConfig(
             base_grid_method="uniform", psi_step=PSI_STEP, theta_step=THETA_STEP
-        ).euler_angles
+        ).euler_angles,
+        min_z_score=READ_MIN_Z_SCORE,
     )
-    detections = table.to_detections_dataframe(euler_angles=euler_angles)
     peaks = find_peaks_orientation_aware(detections, score_threshold=SCORE_THRESHOLD)
     print(f"\n{len(detections):,} detections -> {len(peaks)} orientation-aware peaks")
 
@@ -154,6 +164,33 @@ def main() -> None:
     print(
         f"          pixel-size-free ratio {rise.rise_pixels / reference_px:.4f}; "
         f"sharpness |R| = {sharpness:.3f}"
+    )
+
+    # Top-down: fit from the strongest peaks only, then read every site the model
+    # predicts. This avoids the trade a single threshold forces -- cut high and real
+    # sites are lost, cut low and noise corrupts the axis and biases the repeat.
+    sites = extract_lattice_sites(
+        detections,
+        geometry,
+        PIXEL_SIZE_ANGSTROM,
+        bootstrap_score_threshold=BOOTSTRAP_SCORE_THRESHOLD,
+    )
+    window = sites.rise_angstrom / 2.0
+    deviation = float(sites.axial_deviation_angstrom.std())
+    site_ratio = sites.rise_angstrom / (reference_px * PIXEL_SIZE_ANGSTROM)
+    verdict = (
+        "data-driven"
+        if deviation < 0.2 * window
+        else "CHECK: positions may be pinned to the model"
+    )
+    print(
+        f"\nSITES     {len(sites.detection_index)} of {sites.n_predicted} occupied "
+        f"({100 * sites.occupancy:.0f}%), weakest z {sites.score.min():.2f}"
+    )
+    print(f"          rise {sites.rise_angstrom:.3f} A ({site_ratio:.4f} x reference)")
+    print(
+        f"          deviation {deviation:.2f} A rms vs a +/-{window:.1f} A "
+        f"window -- {verdict}"
     )
 
 

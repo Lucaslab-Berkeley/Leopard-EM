@@ -17,6 +17,7 @@ from leopard_em.analysis.filament_lattice import (
     estimate_lattice_rise,
     estimate_polarity,
     estimate_protofilament_number,
+    extract_lattice_sites,
     filament_coordinates,
     filament_direction_from_angles,
     fit_filament_axis,
@@ -806,3 +807,163 @@ class TestRiseIsIndependentOfTheStartingGuess:
     def test_sharpness_rejects_a_non_positive_repeat(self):
         with pytest.raises(ValueError, match="positive"):
             lattice_sharpness(np.arange(10.0), 0.0)
+
+
+class TestExtractLatticeSites:
+    """Top-down extraction: fit from strong peaks, then read every predicted site."""
+
+    @staticmethod
+    def detections_with_weak_sites(microtubule, n_repeats=20, weak_every=3):
+        """A lattice where whole axial levels are deliberately weak.
+
+        The generator lays rows out protofilament-major, so weakening every Nth *row*
+        would leave each axial site with strong candidates from other protofilaments.
+        Weaken by axial level so a site really has nothing strong in it.
+        """
+        peaks, _ = synthetic_lattice(microtubule, n_repeats=n_repeats)
+        repeat_index = np.arange(len(peaks)) % n_repeats
+        peaks = peaks.copy()
+        peaks["z_score"] = np.where(repeat_index % int(weak_every) == 0, 6.2, 12.0)
+        return peaks
+
+    def test_recovers_sites_below_the_bootstrap_threshold(self, microtubule):
+        """The point of the method: the model predicts where weak sites must be."""
+        peaks = self.detections_with_weak_sites(microtubule)
+        sites = extract_lattice_sites(
+            peaks, microtubule, PIXEL_SIZE, bootstrap_score_threshold=10.0
+        )
+        assert sites.score.min() < 7.0, "no sub-threshold site was recovered"
+        assert sites.occupancy > 0.95
+
+    def test_rise_is_recovered(self, microtubule):
+        peaks = self.detections_with_weak_sites(microtubule)
+        sites = extract_lattice_sites(
+            peaks, microtubule, PIXEL_SIZE, bootstrap_score_threshold=10.0
+        )
+        assert sites.rise_angstrom == pytest.approx(microtubule.rise_angstrom, abs=0.2)
+
+    @pytest.mark.parametrize("start", [80.0, 82.0, 84.0, 86.0, 88.0])
+    def test_answer_does_not_track_the_starting_repeat(self, microtubule, start):
+        """The guard against the model pulling the measurement to itself."""
+        peaks = self.detections_with_weak_sites(microtubule)
+        sites = extract_lattice_sites(
+            peaks,
+            microtubule,
+            PIXEL_SIZE,
+            bootstrap_score_threshold=10.0,
+            initial_rise_angstrom=start,
+        )
+        assert sites.rise_angstrom == pytest.approx(microtubule.rise_angstrom, abs=0.3)
+
+    def test_a_subharmonic_also_describes_the_lattice(self, microtubule):
+        """Half the true repeat fits too, with alternate sites empty.
+
+        Concentration is maximal at the true repeat *and* at every sub-harmonic of it,
+        so a search window that spans one can settle on the wrong period. The default
+        window is +/-10%, far too narrow to reach a factor of two, but a caller who
+        widens it should know. Low occupancy is the tell.
+        """
+        peaks = self.detections_with_weak_sites(microtubule)
+        half = extract_lattice_sites(
+            peaks,
+            microtubule,
+            PIXEL_SIZE,
+            bootstrap_score_threshold=10.0,
+            initial_rise_angstrom=microtubule.rise_angstrom / 2,
+        )
+        assert half.rise_angstrom == pytest.approx(
+            microtubule.rise_angstrom / 2, abs=0.3
+        )
+        assert half.occupancy < 0.6, "a sub-harmonic must leave alternate sites empty"
+
+    def test_deviations_are_far_inside_the_search_window(self, microtubule):
+        """Positions must be set by the data, not pinned to the prediction."""
+        peaks = self.detections_with_weak_sites(microtubule)
+        sites = extract_lattice_sites(
+            peaks, microtubule, PIXEL_SIZE, bootstrap_score_threshold=10.0
+        )
+        window = sites.rise_angstrom / 2.0
+        assert np.abs(sites.axial_deviation_angstrom).max() <= window + 1e-6
+        assert sites.axial_deviation_angstrom.std() < 0.2 * window
+
+    def test_one_detection_per_site(self, microtubule):
+        peaks = self.detections_with_weak_sites(microtubule)
+        sites = extract_lattice_sites(
+            peaks, microtubule, PIXEL_SIZE, bootstrap_score_threshold=10.0
+        )
+        assert len(np.unique(sites.axial_index)) == len(sites.axial_index)
+
+    def test_strongest_detection_wins_a_contested_site(self, microtubule):
+        """Many detections share an axial site; the best-scoring one must be chosen."""
+        peaks = self.detections_with_weak_sites(microtubule)
+        peaks.loc[peaks.index[5], "z_score"] = 30.0
+        sites = extract_lattice_sites(
+            peaks, microtubule, PIXEL_SIZE, bootstrap_score_threshold=10.0
+        )
+        assert 30.0 in sites.score
+
+    def test_too_few_bootstrap_detections_raises(self, microtubule):
+        peaks = self.detections_with_weak_sites(microtubule)
+        with pytest.raises(ValueError, match="bootstrap threshold"):
+            extract_lattice_sites(
+                peaks, microtubule, PIXEL_SIZE, bootstrap_score_threshold=100.0
+            )
+
+
+class TestProtofilamentResolvedSites:
+    """The 2-D extraction, which is what a per-protofilament question needs."""
+
+    def test_every_protofilament_is_represented(self, microtubule):
+        peaks, _ = synthetic_lattice(microtubule, n_repeats=12)
+        sites = extract_lattice_sites(
+            peaks,
+            microtubule,
+            PIXEL_SIZE,
+            bootstrap_score_threshold=5.0,
+            resolve_protofilaments=True,
+        )
+        assert sites.protofilament is not None
+        assert len(np.unique(sites.protofilament)) == microtubule.n_protofilaments
+
+    def test_predicted_count_covers_the_two_dimensional_grid(self, microtubule):
+        peaks, _ = synthetic_lattice(microtubule, n_repeats=12)
+        sites = extract_lattice_sites(
+            peaks,
+            microtubule,
+            PIXEL_SIZE,
+            bootstrap_score_threshold=5.0,
+            resolve_protofilaments=True,
+        )
+        assert sites.n_predicted % microtubule.n_protofilaments == 0
+        assert sites.n_predicted > 12
+
+    def test_a_weakened_protofilament_shows_in_the_breakdown(self, microtubule):
+        """The signature a seam would produce, if the template could see one."""
+        peaks, _ = synthetic_lattice(microtubule, n_repeats=12)
+        peaks = peaks.copy()
+        peaks["z_score"] = 12.0
+        spacing = microtubule.protofilament_angular_spacing_deg
+        marked = np.round(peaks["phi"].to_numpy() / spacing).astype(int) % 14 == 5
+        peaks.loc[marked, "z_score"] = 8.0
+
+        sites = extract_lattice_sites(
+            peaks,
+            microtubule,
+            PIXEL_SIZE,
+            bootstrap_score_threshold=5.0,
+            resolve_protofilaments=True,
+        )
+        means = sites.mean_score_by_protofilament()
+        assert means[5] == pytest.approx(8.0, abs=0.5)
+        others = [v for k, v in means.items() if k != 5]
+        assert min(others) > means[5] + 2.0
+
+    def test_pooled_extraction_refuses_a_per_protofilament_breakdown(self, microtubule):
+        peaks, _ = synthetic_lattice(microtubule, n_repeats=8)
+        sites = extract_lattice_sites(
+            peaks, microtubule, PIXEL_SIZE, bootstrap_score_threshold=5.0
+        )
+        with pytest.raises(ValueError, match="pooled protofilaments"):
+            sites.occupancy_by_protofilament()
+        with pytest.raises(ValueError, match="pooled protofilaments"):
+            sites.mean_score_by_protofilament()

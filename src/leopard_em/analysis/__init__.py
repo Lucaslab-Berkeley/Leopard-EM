@@ -8,12 +8,14 @@ from .correlation_peaks import (
 )
 from .filament_lattice import (
     FilamentAxis,
+    LatticeSites,
     PolarityEstimate,
     TemplateLatticeGeometry,
     axis_points_from_peaks,
     estimate_lattice_rise,
     estimate_polarity,
     estimate_protofilament_number,
+    extract_lattice_sites,
     filament_coordinates,
     fit_filament_axis,
 )
@@ -37,6 +39,7 @@ __all__ = [
     "CLUSTER_STATISTIC_COLUMNS",
     "FilamentAxis",
     "InspectionResult",
+    "LatticeSites",
     "MatchTemplatePeaks",
     "PolarityEstimate",
     "TemplateLatticeGeometry",
@@ -45,6 +48,7 @@ __all__ = [
     "estimate_lattice_rise",
     "estimate_polarity",
     "estimate_protofilament_number",
+    "extract_lattice_sites",
     "extract_peaks_and_statistics_p_value",
     "extract_peaks_and_statistics_zscore",
     "filament_coordinates",

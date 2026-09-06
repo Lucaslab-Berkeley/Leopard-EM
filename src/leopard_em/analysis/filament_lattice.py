@@ -26,12 +26,14 @@ import torch
 __all__ = [
     "FilamentAxis",
     "LatticeRise",
+    "LatticeSites",
     "PolarityEstimate",
     "TemplateLatticeGeometry",
     "axis_points_from_peaks",
     "estimate_lattice_rise",
     "estimate_polarity",
     "estimate_protofilament_number",
+    "extract_lattice_sites",
     "filament_coordinates",
     "filament_direction_from_angles",
     "fit_filament_axis",
@@ -1299,6 +1301,13 @@ def lattice_sharpness(
     -------
     float
         Concentration in [0, 1].
+
+    Notes
+    -----
+    This is maximal at the true repeat *and* at every sub-harmonic of it: positions on
+    an 84 Angstrom lattice also sit perfectly on a 42 Angstrom one, with alternate
+    sites empty. It therefore cannot pick a period out of a search window wide enough
+    to span a factor of two. Low occupancy is the tell that a sub-harmonic was chosen.
     """
     positions = np.asarray(positions_angstrom, dtype=np.float64)
     if weights is None:
@@ -1332,3 +1341,268 @@ def _scan_for_best_repeat(
     sharpness = np.array([lattice_sharpness(positions, r, weights) for r in grid])
 
     return float(grid[int(np.argmax(sharpness))])
+
+
+@dataclass(frozen=True)
+class LatticeSites:
+    """Detections assigned to the sites of a fitted lattice.
+
+    Attributes
+    ----------
+    detection_index : np.ndarray
+        Row of the source detection table occupying each site, shape (n_occupied,).
+    axial_index : np.ndarray
+        Lattice index along the filament for each occupied site, shape (n_occupied,).
+    protofilament : np.ndarray | None
+        Protofilament index for each occupied site, or None for a pooled
+        (protofilament-blind) extraction.
+    score : np.ndarray
+        Score of the detection at each occupied site, shape (n_occupied,).
+    axial_deviation_angstrom : np.ndarray
+        How far each detection sits from its predicted axial position. Compare against
+        the search window -- deviations far below it mean the positions are set by the
+        data rather than by the model.
+    rise_angstrom : float
+        Fitted axial repeat.
+    axis : FilamentAxis
+        Axis the sites were measured against.
+    n_predicted : int
+        Total sites the model predicts over the track, occupied or not.
+    """
+
+    detection_index: np.ndarray
+    axial_index: np.ndarray
+    protofilament: np.ndarray | None
+    score: np.ndarray
+    axial_deviation_angstrom: np.ndarray
+    rise_angstrom: float
+    axis: FilamentAxis
+    n_predicted: int
+
+    @property
+    def occupancy(self) -> float:
+        """Fraction of predicted sites that a detection was found at."""
+        if self.n_predicted == 0:
+            return float("nan")
+        return len(self.detection_index) / self.n_predicted
+
+    def occupancy_by_protofilament(self) -> dict[int, float]:
+        """Occupancy of each protofilament separately.
+
+        A single protofilament scoring or filling consistently below the others is the
+        signature the seam would produce if the real filament is structurally different
+        there from the symmetrised template. Requires a protofilament-resolved
+        extraction.
+
+        Returns
+        -------
+        dict[int, float]
+            Protofilament index to occupied fraction.
+
+        Raises
+        ------
+        ValueError
+            If the extraction pooled protofilaments.
+        """
+        if self.protofilament is None:
+            raise ValueError(
+                "This extraction pooled protofilaments; re-run with "
+                "resolve_protofilaments=True to get a per-protofilament breakdown."
+            )
+
+        counts = np.bincount(self.protofilament)
+        per_protofilament = self.n_predicted / len(counts)
+
+        return {int(k): float(c / per_protofilament) for k, c in enumerate(counts)}
+
+    def mean_score_by_protofilament(self) -> dict[int, float]:
+        """Mean score of the occupied sites of each protofilament.
+
+        Raises
+        ------
+        ValueError
+            If the extraction pooled protofilaments.
+        """
+        if self.protofilament is None:
+            raise ValueError(
+                "This extraction pooled protofilaments; re-run with "
+                "resolve_protofilaments=True to get a per-protofilament breakdown."
+            )
+
+        return {
+            int(k): float(self.score[self.protofilament == k].mean())
+            for k in np.unique(self.protofilament)
+        }
+
+
+# pylint: disable=too-many-locals
+def extract_lattice_sites(
+    detections,
+    geometry: TemplateLatticeGeometry,
+    pixel_size_angstrom: float,
+    bootstrap_score_threshold: float,
+    initial_rise_angstrom: float | None = None,
+    score_column: str = "z_score",
+    resolve_protofilaments: bool = False,
+    n_iterations: int = 3,
+    xy_radius_px: float = 12.0,
+    angular_radius_deg: float = 15.0,
+) -> LatticeSites:
+    """Fit a lattice from the strongest detections, then read every site it predicts.
+
+    Thresholding globally forces a bad trade: cut high and real sites are lost, cut low
+    and noise corrupts the axis fit, which biases everything measured along it. This
+    avoids the trade by using the model to say *where* to look. A rough lattice is
+    bootstrapped from the strongest peaks only, and then the best detection within half
+    a repeat of each predicted site is taken, however weak. Noise away from the lattice
+    is never examined, so purity and completeness stop competing.
+
+    The obvious worry is circularity -- predicting sites from a repeat and then
+    measuring the repeat from them. Two things guard against it: the search window is a
+    full half-repeat, so a site's position is free to land anywhere, and
+    ``axial_deviation_angstrom`` records how far detections actually sat from their
+    predictions. Deviations far below the window mean the data, not the model, set the
+    positions. Confirm by re-running from different bootstrap thresholds and starting
+    repeats; the answer should not move.
+
+    Parameters
+    ----------
+    detections : pd.DataFrame
+        Detections with ``x``, ``y``, ``phi``, ``theta``, ``psi`` and ``score_column``.
+        Pass everything available -- the point is to reach below any sensible threshold.
+    geometry : TemplateLatticeGeometry
+        Template calibration.
+    pixel_size_angstrom : float
+        Pixel size of the micrograph.
+    bootstrap_score_threshold : float
+        Score cut for the initial fit only. Set it high; this should see only confident
+        detections, and the extraction reaches below it afterwards.
+    initial_rise_angstrom : float | None
+        Starting repeat. Defaults to the template's.
+    score_column : str
+        Column ranked when choosing between detections at one site.
+    resolve_protofilaments : bool
+        Assign sites to individual protofilaments as well as axial positions. Only
+        meaningful for a template whose azimuth is well determined: a complete ring is
+        N-fold pseudo-symmetric, so its matched ``phi`` does not identify a
+        protofilament and the breakdown will be meaningless.
+    n_iterations : int
+        Refit-and-reassign rounds. Convergence is typically immediate.
+    xy_radius_px, angular_radius_deg
+        Suppression radii for the bootstrap peak finding.
+
+    Returns
+    -------
+    LatticeSites
+
+    Raises
+    ------
+    ValueError
+        If too few detections survive the bootstrap threshold to fit an axis.
+    """
+    # Local import: correlation_peaks is a sibling and does not import this module.
+    from leopard_em.analysis.correlation_peaks import find_peaks_orientation_aware
+
+    rise = (
+        float(geometry.rise_angstrom)
+        if initial_rise_angstrom is None
+        else float(initial_rise_angstrom)
+    )
+    spacing = geometry.protofilament_angular_spacing_deg
+
+    bootstrap = find_peaks_orientation_aware(
+        detections,
+        xy_radius_px=xy_radius_px,
+        angular_radius_deg=angular_radius_deg,
+        score_column=score_column,
+        score_threshold=bootstrap_score_threshold,
+    )
+    if len(bootstrap) < 3:
+        raise ValueError(
+            f"Only {len(bootstrap)} detections exceed the bootstrap threshold of "
+            f"{bootstrap_score_threshold}; too few to fit an axis. Lower it."
+        )
+
+    boot_weights = bootstrap[score_column].to_numpy(dtype=np.float64)
+    boot_phi = bootstrap["phi"].to_numpy(dtype=np.float64)
+    axis = fit_filament_axis(
+        axis_points_from_peaks(bootstrap, geometry, pixel_size_angstrom),
+        boot_weights,
+        filament_direction_from_angles(
+            boot_phi,
+            bootstrap["theta"].to_numpy(dtype=np.float64),
+            bootstrap["psi"].to_numpy(dtype=np.float64),
+        ),
+    )
+
+    all_points = axis_points_from_peaks(detections, geometry, pixel_size_angstrom)
+    all_phi = detections["phi"].to_numpy(dtype=np.float64)
+    scores = detections[score_column].to_numpy(dtype=np.float64)
+    boot_points = axis_points_from_peaks(bootstrap, geometry, pixel_size_angstrom)
+
+    selected = np.empty(0, dtype=np.int64)
+    axial = np.empty(0, dtype=np.int64)
+    protofilament = None
+    deviation = np.empty(0)
+    n_predicted = 0
+
+    for _ in range(max(n_iterations, 1)):
+        along, _ = filament_coordinates(all_points, axis)
+        unwrapped = unwrap_helical_axial_coordinate(
+            along * pixel_size_angstrom, all_phi, geometry
+        )
+        boot_along, _ = filament_coordinates(boot_points, axis)
+        boot_unwrapped = unwrap_helical_axial_coordinate(
+            boot_along * pixel_size_angstrom, boot_phi, geometry
+        )
+
+        phase = (
+            np.angle((boot_weights * np.exp(2j * np.pi * boot_unwrapped / rise)).sum())
+            / (2 * np.pi)
+            * rise
+        )
+        fractional = (unwrapped - phase) / rise
+        axial_all = np.round(fractional).astype(np.int64)
+
+        low = int(np.floor(fractional.min()))
+        high = int(np.ceil(fractional.max()))
+        n_axial = high - low + 1
+
+        if resolve_protofilaments:
+            pf_all = np.round(all_phi / spacing).astype(np.int64) % (
+                geometry.n_protofilaments
+            )
+            key = (axial_all - low) * geometry.n_protofilaments + pf_all
+            n_predicted = n_axial * geometry.n_protofilaments
+        else:
+            pf_all = None
+            key = axial_all - low
+            n_predicted = n_axial
+
+        # Best-scoring detection at each site: sort by site then descending score and
+        # keep the first of each run.
+        order = np.lexsort((-scores, key))
+        is_first = np.concatenate(([True], key[order][1:] != key[order][:-1]))
+        selected = order[is_first]
+
+        axial = axial_all[selected]
+        protofilament = None if pf_all is None else pf_all[selected]
+        deviation = (fractional[selected] - axial) * rise
+
+        rise = estimate_lattice_rise(
+            unwrapped[selected] / pixel_size_angstrom,
+            pixel_size_angstrom,
+            rise,
+            scores[selected],
+        ).rise_angstrom
+
+    return LatticeSites(
+        detection_index=selected,
+        axial_index=axial,
+        protofilament=protofilament,
+        score=scores[selected],
+        axial_deviation_angstrom=deviation,
+        rise_angstrom=rise,
+        axis=axis,
+        n_predicted=n_predicted,
+    )
