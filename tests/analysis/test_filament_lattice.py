@@ -22,6 +22,7 @@ from leopard_em.analysis.filament_lattice import (
     fit_filament_axis,
     geometry_columns,
     image_offset_from_template_point,
+    lattice_sharpness,
     rise_from_template_autocorrelation,
     subunit_contrast,
     template_axial_autocorrelation,
@@ -763,3 +764,45 @@ class TestForeshorteningCorrection:
                 84.0,
                 theta_deg=np.full(10, 180.0),
             )
+
+
+class TestRiseIsIndependentOfTheStartingGuess:
+    """Indexing has many self-consistent aliases; the fit must not just echo its input.
+
+    On a long track an error d in the repeat accumulates to N*d over N repeats, so
+    aliases sit only about rise**2 / span apart. Local refinement alone cannot leave
+    the alias it starts in, which silently turns the estimate into a readout of the
+    initial guess -- the failure is invisible because the formal error stays tiny.
+    """
+
+    @staticmethod
+    def long_track(rise, n_repeats=70, scatter=0.0, seed=0):
+        rng = np.random.default_rng(seed)
+        positions = np.arange(n_repeats) * rise
+        return positions + rng.normal(0.0, scatter, n_repeats)
+
+    @pytest.mark.parametrize("guess", [39.0, 40.0, 41.0, 42.0, 43.0, 44.0])
+    def test_long_track_converges_from_any_start(self, guess):
+        positions = self.long_track(41.9, scatter=1.0)
+        result = estimate_lattice_rise(positions / PIXEL_SIZE, PIXEL_SIZE, guess)
+        assert result.rise_angstrom == pytest.approx(41.9, abs=0.1)
+
+    def test_spread_across_starts_is_small(self):
+        positions = self.long_track(41.9, scatter=1.0)
+        found = [
+            estimate_lattice_rise(positions / PIXEL_SIZE, PIXEL_SIZE, g).rise_angstrom
+            for g in (39.0, 40.0, 41.0, 42.0, 43.0, 44.0)
+        ]
+        assert np.ptp(found) < 0.2, f"answer tracks the starting guess: {found}"
+
+    def test_sharpness_is_one_for_a_perfect_lattice(self):
+        positions = self.long_track(41.9)
+        assert lattice_sharpness(positions, 41.9) == pytest.approx(1.0, abs=1e-6)
+
+    def test_sharpness_falls_for_a_wrong_repeat(self):
+        positions = self.long_track(41.9)
+        assert lattice_sharpness(positions, 38.0) < 0.3
+
+    def test_sharpness_rejects_a_non_positive_repeat(self):
+        with pytest.raises(ValueError, match="positive"):
+            lattice_sharpness(np.arange(10.0), 0.0)

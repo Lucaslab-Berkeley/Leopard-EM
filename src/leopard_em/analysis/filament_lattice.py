@@ -37,6 +37,7 @@ __all__ = [
     "fit_filament_axis",
     "geometry_columns",
     "image_offset_from_template_point",
+    "lattice_sharpness",
     "rise_from_template_autocorrelation",
     "subunit_contrast",
     "template_axial_autocorrelation",
@@ -899,6 +900,7 @@ def estimate_lattice_rise(
     max_iterations: int = 5,
     reference_rise_angstrom: float | None = None,
     theta_deg: np.ndarray | None = None,
+    search_fraction: float = 0.1,
 ) -> LatticeRise:
     """Refine the axial repeat by indexing peaks against a lattice.
 
@@ -914,8 +916,8 @@ def estimate_lattice_rise(
     pixel_size_angstrom : float
         Pixel size of the micrograph.
     initial_rise_angstrom : float
-        Starting guess, e.g. the template's own rise. Must be within about half a
-        repeat of the truth for the indexing to converge to the right lattice.
+        Starting guess, e.g. the template's own rise. The global scan searches
+        ``search_fraction`` either side of it, so it need only be roughly right.
     weights : np.ndarray | None
         Per-peak weights, shape (n,).
     max_iterations : int
@@ -923,6 +925,10 @@ def estimate_lattice_rise(
     reference_rise_angstrom : float | None
         Repeat to report the ratio against. Defaults to ``initial_rise_angstrom``,
         which is normally the template's own rise.
+    search_fraction : float
+        Fractional window about ``initial_rise_angstrom`` scanned for the repeat that
+        best concentrates the positions, before local refinement. Widen it if the true
+        repeat may be far from the guess; narrow it to pin the search near a known one.
     theta_deg : np.ndarray | None
         Per-peak out-of-plane tilt in degrees, shape (n,). A filament tilted away from
         the image plane is projected shorter by ``sin(theta)``; supplying this divides
@@ -954,7 +960,14 @@ def estimate_lattice_rise(
         weights = np.ones_like(positions)
     weights = np.asarray(weights, dtype=np.float64)
 
-    rise = float(initial_rise_angstrom)
+    # Global scan before local refinement. Indexing against an assumed repeat has many
+    # self-consistent solutions: an error d accumulates to N*d over N repeats, so
+    # aliases sit only about rise**2 / span apart and local refinement cannot leave the
+    # one it starts in. On a long track that makes the answer a readout of the initial
+    # guess. Pick the repeat that actually concentrates the positions first.
+    rise = _scan_for_best_repeat(
+        positions, weights, float(initial_rise_angstrom), search_fraction
+    )
     origin = float(positions.min())
     slope, intercept = rise, origin
 
@@ -1258,3 +1271,64 @@ def subunit_contrast(volume: np.ndarray, repeat_px: float) -> float:
         return float("inf")
 
     return float(half / full)
+
+
+def lattice_sharpness(
+    positions_angstrom: np.ndarray,
+    repeat_angstrom: float,
+    weights: np.ndarray | None = None,
+) -> float:
+    """How tightly positions concentrate at one phase of an assumed repeat.
+
+    The magnitude of the first circular harmonic of the positions taken modulo the
+    repeat: 1 when every position sits at the same phase, 0 when they are spread
+    uniformly. Useful both for choosing between candidate repeats and for judging
+    whether a fitted repeat means anything at all -- a small value says the lattice is
+    not resolved, however tight the formal error on the fit.
+
+    Parameters
+    ----------
+    positions_angstrom : np.ndarray
+        Axial positions, shape (n,), in Angstroms.
+    repeat_angstrom : float
+        Repeat to test.
+    weights : np.ndarray | None
+        Per-position weights, shape (n,).
+
+    Returns
+    -------
+    float
+        Concentration in [0, 1].
+    """
+    positions = np.asarray(positions_angstrom, dtype=np.float64)
+    if weights is None:
+        weights = np.ones_like(positions)
+    weights = np.asarray(weights, dtype=np.float64)
+    if repeat_angstrom <= 0:
+        raise ValueError(f"repeat_angstrom must be positive, got {repeat_angstrom}.")
+
+    phasor = (weights * np.exp(2j * np.pi * positions / repeat_angstrom)).sum()
+
+    return float(np.abs(phasor) / weights.sum())
+
+
+def _scan_for_best_repeat(
+    positions: np.ndarray,
+    weights: np.ndarray,
+    initial: float,
+    search_fraction: float,
+) -> float:
+    """Repeat near ``initial`` that best concentrates the positions."""
+    span = float(positions.max() - positions.min())
+    if span <= 0:
+        return initial
+
+    # Resolve the aliases, which are about initial**2 / span apart.
+    step = max(initial**2 / span / 20.0, 1e-4)
+    low = initial * (1.0 - search_fraction)
+    high = initial * (1.0 + search_fraction)
+    grid = np.arange(low, high + step, step)
+
+    sharpness = np.array([lattice_sharpness(positions, r, weights) for r in grid])
+
+    return float(grid[int(np.argmax(sharpness))])
