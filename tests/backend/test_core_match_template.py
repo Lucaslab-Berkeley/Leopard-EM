@@ -15,6 +15,7 @@ NOTE: This test can take up to 10 minutes given the moderate sized search space 
 GPU requirements.
 """
 
+import importlib
 import subprocess
 from pathlib import Path
 
@@ -170,3 +171,69 @@ def test_core_match_template():
 
 if __name__ == "__main__":
     test_core_match_template()
+
+
+class TestCorrelationTableThreshold:
+    """The correlation-table threshold must be configurable per run.
+
+    The table is dominated by near-threshold noise, so its size depends steeply on this
+    value -- but raise it too far and real detections are discarded irreversibly, since
+    the table is the only record of sub-maximal hypotheses.
+    """
+
+    def test_default_is_exposed_and_documented(self):
+        from leopard_em.backend.core_match_template import (
+            DEFAULT_CORRELATION_TABLE_THRESHOLD,
+        )
+
+        assert DEFAULT_CORRELATION_TABLE_THRESHOLD == 6.5
+
+    @pytest.mark.parametrize(
+        "target",
+        [
+            "leopard_em.backend.core_match_template.core_match_template",
+            "leopard_em.backend.core_match_template_distributed"
+            ".core_match_template_distributed",
+        ],
+    )
+    def test_backend_entry_points_accept_it(self, target):
+        import importlib
+        import inspect
+
+        module_name, _, attribute = target.rpartition(".")
+        function = getattr(importlib.import_module(module_name), attribute)
+        parameter = inspect.signature(function).parameters[
+            "correlation_table_threshold"
+        ]
+        assert parameter.default == 6.5
+
+    @pytest.mark.parametrize(
+        "method", ["run_match_template", "run_match_template_distributed"]
+    )
+    def test_manager_forwards_it(self, method):
+        import inspect
+
+        from leopard_em.pydantic_models.managers import MatchTemplateManager
+
+        signature = inspect.signature(getattr(MatchTemplateManager, method))
+        assert signature.parameters["correlation_table_threshold"].default == 6.5
+
+    def test_threshold_reaches_the_kernel(self):
+        """A custom value must actually gate the detections, not just be accepted."""
+        import inspect
+
+        from leopard_em.backend.utils import (
+            do_iteration_and_correlation_table_updates,
+        )
+
+        assert (
+            "threshold"
+            in inspect.signature(do_iteration_and_correlation_table_updates).parameters
+        )
+
+        source = inspect.getsource(
+            importlib.import_module("leopard_em.backend.core_match_template")
+        )
+        # The per-GPU worker must pass its argument through, not the module constant.
+        assert "threshold=correlation_table_threshold," in source
+        assert '"threshold": correlation_table_threshold,' in source

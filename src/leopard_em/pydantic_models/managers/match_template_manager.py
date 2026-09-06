@@ -10,7 +10,10 @@ import pandas as pd
 import torch
 from pydantic import ConfigDict, Field, field_validator
 
-from leopard_em.backend.core_match_template import core_match_template
+from leopard_em.backend.core_match_template import (
+    DEFAULT_CORRELATION_TABLE_THRESHOLD,
+    core_match_template,
+)
 from leopard_em.backend.core_match_template_distributed import (
     core_match_template_distributed,
 )
@@ -360,6 +363,7 @@ class MatchTemplateManager(BaseModel2DTM):
         do_result_export: bool = True,
         do_valid_cropping: bool = False,
         compute_correlation_table: bool = True,
+        correlation_table_threshold: float = DEFAULT_CORRELATION_TABLE_THRESHOLD,
     ) -> None:
         """Runs the base match template in pytorch.
 
@@ -375,6 +379,12 @@ class MatchTemplateManager(BaseModel2DTM):
             size of the image and template (N-n+1 along each axis). The backend of
             Leopard-EM will automatically do this, so generally set this to False. The
             default is False.
+        correlation_table_threshold : float
+            Cross-correlation a detection must exceed to be recorded in the
+            correlation table. The table is dominated by near-threshold noise, so
+            raising this shrinks it steeply; lowering it keeps weaker detections at a
+            large cost in size. Past roughly three below the strongest peak in the
+            search it begins discarding real detections.
         compute_correlation_table : bool
             If True, track cross-correlation values which surpass the correlation
             table threshold during the search. If False, the `CorrelationTable` will be
@@ -391,6 +401,7 @@ class MatchTemplateManager(BaseModel2DTM):
             num_cuda_streams=self.computational_config.num_cpus,
             backend=self.computational_config.backend,
             compute_correlation_table=compute_correlation_table,
+            correlation_table_threshold=correlation_table_threshold,
         )
 
         # Populate the MatchTemplateResult via a private helper
@@ -411,6 +422,7 @@ class MatchTemplateManager(BaseModel2DTM):
         do_result_export: bool = True,
         do_valid_cropping: bool = False,
         compute_correlation_table: bool = True,
+        correlation_table_threshold: float = DEFAULT_CORRELATION_TABLE_THRESHOLD,
     ) -> None:
         """Runs the base match template in a distributed, multi-node environment.
 
@@ -432,6 +444,12 @@ class MatchTemplateManager(BaseModel2DTM):
             size of the image and template (N-n+1 along each axis). The backend of
             Leopard-EM will automatically do this, so generally set this to False. The
             default is False.
+        correlation_table_threshold : float
+            Cross-correlation a detection must exceed to be recorded in the
+            correlation table. The table is dominated by near-threshold noise, so
+            raising this shrinks it steeply; lowering it keeps weaker detections at a
+            large cost in size. Past roughly three below the strongest peak in the
+            search it begins discarding real detections.
         compute_correlation_table : bool
             If True, track cross-correlation values which surpass the correlation
             table threshold during the search. If False, the `CorrelationTable` will be
@@ -470,6 +488,7 @@ class MatchTemplateManager(BaseModel2DTM):
             self.computational_config.num_cpus,
             self.computational_config.backend,
             compute_correlation_table=compute_correlation_table,
+            correlation_table_threshold=correlation_table_threshold,
             **core_kwargs,
         )
 

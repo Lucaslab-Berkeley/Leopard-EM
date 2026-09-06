@@ -11,6 +11,7 @@ import torch
 import torch.distributed as dist
 
 from leopard_em.backend.core_match_template import (
+    DEFAULT_CORRELATION_TABLE_THRESHOLD,
     _core_match_template_single_gpu,
 )
 from leopard_em.backend.distributed import (
@@ -397,6 +398,7 @@ def core_match_template_distributed(
     num_cuda_streams: int = 1,
     backend: str = "streamed",
     compute_correlation_table: bool = True,
+    correlation_table_threshold: float = DEFAULT_CORRELATION_TABLE_THRESHOLD,
     **kwargs: dict,
 ) -> dict[str, torch.Tensor]:
     """Distributed multi-node core function for the match template program.
@@ -419,6 +421,9 @@ def core_match_template_distributed(
     backend : str, optional
         The backend to use for computation. Defaults to 'streamed'.
         Must be 'streamed' or 'batched'.
+    correlation_table_threshold : float, optional
+        Cross-correlation a detection must exceed to be recorded in the correlation
+        table.
     compute_correlation_table : bool, optional
         Whether to track cross-correlation values which surpass the correlation table
         threshold. If False, this (comparatively expensive) computation is skipped.
@@ -518,6 +523,7 @@ def core_match_template_distributed(
         backend=backend,
         device=device,
         compute_correlation_table=compute_correlation_table,
+        correlation_table_threshold=correlation_table_threshold,
         eligible_pixels=kwargs.get("eligible_pixels"),  # type: ignore[arg-type]
         orientation_eligible=kwargs.get("orientation_eligible"),  # type: ignore[arg-type]
         defocus_eligible=kwargs.get("defocus_eligible"),  # type: ignore[arg-type]

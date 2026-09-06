@@ -33,7 +33,12 @@ from leopard_em.backend.process_results import (
 from leopard_em.backend.utils import do_iteration_and_correlation_table_updates
 
 DEFAULT_STATISTIC_DTYPE = torch.float32
-CORRELATION_TABLE_THRESHOLD = 5.5
+# Cross-correlation above which a detection is recorded in the CorrelationTable.
+# Chosen so that a filament lattice stays fully populated: raising it past roughly
+# (peak z - 3) starts discarding real detections rather than noise, while lowering it
+# inflates the table by orders of magnitude for detections that are almost all noise.
+# Override per run with the `correlation_table_threshold` argument.
+DEFAULT_CORRELATION_TABLE_THRESHOLD = 6.5
 
 # Turn off gradient calculations by default
 torch.set_grad_enabled(False)
@@ -164,6 +169,7 @@ def core_match_template(
     backend: str = "streamed",
     mag_matrix: torch.Tensor | None = None,
     compute_correlation_table: bool = True,
+    correlation_table_threshold: float = DEFAULT_CORRELATION_TABLE_THRESHOLD,
     eligible_pixels: torch.Tensor | None = None,
     orientation_eligible: torch.Tensor | None = None,
     defocus_eligible: torch.Tensor | None = None,
@@ -231,6 +237,12 @@ def core_match_template(
     mag_matrix : torch.Tensor | None, optional
         Anisotropic magnification matrix of shape (2, 2). If None,
         no magnification transform is applied. Default is None.
+    correlation_table_threshold : float, optional
+        Cross-correlation a detection must exceed to be recorded in the correlation
+        table. Higher values shrink the table steeply -- it is dominated by
+        near-threshold noise -- but past roughly three below the strongest peak they
+        start dropping real detections. Default
+        ``DEFAULT_CORRELATION_TABLE_THRESHOLD``.
     compute_correlation_table : bool, optional
         Whether to track cross-correlation values which surpass the correlation table
         threshold. If False, this (comparatively expensive) computation is skipped and
@@ -362,6 +374,7 @@ def core_match_template(
             "device": d,
             "mag_matrix": mag_matrix,
             "compute_correlation_table": compute_correlation_table,
+            "correlation_table_threshold": correlation_table_threshold,
             "eligible_pixels": eligible_pixels,
             "orientation_eligible": orientation_eligible,
             "defocus_eligible": defocus_eligible,
@@ -457,6 +470,7 @@ def _core_match_template_single_gpu(
     device: torch.device,
     mag_matrix: torch.Tensor | None = None,
     compute_correlation_table: bool = True,
+    correlation_table_threshold: float = DEFAULT_CORRELATION_TABLE_THRESHOLD,
     eligible_pixels: torch.Tensor | None = None,
     orientation_eligible: torch.Tensor | None = None,
     defocus_eligible: torch.Tensor | None = None,
@@ -516,6 +530,8 @@ def _core_match_template_single_gpu(
     mag_matrix : torch.Tensor | None, optional
         Anisotropic magnification matrix of shape (2, 2). If None,
         no magnification transform is applied. Default is None.
+    correlation_table_threshold : float, optional
+        Cross-correlation a detection must exceed to be recorded.
     compute_correlation_table : bool, optional
         Whether to track cross-correlation values which surpass the correlation table
         threshold. If False, this (comparatively expensive) computation is skipped and
@@ -599,7 +615,7 @@ def _core_match_template_single_gpu(
     #                   global index.
     correlation_table = tensordict.TensorDict(
         {
-            "threshold": CORRELATION_TABLE_THRESHOLD,
+            "threshold": correlation_table_threshold,
             "global_idx": torch.tensor([], dtype=torch.int32, device=device),
             "pos_x": torch.tensor([], dtype=torch.int32, device=device),
             "pos_y": torch.tensor([], dtype=torch.int32, device=device),
@@ -643,9 +659,7 @@ def _core_match_template_single_gpu(
                 f"{valid_correlation_shape}."
             )
     if orientation_eligible is not None:
-        orientation_eligible = orientation_eligible.to(
-            device=device, dtype=torch.bool
-        )
+        orientation_eligible = orientation_eligible.to(device=device, dtype=torch.bool)
         if orientation_eligible.ndim == 1:
             expected_orient_shape = (num_orientations,)
         else:
@@ -760,7 +774,7 @@ def _core_match_template_single_gpu(
                     best_global_index=best_global_index,
                     correlation_sum=correlation_sum,
                     correlation_squared_sum=correlation_squared_sum,
-                    threshold=CORRELATION_TABLE_THRESHOLD,
+                    threshold=correlation_table_threshold,
                     valid_shape_h=valid_correlation_shape[0],
                     valid_shape_w=valid_correlation_shape[1],
                     needs_valid_cropping=(backend != "zipfft"),
