@@ -51,16 +51,17 @@ dependencies = [
     "zenodo-get",
     "h5py",
     "tensordict",
-    # TeamTomo dependencies
+    # TeamTomo dependencies, tagged at v0.6.0
     "ttsim3d>=v0.4.0",
-    "torch-fourier-slice>=v0.5.2",
-    "torch-fourier-filter>=v0.5.2",
-    "torch-fourier-shell-correlation>=v0.5.2",
-    "torch-so3>=v0.5.2",
-    "torch-fourier-shift>=v0.5.2",
-    "torch-motion-correction>=v0.5.2",
-    "torch-grid-utils>=v0.5.2",
-    "torch-ctf",
+    "torch-fourier-filter==v0.6.0",
+    "torch-fourier-rescale==v0.6.0",
+    "torch-fourier-slice==v0.6.0",
+    "torch-fourier-shell-correlation==v0.6.0",
+    "torch-so3==v0.6.0",
+    "torch-fourier-shift==v0.6.0",
+    "torch-motion-correction==v0.6.0",
+    "torch-grid-utils==v0.6.0",
+    "torch-ctf==v0.6.0",
 ]
 
 [tool.hatch.metadata]
