@@ -2,7 +2,7 @@
 
 import os
 from pathlib import Path
-from typing import Any, Optional, Union
+from typing import Any
 
 import mrcfile
 import numpy as np
@@ -50,7 +50,7 @@ def read_mrc_to_tensor(mrc_path: str | os.PathLike | Path) -> torch.Tensor:
 def write_mrc_from_numpy(
     data: np.ndarray,
     mrc_path: str | os.PathLike | Path,
-    mrc_header: Optional[dict] = None,
+    mrc_header: dict | None = None,
     overwrite: bool = False,
 ) -> None:
     """Writes a numpy array to an MRC file.
@@ -78,7 +78,7 @@ def write_mrc_from_numpy(
 def write_mrc_from_tensor(
     data: torch.Tensor,
     mrc_path: str | os.PathLike | Path,
-    mrc_header: Optional[dict] = None,
+    mrc_header: dict | None = None,
     overwrite: bool = False,
 ) -> None:
     """Writes a tensor array to an MRC file.
@@ -158,8 +158,8 @@ def load_mrc_volume(file_path: str | os.PathLike | Path) -> torch.Tensor:
 
 
 def load_template_tensor(
-    template_volume: Optional[Union[torch.Tensor, Any]] = None,
-    template_volume_path: Optional[Union[str, os.PathLike, Path]] = None,
+    template_volume: torch.Tensor | Any | None = None,
+    template_volume_path: str | os.PathLike | Path | None = None,
 ) -> torch.Tensor:
     """Load and convert template volume to a torch.Tensor.
 

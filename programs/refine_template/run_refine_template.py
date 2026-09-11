@@ -14,6 +14,10 @@ from leopard_em.pydantic_models.managers import RefineTemplateManager
 YAML_CONFIG_PATH = "/path/to/refine-template-configuration.yaml"
 
 # Path to where the dataframe with refined peak parameters will be output.
+# May be a .csv or .h5 path -- output format matches the particle_stack back-end
+# configured in the YAML file by default (df_path -> CSV, hdf5_path -> HDF5),
+# or pass output_format="csv"/"hdf5" to RefineTemplateManager.run_refine_template()
+# to override.
 DATAFRAME_OUTPUT_PATH = "/path/to/refine-template-results.csv"
 
 # Number of particles to refine simultaneously. Will need to tune this parameter

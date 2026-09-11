@@ -99,9 +99,10 @@ ENV/
 # Rope project settings
 .ropeproject
 
-# mkdocs documentation
+# mkdocs/zensical documentation
 /site
 /docs/generated/
+/docs/api/
 /docs/examples/60S_*.mrc
 /docs/examples/xenon_*.mrc
 /docs/examples/xenon_*.csv

@@ -40,6 +40,8 @@ This csv file is written when [running the match template program](match_templat
     That is, the csv file for `df_path` does not need to come from match template.
     Running multiple refinement can be useful to compare between similar reference structures using 2DTM.
 
+    This CSV-in, CSV-out behavior is the default when the input `particle_stack` is CSV-backed (`df_path`). If the input is HDF5-backed (`hdf5_path`) instead, the output is HDF5 by default too — see [particle stack formats](../data_formats/particle_stack.md#exporting-refined-results) for the `export_results(..., output_format=...)` override. `export_results(...)` returns the refined particle stack it just wrote, so it can be passed straight into another program (e.g. `constrained_search`) without re-reading it from disk.
+
 The next two fields are `extracted_box_size` and `original_template_size` which together are used to extract regions in the image and statistics maps around a particle.
 Set the `original_template_size` field to the same shape as the simulated volume, that is if the 3D mrc file for the reference template is of shape \( (512, 512, 512) \), then this filed should be `original_template_size: [512, 512]`.
 
@@ -152,5 +154,5 @@ In addition to the YAML configuration path, there are the additional variables `
 The latter variable is used to process multiple particles at once since we want to maximize hardware utilization.
 But this parameter also needs to balance available GPU memory.
 
-The former variable, `DATAFRAME_OUTPUT_PATH`, will write a new particle stack csv file with new columns corresponding to the refined position, orientation, defocus, and pixel size on a per-particle basis.
-More details on the particle stack csv format can be found on the [Leopard-EM data formats page](../data_formats.md).
+The former variable, `DATAFRAME_OUTPUT_PATH`, will write a new particle stack file with new columns corresponding to the refined position, orientation, defocus, and pixel size on a per-particle basis — as CSV or HDF5, matching the input `particle_stack`'s back-end by default (or override via `output_format` on `run_refine_template(...)`).
+More details on the particle stack csv/HDF5 formats can be found on the [Leopard-EM data formats page](../data_formats.md) and the [particle stack formats page](../data_formats/particle_stack.md).

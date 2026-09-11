@@ -1,0 +1,126 @@
+[project]
+site_name = "Leopard-EM: Two-Dimensional Template Matching in Python"
+
+# MathJax for LaTeX rendering in tutorials
+extra_javascript = [
+  "https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.4/MathJax.js?config=TeX-AMS-MML_HTMLorMML",
+]
+
+nav = [
+  { "Home" = "index.md" },
+  { "Tutorials" = [
+    { "2DTM Introduction"     = "tutorials/match_template_intro.md" },
+    { "Batch Processing"      = "tutorials/batch_processing.md" },
+    { "Distributed Computing" = "tutorials/distributed_match_template.md" },
+  ]},
+  { "Examples" = [
+    { "Match Template Config"           = "examples/01_basic_configuration.ipynb" },
+    { "Peaks to DataFrame"              = "examples/02_extract_peak_info.ipynb" },
+    { "Comparing Scoring Metrics"       = "examples/03_compare_scoring_metrics.ipynb" },
+    { "Plotting match template results" = "examples/04_plotting_2dtm_results.ipynb" },
+    { "Structure re-projection plot"    = "examples/05_structure_reprojection.ipynb" },
+  ]},
+  { "Programs" = [
+    { "Overview"                   = "programs/overview.md" },
+    { "Match Template details"     = "programs/match_template.md" },
+    { "Refine Template details"    = "programs/refine_template.md" },
+    { "Optimize Template details"  = "programs/optimize_template.md" },
+    { "Constrained Search details" = "programs/constrained_search.md" },
+    { "Peak & Frame Inspection"    = "programs/inspect_peaks.md" },
+  ]},
+  { "Program Output Formats" = [
+    { "Overview"                             = "data_formats.md" },
+    { "Match Template Results (MRC vs HDF5)" = "data_formats/match_template_results.md" },
+    { "Particle Stacks (CSV vs HDF5)"        = "data_formats/particle_stack.md" },
+  ]},
+  { "Benchmarks"             = "benchmarks.md" },
+  { "Common Issues"          = "common_issues.md" },
+  { "API Reference" = [
+    { "Overview"        = "api/index.md" },
+    { "Analysis"        = "api/analysis.md" },
+    { "Backend"         = "api/backend.md" },
+    { "Pydantic Models" = "api/pydantic_models.md" },
+    { "Config Models"   = "api/pydantic_models/config.md" },
+    { "Data Structures" = "api/pydantic_models/data_structures.md" },
+    { "Managers"        = "api/pydantic_models/managers.md" },
+    { "Results"         = "api/pydantic_models/results.md" },
+    { "Utilities"       = "api/utils.md" },
+  ]},
+  { "Contributing"           = "contributing.md" },
+]
+
+# ----------------------------------------------------------------------------
+# Theme
+# ----------------------------------------------------------------------------
+
+[project.theme]
+features = [
+  "content.code.copy",
+]
+
+[[project.theme.palette]]
+scheme = "slate"
+primary = "purple"
+toggle.icon = "lucide/moon"
+toggle.name = "Switch to light mode"
+
+[[project.theme.palette]]
+scheme = "default"
+primary = "purple"
+toggle.icon = "lucide/sun"
+toggle.name = "Switch to dark mode"
+
+
+# ----------------------------------------------------------------------------
+# Plugins
+# NOTE: "search" is intentionally omitted — Zensical includes its Disco search
+# engine built-in. The inline-select-svg plugin may not yet be Zensical-
+# compatible; remove it if the build fails and it complains about unknown plugin.
+# ----------------------------------------------------------------------------
+
+[project.plugins.autorefs]
+
+[project.plugins."mkdocs-jupyter"]
+
+[project.plugins."inline-select-svg"]
+
+[project.plugins.mkdocstrings]
+default_handler = "python"
+
+[project.plugins.mkdocstrings.handlers.python]
+paths = ["src"]
+
+[project.plugins.mkdocstrings.handlers.python.options]
+show_source = false
+preload_modules = ["pydantic"]
+show_symbol_type_toc = true
+show_symbol_type_heading = true
+show_root_full_path = true
+show_root_heading = true
+group_by_category = true
+show_labels = false
+inherited_members = false
+members_order = "source"
+docstring_section_style = "list"
+merge_init_into_class = false
+docstring_style = "numpy"
+show_signature_annotations = true
+signature_crossrefs = false
+separate_signature = true
+line_length = 60
+
+# ----------------------------------------------------------------------------
+# Markdown extensions
+# ----------------------------------------------------------------------------
+
+[project.markdown_extensions.admonition]
+
+[project.markdown_extensions.footnotes]
+
+[project.markdown_extensions.tables]
+
+[project.markdown_extensions.mdx_math]
+
+[project.markdown_extensions."pymdownx.details"]
+
+[project.markdown_extensions."pymdownx.superfences"]

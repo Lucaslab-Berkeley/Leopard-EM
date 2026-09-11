@@ -11,10 +11,8 @@ from .data_io import (
     write_mrc_from_numpy,
     write_mrc_from_tensor,
 )
-from .image_processing import (
-    preprocess_image,
-    volume_to_rfft_fourier_slice,
-)
+from .fourier_slice import volume_to_rfft_fourier_slice
+from .image_processing import preprocess_image
 from .search_utils import (
     cs_to_pixel_size,
     get_cs_range,
@@ -34,9 +32,10 @@ __all__ = [
     "load_mrc_image",
     "load_mrc_volume",
     "load_template_tensor",
+    # Fourier slice
+    "volume_to_rfft_fourier_slice",
     # Image processing
     "preprocess_image",
-    "volume_to_rfft_fourier_slice",
     # Search utilities
     "get_search_tensors",
     "get_cs_range",

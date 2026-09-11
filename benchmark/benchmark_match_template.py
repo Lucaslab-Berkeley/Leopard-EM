@@ -28,8 +28,17 @@ YAML_PATH = (
 ZENODO_URL = "https://zenodo.org/records/17069838"
 
 
-def download_comparison_data() -> None:
-    """Downloads the example data from Zenodo."""
+def download_comparison_data(force_download: bool = False) -> None:
+    """Downloads the example data from Zenodo, skipping if already present.
+
+    Parameters
+    ----------
+    force_download : bool
+        If True, re-download the data even if it appears to already be present.
+    """
+    if YAML_PATH.exists() and not force_download:
+        return
+
     subprocess.run(
         ["zenodo_get", f"--output-dir={DOWNLOAD_DIR}", ZENODO_URL], check=True
     )
@@ -76,6 +85,7 @@ def benchmark_match_template_single_run(
         **core_kwargs,
         orientation_batch_size=orientation_batch_size,
         num_cuda_streams=mt_manager.computational_config.num_cpus,
+        backend=mt_manager.computational_config.backend,
     )
     total_projections = result["total_projections"]  # number of CCGs calculated, N
 
@@ -102,13 +112,14 @@ def benchmark_match_template_single_run(
     # -->           r = (N - n) / (T_N - T_n)
     # -->           k = N * (T_N - T_n) / (N - n)
 
-    core_kwargs["euler_angles"] = torch.rand(size=(100, 3)) * 180
+    core_kwargs["euler_angles"] = torch.rand(size=(300, 3)) * orientation_batch_size
     start_time = time.perf_counter()
 
     result = core_match_template(
         **core_kwargs,
         orientation_batch_size=orientation_batch_size,
         num_cuda_streams=mt_manager.computational_config.num_cpus,
+        backend=mt_manager.computational_config.backend,
     )
     adjustment_projections = result["total_projections"]  # number of CCGs calculated, n
 
@@ -133,11 +144,13 @@ def benchmark_match_template_single_run(
     }
 
 
-def run_benchmark(orientation_batch_size: int, num_runs: int) -> dict[str, Any]:
+def run_benchmark(
+    orientation_batch_size: int, num_runs: int, force_download: bool = False
+) -> dict[str, Any]:
     """Run multiple benchmark iterations and collect statistics."""
     # Download example data to use for benchmarking
     print("Downloading benchmarking data...")
-    download_comparison_data()
+    download_comparison_data(force_download=force_download)
     print("Done!")
 
     # Get CUDA device properties
@@ -228,7 +241,19 @@ def save_benchmark_results(result: dict, output_file: str) -> None:
     type=str,
     help="Output file for benchmark results (default: benchmark_results.json)",
 )
-def main(orientation_batch_size: int, num_runs: int, output_file: str):
+@click.option(
+    "--force-download",
+    is_flag=True,
+    default=False,
+    help="Re-download benchmarking data even if it already appears to be present "
+    "(e.g. to restore files that were manually modified for local testing).",
+)
+def main(
+    orientation_batch_size: int,
+    num_runs: int,
+    output_file: str,
+    force_download: bool,
+):
     """Main benchmarking function with Click CLI interface."""
     if not torch.cuda.is_available():
         print("CUDA not available exiting...")
@@ -239,7 +264,9 @@ def main(orientation_batch_size: int, num_runs: int, output_file: str):
     print(f"  Number of runs: {num_runs}")
     print(f"  Output file: {output_file}")
 
-    result = run_benchmark(orientation_batch_size, num_runs)
+    result = run_benchmark(
+        orientation_batch_size, num_runs, force_download=force_download
+    )
     # pprint(result)
     save_benchmark_results(result, output_file)
 

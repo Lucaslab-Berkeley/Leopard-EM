@@ -3,7 +3,7 @@ title: Overview of Leopard-EM programs
 description: A basic overview of each of the built-in programs in Leopard-EM
 ---
 
-# Programs at a glance
+## Programs at a glance
 
 The Leopard-EM package currently has five main programs which are easily user-configurable through YAML files and are runnable from Python scripts. These five programs encompass a variety of 2DTM data processing workflows. Here, we provide a brief overview of each program's functionality and the necessary input data for that program. Detailed information on configuring and running each program can be found on their respective pages, linked below.
 
@@ -23,7 +23,6 @@ The required inputs (besides config fields) for `match_template` are:
 * The estimated CTF defocus parameters for that micrograph, and
 * A simulated 3D reference template (see package [ttsim3d](https://github.com/teamtomo/ttsim3d) for simulating reference templates).
 
-
 ## Refine Template
 
 After the `match_template` program identifies particles from a "coarse" search, the `refine_template` program locally refines the orientation, location, and defocus parameters on a per-particle basis.
@@ -34,7 +33,6 @@ The required inputs for `refine_template` are:
 
 * A simulated 3D reference template (see package [ttsim3d](https://github.com/teamtomo/ttsim3d) for simulating reference templates), and
 * The csv file of particle locations and orientations output from the `match_template` program.
-
 
 ## Optimize Template
 
@@ -47,7 +45,6 @@ The required inputs for `optimize_template` are:
 
 * Simulation configuration for the [ttsim3d](https://github.com/teamtomo/ttsim3d) package including the reference structure, and
 * The csv file of particle locations and orientations output from either the `match_template` or `refine_template` program.
-
 
 ## Constrained Search
 
@@ -67,6 +64,17 @@ The required inputs for `constrained_search` are:
 * A particle stack csv (from `match_template`) for the constrained particle, and
 * Estimates on the relative position & orientation as well as flexibility of the constrained particle.
 
+## Peak & Frame Inspection
+
+The `inspect_peaks` and `frame_inspection` programs let you inspect the local search areas which can be useful to investigate how sensitive peaks/detections are to small changes in parameter space.
+Another axis to compare against is correlation across movie frames (i.e. how much signal is present after some amount of accumulated electron dose).
+The [peak & frame inspection program details](inspect_peaks.md) contains further information on configuring and running these programs and generally follows the `refine_template` program configuration.
+
+The required inputs for `inspect_peaks`/`frame_inspection` are:
+
+* A simulated 3D reference template (see package [ttsim3d](https://github.com/teamtomo/ttsim3d) for simulating reference templates),
+* The csv file of particle locations and orientations output from the `match_template` or `refine_template` program, and
+* (for `frame_inspection` only) The original (unaligned or aligned) movie stack, plus a deformation field or per-particle shifts describing motion across frames.
 
 ## Optimize B-Factor script
 

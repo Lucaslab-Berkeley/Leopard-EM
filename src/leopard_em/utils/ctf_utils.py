@@ -13,7 +13,39 @@ from leopard_em.utils.search_utils import get_cs_range
 # Using the TYPE_CHECKING statement to avoid circular imports
 if TYPE_CHECKING:
     from leopard_em.pydantic_models.data_structures.optics_group import OpticsGroup
-    from leopard_em.pydantic_models.data_structures.particle_stack import ParticleStack
+    from leopard_em.pydantic_models.data_structures.particle_stack import (
+        ParticleStackCSV,
+        ParticleStackHDF5,
+    )
+
+
+def move_ctf_kwargs_tensors_to_device(
+    ctf_kwargs: dict[str, Any], device: torch.device
+) -> dict[str, Any]:
+    """Copy CTF kwargs so tensor-valued entries live on ``device``.
+
+    Used by multi-GPU refine/inspect workers: ``_setup_ctf_kwargs_from_particle_stack``
+    builds ``mag_matrix`` and Zernike dicts on CPU;
+    ``calculate_ctf_filter_stack_full_args``
+    must run with tensors on the same device as ``projective_filter`` / particle FFTs.
+    """
+    kwargs = dict(ctf_kwargs)
+    mag = kwargs.get("mag_matrix")
+    if isinstance(mag, torch.Tensor):
+        kwargs["mag_matrix"] = mag.to(device=device)
+    ez = kwargs.get("even_zernikes")
+    if isinstance(ez, dict):
+        kwargs["even_zernikes"] = {
+            k: v.to(device=device) if isinstance(v, torch.Tensor) else v
+            for k, v in ez.items()
+        }
+    oz = kwargs.get("odd_zernikes")
+    if isinstance(oz, dict):
+        kwargs["odd_zernikes"] = {
+            k: v.to(device=device) if isinstance(v, torch.Tensor) else v
+            for k, v in oz.items()
+        }
+    return kwargs
 
 
 def calculate_ctf_filter_stack_full_args(
@@ -200,13 +232,14 @@ def _parse_json_string_from_series_value(value: Any) -> dict | None:
 
 
 def _setup_ctf_kwargs_from_particle_stack(
-    particle_stack: "ParticleStack", template_shape: tuple[int, int]
+    particle_stack: "ParticleStackCSV | ParticleStackHDF5",
+    template_shape: tuple[int, int],
 ) -> dict[str, Any]:
     """Helper function for per-particle CTF kwargs.
 
     Parameters
     ----------
-    particle_stack : ParticleStack
+    particle_stack : ParticleStackCSV | ParticleStackHDF5
         The particle stack to extract the CTF parameters from.
     template_shape : tuple[int, int]
         The shape of the template to use for the CTF calculation.
@@ -252,7 +285,7 @@ def _setup_ctf_kwargs_from_particle_stack(
         if isinstance(mag_matrix_list, list) and len(mag_matrix_list) == 4:
             # Check that all elements are valid numbers (not NaN)
             if all(
-                isinstance(x, (int, float)) and not np.isnan(x) for x in mag_matrix_list
+                isinstance(x, int | float) and not np.isnan(x) for x in mag_matrix_list
             ):
                 mag_matrix_tensor = torch.tensor(
                     [

@@ -87,5 +87,8 @@ orientation_refinement_config:
 
 These should be the same as for [Match Template](../programs/match_template.md).
 
+## Running the constrained search program
 
+`ConstrainedSearchManager.run_constrained_search(output_dataframe_path, ...)` writes the main refined particle table to `output_dataframe_path`, matching the back-end of `particle_stack_reference` by default (`ParticleStackCSV` or `ParticleStackHDF5`), or pass `output_format="csv"`/`"hdf5"` to override. It also writes two small, always-CSV sibling tables next to it — `<base>_parameters.csv` (search parameters and the false-positive threshold) and `<base>_above_threshold.csv` (rows above that threshold), named from the base of `output_dataframe_path` regardless of the main table's format.
 
+`run_constrained_search(...)` returns the refined particle stack it wrote for the main table (a `ParticleStackCSV` or `ParticleStackHDF5`), ready to reuse directly without re-reading it from disk. See [exporting refined results](../data_formats/particle_stack.md#exporting-refined-results) for more detail.

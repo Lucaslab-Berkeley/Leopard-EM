@@ -1,0 +1,45 @@
+# Identical to `programs/refine_template/refine_template_example_config.yaml`.
+# PeakInspectionManager extends RefineTemplateManager and uses the same fields.
+# Call `PeakInspectionManager.from_yaml(path)` to load this file.
+template_volume_path: /some/path/to/template.mrc
+particle_stack:
+  df_path: /some/path/to/particles.csv  # Needs to be readable by pandas
+  extracted_box_size: [528, 528]
+  original_template_size: [512, 512]
+defocus_refinement_config:
+  enabled: true
+  defocus_max:  100.0  # in Angstroms, relative to "best" defocus value in particle stack dataframe
+  defocus_min: -100.0  # in Angstroms, relative to "best" defocus value in particle stack dataframe
+  defocus_step: 20.0   # in Angstroms
+orientation_refinement_config:
+  enabled: true
+  psi_step_coarse:   1.5   # in degrees
+  psi_step_fine:     0.15  # in degrees
+  theta_step_coarse: 2.5   # in degrees
+  theta_step_fine:   0.25  # in degrees
+pixel_size_refinement_config:
+  enabled: false
+  pixel_size_min: -0.005
+  pixel_size_max:  0.005
+  pixel_size_step: 0.001
+preprocessing_filters:
+  whitening_filter:
+    do_power_spectrum: true
+    enabled: true
+    max_freq: 0.5  # In terms of Nyquist frequency
+    num_freq_bins: null
+  bandpass_filter:
+    enabled: false
+    falloff: null
+    high_freq_cutoff: null
+    low_freq_cutoff: null
+computational_config:
+  gpu_ids: 0
+  num_cpus: 1
+apply_global_filtering: true
+movie_config:
+  enabled: false
+  movie_path: path/to/aligned_movie.mrc
+  deformation_field_path: path/to/deformation_field.csv
+  pre_exposure: 0.0
+  fluence_per_frame: 1.0
