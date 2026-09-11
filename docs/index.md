@@ -34,7 +34,7 @@ Leopard-EM is a Python implementation of Two-Dimensional Template Matching (2DTM
 
 The general system requirements for Leopard-EM are
 
-- Python version 3.11 or above
+- Python version 3.12 or above
 - PyTorch 2.4.0 or above
 - Linux operating system
 

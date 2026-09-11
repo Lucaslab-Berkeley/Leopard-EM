@@ -19,7 +19,7 @@ name = "leopard_em"
 dynamic = ["version"]
 description = "Location & Orientation of Particles found using Two-Dimensional Template Matching"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 license = { text = "BSD-3-Clause" }
 authors = [
     { name = "Matthew Giammar", email = "matthew_giammar@berkeley.edu" },
@@ -30,9 +30,9 @@ classifiers = [
     "Development Status :: 3 - Alpha",
     "License :: OSI Approved :: BSD License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Typing :: Typed",
 ]
 # add your package dependencies here
@@ -105,7 +105,7 @@ repository = "https://github.com/Lucaslab-Berkeley/Leopard-EM"
 # https://docs.astral.sh/ruff
 [tool.ruff]
 line-length = 88
-target-version = "py311"
+target-version = "py312"
 src = ["src"]
 
 # https://docs.astral.sh/ruff/rules
