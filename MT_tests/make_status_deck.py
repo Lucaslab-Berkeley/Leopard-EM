@@ -203,92 +203,6 @@ def load_competition() -> tuple[dict, np.ndarray]:
     return z, sites
 
 
-# --------------------------------------------------------------------------- data
-
-
-def load_detections() -> pd.DataFrame:
-    if not CACHE.exists():
-        from leopard_em.pydantic_models.results.correlation_table import (
-            detections_from_hdf5,
-        )
-
-        det = detections_from_hdf5(
-            str(HERE / "results_full" / "output_correlation_table_2rings_full.h5"),
-            min_z_score=6.0,
-        )
-        CACHE.parent.mkdir(parents=True, exist_ok=True)
-        det.to_parquet(CACHE)
-        return det
-    return pd.read_parquet(CACHE)
-
-
-def load_sites(detections: pd.DataFrame):
-    from leopard_em.analysis.filament_lattice import (
-        TemplateLatticeGeometry,
-        extract_lattice_sites,
-    )
-
-    geometry = TemplateLatticeGeometry.from_pdb(
-        str(HERE / "models" / "6dpu_2rings_aligned_zero.pdb")
-    )
-    return extract_lattice_sites(
-        detections, geometry, PIXEL_SIZE, bootstrap_score_threshold=8.0
-    )
-
-
-def load_competition() -> tuple[dict, np.ndarray]:
-    """Per-site z for each cell of the 2x2, on a shared site list."""
-    cells = [(a, b) for a in ("6dpu", "6dpv") for b in ("6dpu", "6dpv")]
-    peaks, zmaps = {}, {}
-    for atoms, lattice in cells:
-        tag = f"{atoms}_atoms_{lattice}_lattice_2rings_flatB_crop"
-        peaks[(atoms, lattice)] = pd.read_csv(RESULTS / f"results_{tag}.csv", index_col=0)
-        with mrcfile.open(RESULTS / f"output_scaled_mip_{tag}.mrc", permissive=True) as h:
-            zmaps[(atoms, lattice)] = np.asarray(h.data, dtype=np.float32)
-
-    stacked = np.concatenate(
-        [p[["pos_y", "pos_x", "scaled_mip"]].to_numpy() for p in peaks.values()]
-    )
-    stacked = stacked[np.argsort(-stacked[:, 2])]
-    kept: list[np.ndarray] = []
-    for row in stacked:
-        if all(np.hypot(*(row[:2] - k[:2])) > 12.0 for k in kept):
-            kept.append(row)
-    sites = np.array([k[:2] for k in kept])
-
-    z = {}
-    for cell, zmap in zmaps.items():
-        vals = np.empty(len(sites))
-        for i, (y, x) in enumerate(sites.astype(int)):
-            vals[i] = zmap[max(y - 3, 0):y + 4, max(x - 3, 0):x + 4].max()
-        z[cell] = vals
-    return z, sites
-
-
-def template_contrast() -> list[tuple[str, float]]:
-    from leopard_em.analysis.filament_lattice import (
-        rise_from_template_autocorrelation,
-        subunit_contrast,
-    )
-
-    named = [
-        ("4-patch", "GMPCPP_4patches_0.9194_bscale0.5.mrc"),
-        ("2-ring", "GMPCPP_2rings_0.9194_bscale0.5.mrc"),
-        ("4-ring", "GMPCPP_4rings_0.9194_bscale0.5.mrc"),
-        ("6DPU 2-ring\n(rebuilt)", "6dpu_atoms_6dpu_lattice_2rings_flatB_0.9194_bscale0.5.mrc"),
-        ("6DPV 2-ring\n(rebuilt)", "6dpv_atoms_6dpv_lattice_2rings_flatB_0.9194_bscale0.5.mrc"),
-    ]
-    out = []
-    for label, name in named:
-        with mrcfile.open(MAPS / name, permissive=True) as handle:
-            volume = np.asarray(handle.data, dtype=np.float32)
-        rise = rise_from_template_autocorrelation(
-            volume, approximate_rise_px=41.98 / PIXEL_SIZE, search_fraction=0.1
-        )
-        out.append((label, float(subunit_contrast(volume, 2 * rise))))
-    return out
-
-
 # -------------------------------------------------------------------------- slides
 
 
@@ -1880,6 +1794,255 @@ def slide_seam_register(pdf: PdfPages) -> None:
     plt.close(fig)
 
 
+CURVED_CACHE = CACHE.with_name("curved_bow.npz")
+
+# Measured on the curved synthetic; see STATUS.md "Curved microtubules". Kept as numbers
+# because each came from a 15-minute search that the deck should not re-run.
+CURVED_TRUTH = {
+    "n_pf": 13, "lattice": "6DPV / compacted", "rise": 40.943,
+    "sagitta_px": 100.0, "radius_px": 8192.0, "turn_deg": 17.9,
+    "psi_start": 308.7, "psi_end": 291.3,
+}
+CURVED_READOUTS = [
+    ("polarity", "299.44°", "300.00°", "0.56° out"),
+    ("protofilament number", "13", "13", "23.5× margin"),
+    ("lattice spacing (patch)", "40.937 Å", "40.943 Å", "−0.01%"),
+    ("monomer register (patch)", "2.19× chance", "present", "13.9% of z"),
+]
+CURVED_REGISTER = [
+    ("patch\n138°", 0.812, 0.371, BLUE),
+    ("ring\n360°", 0.238, 0.347, AMBER),
+    ("patch\ndimer ctrl", 0.294, 0.488, "#c8d6e5"),
+]
+
+
+def load_curved():
+    """Transverse bow and the rise-against-span bias, from the curved synthetic.
+
+    Cached: both need the 5.6M-detection correlation table, and the deck is rebuilt far
+    more often than the search is re-run.
+    """
+    if CURVED_CACHE.exists():
+        data = np.load(CURVED_CACHE)
+        return {key: data[key] for key in data.files}
+
+    from leopard_em.analysis.filament_lattice import (
+        TemplateLatticeGeometry,
+        axis_points_from_peaks,
+        extract_lattice_sites,
+        filament_coordinates,
+        filament_direction_from_angles,
+        fit_filament_axis,
+    )
+    from leopard_em.pydantic_models.results.correlation_table import detections_from_hdf5
+
+    geometry = TemplateLatticeGeometry.from_pdb(
+        str(HERE / "models" / "6dpu_13pf_2rings_flatB.pdb")
+    )
+    table = HERE / "results_curved" / (
+        "output_correlation_table_clean_truth_13pf_6dpv.h5"
+    )
+    detections = detections_from_hdf5(str(table), min_z_score=7.0).reset_index(drop=True)
+    strong = detections[detections["z_score"] > 8.0]
+    points = axis_points_from_peaks(strong, geometry, PIXEL_SIZE)
+    axis = fit_filament_axis(
+        points, strong["z_score"].to_numpy(),
+        reference_direction=filament_direction_from_angles(
+            strong["phi"].to_numpy(), strong["theta"].to_numpy(),
+            strong["psi"].to_numpy(),
+        ),
+    )
+    along, across = filament_coordinates(points, axis)
+    order = np.argsort(along)
+    bins = np.array_split(order, 11)
+    bow_along = np.array([along[b].mean() for b in bins])
+    bow_across = np.array([across[b].mean() for b in bins])
+
+    # Restricting the SAME track to shorter spans varies L with R, template and SNR all
+    # fixed, which is what isolates the chord-vs-arc term.
+    all_along, _ = filament_coordinates(
+        axis_points_from_peaks(detections, geometry, PIXEL_SIZE), axis
+    )
+    centre = 0.5 * (all_along.min() + all_along.max())
+    spans, errors = [], []
+    for fraction in (0.55, 0.7, 0.85, 1.0):
+        half = fraction * 0.5 * np.ptp(all_along)
+        subset = detections[np.abs(all_along - centre) <= half].reset_index(drop=True)
+        sites = extract_lattice_sites(
+            subset, geometry, PIXEL_SIZE, bootstrap_score_threshold=8.0
+        )
+        spans.append(2.0 * half)
+        errors.append(
+            100.0 * (sites.rise_angstrom - CURVED_TRUTH["rise"]) / CURVED_TRUTH["rise"]
+        )
+
+    out = {
+        "bow_along": bow_along, "bow_across": bow_across,
+        "spans": np.array(spans), "errors": np.array(errors),
+    }
+    CURVED_CACHE.parent.mkdir(parents=True, exist_ok=True)
+    np.savez(CURVED_CACHE, **out)
+    return out
+
+
+def curved_micrograph(bandpass: bool = True):
+    """The simulated bent tube, and the curve it was built on."""
+    import json
+
+    from scipy.ndimage import gaussian_filter
+
+    stem = HERE / "Frames" / "synthetic_curved_13pf_6dpv_sag100_clean"
+    with mrcfile.open(str(stem) + ".mrc", permissive=True) as handle:
+        image = np.asarray(handle.data, dtype=np.float32)
+    if bandpass:
+        image = gaussian_filter(image, 25.0) - gaussian_filter(image, 220.0)
+    with open(str(stem) + ".paths.json", encoding="utf-8") as handle:
+        path = np.array(json.load(handle)["paths"][0]["points"])
+    return image, path
+
+
+def slide_curved_problem(pdf: PdfPages) -> None:
+    """Why a bent tube breaks the analysis, and the tooling that was missing."""
+    fig = slide("Curved microtubules — what breaks",
+                "Every result so far assumes one straight filament, and that assumption "
+                "enters at exactly one place")
+
+    image, path = curved_micrograph()
+    ax = fig.add_axes([0.045, 0.24, 0.34, 0.53])
+    v = 2.4 * image.std()
+    ax.imshow(image[::2, ::2], cmap="gray", vmin=-v, vmax=v)
+    ax.plot(path[:, 1] / 2, path[:, 0] / 2, color=RED, lw=2.0, ls="--")
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.set_title("a bent tube, and the drawn path", fontsize=11.5, color=INK, loc="left")
+    _scale_bar(ax, (image.shape[0] // 2, image.shape[1] // 2), 50.0,
+               PIXEL_SIZE * 2, "50 nm")
+
+    ax2 = fig.add_axes([0.435, 0.24, 0.175, 0.53])
+    arc = np.linspace(0.0, 217.0, 120)
+    psi = CURVED_TRUTH["psi_start"] + (arc / 217.0) * (
+        CURVED_TRUTH["psi_end"] - CURVED_TRUTH["psi_start"]
+    )
+    # A global box has to cover the whole sweep plus the cone; a per-pixel field only
+    # ever has to cover the cone, and follows the tangent.
+    ax2.axvspan(psi.min() - 10.0, psi.max() + 10.0, color=AMBER, alpha=0.20)
+    ax2.fill_betweenx(arc, psi - 10.0, psi + 10.0, color=BLUE, alpha=0.30)
+    ax2.plot(psi, arc, lw=2.4, color=BLUE)
+    ax2.set_xlim(psi.min() - 14.0, psi.max() + 14.0)
+    ax2.set_ylim(0, 217.0)
+    ax2.text(psi.max() + 12.0, 200.0, "global box\nneeds 37°", fontsize=9.5,
+             color="#b35600", ha="right", va="top", fontweight="bold")
+    ax2.text(psi.mean(), 60.0, "per-pixel\nstays 20°", fontsize=9.5, color="white",
+             ha="center", va="center", fontweight="bold")
+    ax2.set_xlabel("ψ (deg)")
+    ax2.set_ylabel("along the tube (nm)")
+    ax2.set_title("ψ sweeps 17.4°", fontsize=11.5, color=INK, loc="left")
+    ax2.grid(alpha=0.25, ls=":")
+
+    fig.add_artist(plt.Line2D([0.635, 0.635], [0.14, 0.80], color=LIGHT, lw=2))
+
+    _body(fig, 0.655, 0.775,
+          "THE ONE SEAM. FilamentAxis is a point and a\n"
+          "direction, and filament_coordinates projects onto\n"
+          "that line — so the axial coordinate everything is\n"
+          "measured in becomes CHORD length, not arc.\n\n"
+          "Everything upstream is already fine: each detection\n"
+          "maps ITSELF onto the local axis using only its own\n"
+          "position and angles, so a bent tube still gives\n"
+          "unbiased local samples. That is the leverage.\n\n"
+          "For the SEARCH, a global Euler box must widen to\n"
+          "cover the whole sweep — 37° here — which loosens\n"
+          "the constraint everywhere and lets a detection at\n"
+          "one end claim the other end's ψ. A per-pixel field\n"
+          "stays at the cone width and follows the tangent.\n\n"
+          "Leopard-EM already evaluates that on the GPU. What\n"
+          "did not exist was any way to PRODUCE one for a\n"
+          "filament; a napari tool now draws editable paths\n"
+          "with a per-path width and writes ψ from the local\n"
+          "TANGENT — the membrane exporter writes the NORMAL,\n"
+          "and both are atan2(−dy, dx).", 0.30, 10.5)
+
+    note(fig, "Only ψ is per-pixel — θ and φ stay one global box — so this covers a tube "
+              "bending IN THE IMAGE PLANE. Out-of-plane bending would need a per-pixel θ, "
+              "which does not exist.\nA speedup was also required, not optional: counting "
+              "eligible orientations was O(pixels × angles), 581 minutes on a 2046×2880 "
+              "crop. Grouping by ψ value and binary-searching the sorted grid makes it "
+              "0.24 s, bit-identical.")
+    pdf.savefig(fig)
+    plt.close(fig)
+
+
+def slide_curved_truth(pdf: PdfPages) -> None:
+    """The simulated bent tube with known truth, and the four readouts scored."""
+    fig = slide("A bent microtubule with known truth",
+                "Simulated by tiling the template along an arc, each copy rotated to the "
+                "LOCAL tangent — so every readout has a right answer")
+
+    data = load_curved()
+
+    ax = fig.add_axes([0.060, 0.42, 0.255, 0.36])
+    ax.plot(data["bow_along"], data["bow_across"], marker="o", ms=6, lw=2.4, color=BLUE)
+    ax.axhline(0.0, color=MUTED, lw=1)
+    ax.set_xlabel("along the straight fit (px)")
+    ax.set_ylabel("transverse offset (px)")
+    ax.set_title("The arc, in the coordinate that is thrown away",
+                 fontsize=11, color=INK, loc="left")
+    ax.grid(alpha=0.25, ls=":")
+
+    ax2 = fig.add_axes([0.375, 0.42, 0.23, 0.36])
+    spans, errors = data["spans"], data["errors"]
+    predicted = -100.0 * spans**2 / (40.0 * CURVED_TRUTH["radius_px"] ** 2)
+    ax2.plot(spans, errors, marker="o", ms=7, lw=2.4, color=BLUE, label="measured")
+    ax2.plot(spans, predicted, marker="s", ms=6, lw=2.2, ls="--", color=RED,
+             label="−L² / 40R²")
+    ax2.set_xlabel("track length L (px)")
+    ax2.set_ylabel("rise error (%)")
+    ax2.legend(frameon=False, fontsize=10, loc="lower left")
+    ax2.set_title("Chord, not arc — the predicted bias",
+                  fontsize=11, color=INK, loc="left")
+    ax2.grid(alpha=0.25, ls=":")
+
+    ax3 = fig.add_axes([0.655, 0.42, 0.16, 0.36])
+    ratios = [amp / null for _, amp, null, _ in CURVED_REGISTER]
+    ax3.bar(range(len(ratios)), ratios, 0.6,
+            color=[c for *_, c in CURVED_REGISTER], edgecolor=BLUE, lw=0.8)
+    ax3.axhline(1.0, color=RED, lw=2.0)
+    ax3.text(-0.45, 1.06, "chance", fontsize=9.5, color=RED, va="bottom")
+    ax3.set_xticks(range(len(ratios)))
+    ax3.set_xticklabels([name for name, *_ in CURVED_REGISTER], fontsize=9)
+    ax3.set_ylabel("register ÷ chance")
+    ax3.set_ylim(0, 2.6)
+    ax3.set_title("Only the patch", fontsize=11, color=INK, loc="left")
+    ax3.grid(alpha=0.25, ls=":", axis="y")
+
+    fig.text(0.045, 0.335, "All four readouts, against the answers put in:",
+             fontsize=12.5, fontweight="bold", color=GREEN, va="top")
+    for row, (name, measured, truth, note_text) in enumerate(CURVED_READOUTS):
+        y = 0.288 - row * 0.036
+        fig.text(0.055, y, name, fontsize=11, color=INK, va="top")
+        fig.text(0.255, y, measured, fontsize=11, fontweight="bold", color=BLUE,
+                 va="top")
+        fig.text(0.360, y, f"truth {truth}", fontsize=11, color=MUTED, va="top")
+        fig.text(0.480, y, note_text, fontsize=11, color=GREEN, va="top")
+
+    _body(fig, 0.655, 0.335,
+          "13 PF, compacted, rise 40.943 Å, sagitta 100 px,\n"
+          "radius 0.75 µm, turning 17.9°.\n\n"
+          "Polarity and protofilament number were never at\n"
+          "risk — neither touches the axis. Spacing survives\n"
+          "because the bias is only 0.1% here; it grows as L²\n"
+          "and reaches 1% at about 0.5 µm of tube.", 0.30, 10.5)
+
+    note(fig, "The patch reads the register at 2.19× chance where the ring gives "
+              "0.69× — the first demonstration of that difference against KNOWN truth. "
+              "The cause is projection, not the template:\na 3-start helix spreads 13 "
+              "protofilaments' α/β phases over 1.5 dimer periods and cancels the dimer "
+              "order.  ·  The synthetic carries no bend STRAIN, so a strain measurement "
+              "here must return zero.", 0.045)
+    pdf.savefig(fig)
+    plt.close(fig)
+
+
 def slide_next(pdf: PdfPages) -> None:
     """The two things worth doing next."""
     fig = slide("Where to go next", "Two questions, both about whether these "
@@ -1965,6 +2128,8 @@ def main() -> None:
             slide_spacing_revisited,
             slide_seam_problem,
             slide_seam_register,
+            slide_curved_problem,
+            slide_curved_truth,
             slide_next,
         ]
         for make in slides:
