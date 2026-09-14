@@ -1,0 +1,36 @@
+filament_angle_deg: 279.0395
+cone_half_angle_deg: 10
+theta_center_deg: 90
+line:
+  y0: -62.48669878360988
+  x0: 2326.8070426617314
+  y1: 4184.108526051763
+  x1: 3002.402333057843
+spatial_box:
+  corners:
+  - - -101.76549473687218
+    - 2573.70211387309
+  - - -23.207902830347578
+    - 2079.9119714503727
+  - - 4223.387322005025
+    - 2755.507261846484
+  - - 4144.8297300985005
+    - 3249.2974042692017
+orientation_search_config:
+  orientation_configs:
+  - psi_min: 269.0395
+    psi_max: 289.0395
+    theta_min: 80
+    theta_max: 100
+    phi_min: 0
+    phi_max: 360
+    psi_step: 1.5
+    theta_step: 2.5
+  - psi_min: 89.0395
+    psi_max: 109.0395
+    theta_min: 80
+    theta_max: 100
+    phi_min: 0
+    phi_max: 360
+    psi_step: 1.5
+    theta_step: 2.5

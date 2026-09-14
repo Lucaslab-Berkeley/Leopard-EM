@@ -1,0 +1,36 @@
+template_volume_path: maps/GMPCPP_4patches_0.9194_bscale0.5.mrc
+particle_stack:
+  df_path: results_cropped/multipeak_constrained_box.csv
+  extracted_box_size: [640, 640]
+  original_template_size: [600, 600]
+defocus_refinement_config:
+  enabled: true
+  defocus_min: -200.0
+  defocus_max: 200.0
+  defocus_step: 50.0
+pixel_size_refinement_config:
+  enabled: false
+  pixel_size_min: -0.01
+  pixel_size_max: 0.01
+  pixel_size_step: 0.01
+orientation_refinement_config:
+  enabled: true
+  phi_step_coarse: 2.0
+  phi_step_fine: 0.4
+  theta_step_coarse: 2.0
+  theta_step_fine: 0.4
+  psi_step_coarse: 2.0
+  psi_step_fine: 0.4
+  base_grid_method: uniform
+preprocessing_filters:
+  whitening_filter: {enabled: true, do_power_spectrum: true, max_freq: 1.0}
+  bandpass_filter: {enabled: false}
+computational_config:
+  gpu_ids: [0, 1, 2, 3]
+  num_cpus: 8
+movie_config:
+  enabled: false
+  movie_path: ""
+  deformation_field_path: ""
+  pre_exposure: 0.0
+  fluence_per_frame: 1.0

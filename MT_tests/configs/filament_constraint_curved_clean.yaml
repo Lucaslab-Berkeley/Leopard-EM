@@ -1,0 +1,12 @@
+cone_half_angle_deg: 10
+theta_center_deg: 90
+phi_min: 0
+phi_max: 360
+psi_step: 1.5
+theta_step: 2.5
+base_grid_method: "uniform"
+micrograph_path: "/home/jdickerson/git/LucasLab/Leopard-EM/MT_tests/Frames/synthetic_curved_13pf_6dpv_sag100_clean.mrc"
+spatial_constraint_path: "/home/jdickerson/git/LucasLab/Leopard-EM/MT_tests/configs/filament_constraint_curved_clean.h5"
+regions:
+  - region_id: 1
+    polarity: both

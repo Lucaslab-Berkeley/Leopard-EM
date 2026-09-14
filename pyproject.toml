@@ -108,6 +108,10 @@ repository = "https://github.com/Lucaslab-Berkeley/Leopard-EM"
 line-length = 88
 target-version = "py39"
 src = ["src"]
+# MT_tests is a lab notebook kept as scripts, not library code: it is exploratory, its
+# data is gitignored, and its docstrings use Greek deliberately (alpha/beta tubulin,
+# psi, phi) where ruff would rather have ASCII.
+extend-exclude = ["MT_tests"]
 
 # https://docs.astral.sh/ruff/rules
 [tool.ruff.lint]

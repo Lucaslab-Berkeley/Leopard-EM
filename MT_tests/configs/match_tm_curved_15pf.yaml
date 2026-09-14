@@ -1,0 +1,50 @@
+micrograph_path: Frames/synthetic_curved_13pf_6dpv_sag100.mrc
+template_volume_path: maps/6dpu_15pf_2rings_flatB_0.9194_bscale0.5.mrc
+computational_config:
+  gpu_ids:
+  - 0
+  - 1
+  - 2
+  - 3
+  num_cpus: 8
+defocus_search_config:
+  enabled: true
+  defocus_max: 600.0
+  defocus_min: -600.0
+  defocus_step: 200.0
+match_template_result:
+  allow_file_overwrite: true
+  correlation_average_path: results_curved/output_correlation_average_15pf.mrc
+  correlation_variance_path: results_curved/output_correlation_variance_15pf.mrc
+  mip_path: results_curved/output_mip_15pf.mrc
+  orientation_phi_path: results_curved/output_orientation_phi_15pf.mrc
+  orientation_psi_path: results_curved/output_orientation_psi_15pf.mrc
+  orientation_theta_path: results_curved/output_orientation_theta_15pf.mrc
+  relative_defocus_path: results_curved/output_relative_defocus_15pf.mrc
+  scaled_mip_path: results_curved/output_scaled_mip_15pf.mrc
+optics_group:
+  label: micrograph_1
+  amplitude_contrast_ratio: 0.07
+  ctf_B_factor: 60.0
+  astigmatism_angle: -0.864719
+  defocus_u: 8390.503906
+  defocus_v: 8035.022461
+  phase_shift: 0.0
+  pixel_size: 0.9194
+  spherical_aberration: 2.7
+  voltage: 300.0
+orientation_search_config:
+  base_grid_method: uniform
+  psi_step: 2.5      # in degrees
+  theta_step: 3.5  # in degrees
+preprocessing_filters:
+  bandpass_filter:
+    enabled: false
+    falloff: 0.05
+    high_freq_cutoff: 0.5
+    low_freq_cutoff: 0.0
+  whitening_filter:
+    enabled: true
+    do_power_spectrum: true
+    max_freq: 1.0
+    num_freq_bins: null

@@ -1,0 +1,25 @@
+# Analysis data for the microtubule work: ~47 GB of simulated maps, micrographs and
+# search outputs. All of it is regenerable from the scripts and configs that ARE tracked
+# -- models/build_*.py rebuild the PDBs, simulate_*.py the maps and synthetics, and
+# run_match_*.py the searches -- so none of it belongs in the repository.
+
+maps/
+Frames/
+results_full/
+results_cropped/
+results_curved/
+
+# Fetched depositions and the models built from them.
+models/*.cif
+models/*.pdb
+
+# Constraint sidecars carry a per-pixel map per micrograph; the YAML beside them is
+# tracked, and make_filament_constraint.py rebuilds the HDF5 from the drawn paths.
+configs/*.h5
+configs/._*
+
+# Rendered figures and the status deck, both built by make_status_deck.py.
+*.pdf
+*.png
+*.parquet
+*.csv

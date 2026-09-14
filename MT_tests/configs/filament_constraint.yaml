@@ -1,0 +1,36 @@
+filament_angle_deg: 315
+cone_half_angle_deg: 10
+theta_center_deg: 90
+phi_min: 0
+phi_max: 360
+psi_step: 1.5
+theta_step: 2.5
+base_grid_method: "uniform"
+micrograph_path: "MT_tests/Frames/2025-05-23_14.39.26_25May23_GMPCPP1_26-94_0005_X-1Y+1-0_sum_DW_cropped_4.mrc"
+line:
+  y0: 972.3635
+  x0: 654.6536
+  y1: 976.8243
+  x1: 659.1144
+orientation_search_config:
+  orientation_configs:
+    - psi_step: 1.5
+      theta_step: 2.5
+      symmetry: null
+      phi_min: 0
+      phi_max: 360
+      theta_min: 80
+      theta_max: 100
+      psi_min: 305
+      psi_max: 325
+      base_grid_method: "uniform"
+    - psi_step: 1.5
+      theta_step: 2.5
+      symmetry: null
+      phi_min: 0
+      phi_max: 360
+      theta_min: 80
+      theta_max: 100
+      psi_min: 125
+      psi_max: 145
+      base_grid_method: "uniform"
