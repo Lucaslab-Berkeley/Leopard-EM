@@ -1128,9 +1128,15 @@ the old path. It speeds the membrane workflow up equally.
 ### The real curved micrograph — annotated and set up, not yet run
 
 `Frames/GDP_curved_mgraph.mrc`, 5760 × 4092 at 0.9194 Å/px. Two microtubules were drawn by
-hand in the napari tool, 320 px wide each, polarity left as `both`. The constraint
-(`configs/filament_constraint_gdp_curved.{yaml,h5}`) makes **3,911,662 px eligible, 16.60%
-of the frame**.
+hand in the napari tool, polarity left as `both`. The constraint
+(`configs/filament_constraint_gdp_curved.{yaml,h5}`) is built at **560 px width — 6,671,369
+px eligible, 28.30%** of the frame. It was 320 px (16.60%), which is too tight for the
+patch runs: the 5-protofilament patch template's box centre sits **93.4 px from the tube
+axis** and that offset rotates with phi, so patch detections sweep a 93 px circle about the
+axis and only 67 px of a ±160 px band would have been left for error in where the line was
+drawn. Ring templates are axis-centred and never had this problem. Widening costs
+specificity but no GPU time — eligibility gates which (pixel, orientation) pairs may win
+the MIP, not which are searched.
 
 **Click jitter had to be smoothed out first.** An interpolating spline passes through every
 clicked point, so hand jitter becomes real wiggle in the tangent — and the tangent *is*
@@ -1153,6 +1159,30 @@ predicts **−4.66%** there against a measured **−1.64%**. The shortening is t
 measured directly off the drawn curve instead: fit a line to the curve over a window,
 project, and take (projected span)/(arc length) − 1. That is exact, needs no small-angle
 expansion, and is correct for an S-bend.
+
+**The axis is smooth, but its curvature is free to vary — and does.** Nothing in the
+measurement assumes a constant bending rate. Measured on the drawn paths, κ changes sign
+over 19% / 81% of region 1 and 33% / 67% of region 2, so both have inflection points where
+the local radius passes through infinity; quoting one radius for a whole path is a summary
+statistic, not a model. The only smoothness requirement that is real is one of **scale**:
+the axis must carry no power near the 42 Å lattice repeat, or it starts absorbing the
+lattice signal into itself. The fitted splines allow one bend every **387 px (region 1, 15
+interior knots) and 430 px (region 2, 13 knots)** — 9 to 10 monomer repeats, comfortably
+coarser than the lattice, and the number to watch if the smoothing is ever loosened.
+
+**How faithfully the drawn paths track one tube is not settled, and cannot be settled from
+the image alone.** Averaging the image along each path's local normal does find a real
+tube-like dark feature — −3.7σ and −3.4σ against +0.3σ for position-randomised controls,
+and its position tracks a deliberate sideways shift exactly (−102 px → +170 px when the
+path is pushed −272 px), so it is a genuine fixed structure. But it sits about **100 px off
+the drawn centreline**, and window-by-window the local offset scatters from −300 to +320 px
+with no consistent value. Re-centring on those local minima makes the path markedly worse
+(arc 6198 → 7528 px, shortening −6.5% → −22%), which is what noise does and a real
+correction would not. The frame is packed with microtubules, so any transverse profile
+sees several of them and none of these measurements isolates one. This is what the wider
+constraint is insurance against. The search itself settles it for free: `report_axis`
+prints the detections' scatter about the drawn curve, and a path that wanders off its tube
+shows up there immediately.
 
 **What actually sets the segment length is not the bias, and not the bow.** Three
 candidates, and only one binds:
