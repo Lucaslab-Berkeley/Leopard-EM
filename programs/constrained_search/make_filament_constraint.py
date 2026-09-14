@@ -24,6 +24,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 # The drawing tool owns the geometry and the file formats; this only orchestrates.
 from napari_choose_filament_path import (
+    DEFAULT_SMOOTH_PX,
     build_sidecar_payload,
     dump_sidecar_yaml,
     estimate_n_orientations,
@@ -48,6 +49,11 @@ def main() -> None:
     parser.add_argument("--polarity", default=None,
                         choices=["both", "positive", "negative"],
                         help="override every path's polarity")
+    parser.add_argument("--smooth-px", type=float, default=DEFAULT_SMOOTH_PX,
+                        help="how far the spline may stray from each clicked point. "
+                             "Hand jitter otherwise lands in psi_center: an "
+                             "interpolating fit measured 3.4 deg rms on a drawn "
+                             "path, a third of a 10 deg cone. 0 interpolates.")
     parser.add_argument("--cone-half-angle-deg", type=float, default=10.0)
     parser.add_argument("--theta-center-deg", type=float, default=90.0)
     parser.add_argument("--psi-step", type=float, default=1.5)
@@ -74,7 +80,9 @@ def main() -> None:
     image, header_pixel_size = load_mrc_image(str(micrograph))
     pixel_size = args.pixel_size_angstrom or header_pixel_size
 
-    eligible, region_id, psi_center, distance = paint_path_maps(image.shape, paths)
+    eligible, region_id, psi_center, distance = paint_path_maps(
+        image.shape, paths, smooth_px=args.smooth_px
+    )
 
     yaml_path = args.output.expanduser().resolve()
     hdf5_path = yaml_path.with_suffix(".h5")
