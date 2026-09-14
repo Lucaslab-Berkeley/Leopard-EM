@@ -8,7 +8,13 @@
 # it, then run the second.
 #
 # Each search is skipped if its correlation table already exists, so this is safe to
-# re-run after an interruption. Use --force to redo one.
+# re-run after an interruption; delete a table to redo that one.
+#
+# Budget about an hour per search on four GPUs -- the two earlier full-frame runs on
+# this box finished 53 minutes apart. The constraint does NOT make this cheaper: it
+# gates which (pixel, orientation) pairs may win the MIP, but all 485,856 orientations
+# are still correlated over the whole frame. So stage 1 is roughly 4 hours and the
+# whole set roughly 8.
 #
 # Usage:
 #   run_scripts/run_gdp_curved.sh              # stage 1 only: the four PF templates
@@ -39,6 +45,7 @@ mkdir -p "$LOGDIR"
 echo "constraint $CONSTRAINT"
 echo "results    $RESULTS/"
 echo "tags       $TAGS"
+echo "estimate   about 1 h each on 4 GPUs"
 echo
 
 for tag in $TAGS; do
