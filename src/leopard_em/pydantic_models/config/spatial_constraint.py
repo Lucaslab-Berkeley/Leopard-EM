@@ -1121,6 +1121,44 @@ def psi_from_normal_yx(
     return psi.astype(np.float32)
 
 
+def _arc_count(sorted_psi: np.ndarray, centers: np.ndarray, half: float) -> np.ndarray:
+    """How many of ``sorted_psi`` lie within ``half`` degrees of each center.
+
+    ``sorted_psi`` must be sorted and wrapped into ``[0, 360)``. Only valid for
+    ``half < 180``; the arc may wrap past 360, which is the two-interval case.
+    """
+    low = (centers - half) % 360.0
+    high = (centers + half) % 360.0
+    left = np.searchsorted(sorted_psi, low, side="left")
+    right = np.searchsorted(sorted_psi, high, side="right")
+    wrapped = low > high
+    return np.where(wrapped, (sorted_psi.size - left) + right, right - left)
+
+
+def _count_by_arc_lookup(
+    grid_psi: np.ndarray,
+    psi_values: np.ndarray,
+    poles: np.ndarray,
+    half: float,
+) -> np.ndarray:
+    """Per-pixel orientation counts, grouped by distinct ``psi_center`` value.
+
+    Requires ``half < 90`` so the two pole arcs cannot overlap and their counts simply
+    add. Returns one count per entry of ``psi_values``.
+    """
+    sorted_psi = np.sort(np.asarray(grid_psi, dtype=np.float64) % 360.0)
+    values, inverse = np.unique(np.asarray(psi_values, dtype=np.float64) % 360.0,
+                                return_inverse=True)
+    positive = _arc_count(sorted_psi, values, half)
+    negative = _arc_count(sorted_psi, (values + 180.0) % 360.0, half)
+
+    allow_pos = ((poles & POLE_POSITIVE) != 0).astype(np.int64)
+    allow_neg = ((poles & POLE_NEGATIVE) != 0).astype(np.int64)
+    return (
+        allow_pos * positive[inverse] + allow_neg * negative[inverse]
+    ).astype(np.int32)
+
+
 def count_orientations_from_psi_center(
     euler_angles: np.ndarray,
     psi_center: np.ndarray,
@@ -1166,6 +1204,19 @@ def count_orientations_from_psi_center(
     step = max(int(chunk), 1)
     n_angles = int(box_ok.size)
     n_pix = int(in_play.sum())
+
+    # A pixel's count depends only on its psi_center VALUE and its pole mask, never on
+    # where the pixel is -- so pixels sharing an angle share an answer. And for a cone
+    # under 90 degrees the allowed angles form one contiguous arc of the sorted grid,
+    # which two binary searches settle. Together these turn an O(pixels x angles) scan
+    # into O(distinct angles x log n). On a 2046x2880 crop with 88,416 in-box angles
+    # that is the difference between ten hours and under a second.
+    if not cone_full and half < 90.0:
+        counts[in_play] = _count_by_arc_lookup(
+            psi[box_ok], psi_map[in_play], poles[in_play], half
+        )
+        return counts
+
     report = n_angles >= _ORIENT_COUNT_PROGRESS_MIN_ANGLES
     if report:
         print(

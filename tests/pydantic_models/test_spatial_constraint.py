@@ -429,3 +429,110 @@ def test_expand_orientation_psi_center_polarity_poles():
     maps.expand_orientation_against_grid(euler)
     assert maps.orientation_eligible is None
     assert int(maps.n_orientations[0, 0]) == 2
+
+
+def _count_orientations_by_scan(angles, psi_center, eligible, pole_mask, half_cone):
+    """The direct O(pixels x angles) count, as a reference for the arc lookup.
+
+    ``count_orientations_from_psi_center`` short-circuits cones under 90 degrees with a
+    sorted-arc lookup, which is what makes a full micrograph tractable (0.1 s against
+    nearly ten hours). This spells the answer out the slow, obvious way so the fast path
+    has something independent to agree with.
+    """
+    from leopard_em.pydantic_models.config.spatial_constraint import (
+        POLE_NEGATIVE,
+        POLE_POSITIVE,
+        circular_abs_diff_deg,
+    )
+
+    counts = np.zeros(eligible.shape, dtype=np.int32)
+    in_play = eligible > 0
+    phi, theta, psi = angles[:, 0], angles[:, 1], angles[:, 2]
+    in_box = (
+        (theta >= 90.0 - half_cone - 1e-3)
+        & (theta <= 90.0 + half_cone + 1e-3)
+        & (phi >= -1e-3)
+        & (phi <= 360.0 + 1e-3)
+    )
+    allow_pos = (pole_mask & POLE_POSITIVE) != 0
+    allow_neg = (pole_mask & POLE_NEGATIVE) != 0
+    half = half_cone + 1e-3
+    for value in psi[in_box]:
+        near = circular_abs_diff_deg(value, psi_center) <= half
+        opposite = circular_abs_diff_deg(value, (psi_center + 180.0) % 360.0) <= half
+        counts += (((allow_pos & near) | (allow_neg & opposite)) & in_play).astype(
+            np.int32
+        )
+    return counts
+
+
+@pytest.mark.parametrize("half_cone", [5.0, 10.0, 25.0, 60.0, 89.0, 120.0])
+def test_count_orientations_arc_lookup_matches_direct_scan(half_cone):
+    """The fast arc lookup must be exact, not merely close, at every cone width."""
+    from leopard_em.pydantic_models.config.spatial_constraint import (
+        count_orientations_from_psi_center,
+    )
+
+    rng = np.random.default_rng(int(half_cone))
+    angles = np.column_stack(
+        [
+            rng.uniform(0.0, 360.0, 600),
+            rng.uniform(70.0, 110.0, 600),
+            rng.uniform(0.0, 360.0, 600),
+        ]
+    )
+    psi_center = rng.uniform(0.0, 360.0, (16, 20))
+    eligible = (rng.random((16, 20)) > 0.3).astype(np.uint8)
+    # Every polarity combination appears, since each takes a different branch.
+    pole_mask = np.where(eligible > 0, rng.choice([1, 2, 3], (16, 20)), 0).astype(
+        np.uint8
+    )
+
+    fast = count_orientations_from_psi_center(
+        angles,
+        psi_center=psi_center,
+        eligible=eligible,
+        pole_mask=pole_mask,
+        cone_half_angle_deg=half_cone,
+        theta_center_deg=90.0,
+        phi_min=0.0,
+        phi_max=360.0,
+    )
+    reference = _count_orientations_by_scan(
+        angles, psi_center, eligible, pole_mask, half_cone
+    )
+    assert np.array_equal(fast, reference)
+    # Ineligible pixels must stay at zero whichever path ran.
+    assert not fast[eligible == 0].any()
+
+
+def test_count_orientations_shares_answers_between_equal_angles():
+    """Pixels with the same psi_center must get the same count.
+
+    This is the assumption the grouped lookup rests on, so it is worth asserting
+    directly rather than only through the equivalence test.
+    """
+    from leopard_em.pydantic_models.config.spatial_constraint import (
+        count_orientations_from_psi_center,
+    )
+
+    angles = np.column_stack(
+        [
+            np.zeros(72),
+            np.full(72, 90.0),
+            np.arange(0.0, 360.0, 5.0),
+        ]
+    )
+    psi_center = np.array([[10.0, 10.0, 200.0], [10.0, 200.0, 200.0]])
+    eligible = np.ones((2, 3), dtype=np.uint8)
+    pole_mask = np.full((2, 3), 1, dtype=np.uint8)
+
+    counts = count_orientations_from_psi_center(
+        angles,
+        psi_center=psi_center,
+        eligible=eligible,
+        pole_mask=pole_mask,
+        cone_half_angle_deg=12.0,
+    )
+    assert len(np.unique(counts[psi_center == 10.0])) == 1
+    assert len(np.unique(counts[psi_center == 200.0])) == 1
