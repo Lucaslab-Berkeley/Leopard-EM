@@ -21,7 +21,7 @@ Equalisation applied to every output:
 * axis on +z through the origin, centred on the centre of mass
 * optional flattening of B-factors to a common constant
 
-Usage:  python build_mt_templates.py [--rings 2] [--outdir .]
+Usage:  python build_mt_templates.py [--rings 2] [--outdir models]
 """
 
 import argparse
@@ -352,7 +352,12 @@ def build(
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--rings", type=int, default=2, help="dimer rings per template")
-    parser.add_argument("--outdir", type=pathlib.Path, default=pathlib.Path.cwd())
+    # Next to this script, not in the caller's cwd: everything downstream looks for
+    # these under models/, and defaulting to cwd silently scatters the PDBs (and
+    # re-downloads the depositions) wherever the builder happened to be invoked from.
+    # build_patch_template.py and build_seam_controls.py already default this way.
+    parser.add_argument("--outdir", type=pathlib.Path,
+                        default=pathlib.Path(__file__).resolve().parent)
     parser.add_argument(
         "--protofilaments",
         type=int,

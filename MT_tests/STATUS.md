@@ -1125,13 +1125,85 @@ binary searches settle. Now **0.24 s**. Verified bit-identical against the origi
 across cones of 5–89° and every polarity combination, with the wide-cone case still taking
 the old path. It speeds the membrane workflow up equally.
 
+### The real curved micrograph — annotated and set up, not yet run
+
+`Frames/GDP_curved_mgraph.mrc`, 5760 × 4092 at 0.9194 Å/px. Two microtubules were drawn by
+hand in the napari tool, 320 px wide each, polarity left as `both`. The constraint
+(`configs/filament_constraint_gdp_curved.{yaml,h5}`) makes **3,911,662 px eligible, 16.60%
+of the frame**.
+
+**Click jitter had to be smoothed out first.** An interpolating spline passes through every
+clicked point, so hand jitter becomes real wiggle in the tangent — and the tangent *is*
+`psi_center`. Measured on the drawn paths, interpolation put **3.40° rms and 14.07° peak**
+into psi on path 1, and 3.37°/9.71° on path 2. Against a ±10° cone that is a third of the
+allowed range spent on drawing noise, which excludes correct orientations. A microtubule's
+persistence length is millimetres, so it cannot bend on the scale of a few hundred Å;
+variation there is the hand, not the specimen. `smooth_px = 5.0` (`splprep`'s `s =
+n·smooth_px²`) drops it to **0.76°/3.56°** and **0.73°/4.35°**.
+
+| | arc | chord | arc − chord | psi turn | median R | departure from a line |
+|---|---|---|---|---|---|---|
+| region 1 | 6198 px (570 nm) | 5799 px | **+6.88%** | −74.4° | 4671 px (0.43 µm) | 265 px rms, 657 px peak |
+| region 2 | 6013 px (553 nm) | 5915 px | **+1.66%** | −59.7° | 4404 px (0.40 µm) | 123 px rms, 327 px peak |
+
+These bend far harder than the synthetic, and they are **not circular arcs**. Region 2
+turns 60° end to end yet its arc exceeds its chord by under 2%, which only an S-bend does.
+So the `−L²/(40R²)` law — derived for constant curvature, and confirmed on the synthetic —
+predicts **−4.66%** there against a measured **−1.64%**. The shortening is therefore
+measured directly off the drawn curve instead: fit a line to the curve over a window,
+project, and take (projected span)/(arc length) − 1. That is exact, needs no small-angle
+expansion, and is correct for an S-bend.
+
+**What actually sets the segment length is not the bias, and not the bow.** Three
+candidates, and only one binds:
+
+- the *rise bias* is measured per segment and divided out, so it does not bind;
+- the *sideways bow* costs nothing at all — `extract_lattice_sites` line 1552 is `along, _
+  = filament_coordinates(...)`, it discards the transverse coordinate and applies **no
+  transverse gate whatsoever**. (The 12 px `xy_radius_px` is the bootstrap peak-suppression
+  radius, and separately a matching window in `score_lattice_model`; neither is in this
+  path.)
+- what binds is **site assignment**, which rounds the axial coordinate to the nearest
+  repeat. The lattice is uniform in *arc* length and the measurement is in *chord* length;
+  the best linear relation between them is the shortening and is absorbed into the fitted
+  rise, so only the **residual** mis-indexes sites. That residual is what makes the
+  deviation-against-index plot bow.
+
+Over the whole of region 1 that residual is **110 Å — 2.7 monomers**, so a single straight
+axis does not merely bias the rise there, it assigns sites to the wrong subunit entirely.
+Cutting at 5 Å (a quarter of the ±20.5 Å rounding window; the synthetic sits at ≈2.3 Å and
+recovered its rise to 0.006 Å) gives **5 segments of 28 repeats** for region 1 and **4 of
+34** for region 2 — long enough to fit a rise on.
+
+The scripts, in run order:
+
+| script | what it does |
+|---|---|
+| `run_scripts/setup_gdp_curved.py` | writes the 8 configs; all 8 maps now simulated |
+| `run_scripts/run_gdp_curved.sh` | runs them in sequence, skipping finished ones |
+| `run_scripts/compare_gdp_curved.py` | paired site-by-site ranking, pooled and per region |
+| `run_scripts/analyse_gdp_curved.py` | the four readouts, per region, per segment |
+
+Protofilament number is run first because it decides which lattice pair and which patch are
+worth running at all — competing a 13-PF expanded model against a 14-PF compacted one would
+confound the two questions. Lattice spacing is then asked at the winning N, with both
+templates built from the **same 6DPU atoms** so there is no model-quality confound to
+separate out.
+
+The drawing is the only external control available on real data, and it is used as one:
+polarity is scored against the drawn tangent per segment, and the straight-axis residual
+against the drawn curve's own departure from a line.
+
+**Nothing has been run — the GPUs were in use.**
+
 ### What is still open
 
 - **The curved axis itself is not built.** Everything above uses the existing straight
   fit, deliberately, so there is a measured baseline rather than an assertion. See the
-  plan for `FilamentCurve` and arc-length projection.
+  plan for `FilamentCurve` and arc-length projection. The segment-wise workaround here is
+  exactly that: a piecewise-constant approximation to a curved axis.
 - **Bend strain** needs a bent atomic model; the tiled synthetic has none.
-- **A 13-PF patch on the real GDP micrograph** has not been run.
+- **The eight searches on the real GDP micrograph** are set up but not run.
 - The synthetic's noise is a phase-randomised real frame. Using the GDP frame buried the
   tube — its power spectrum is full of microtubule crosshatch — so the GMPCPP frame is
   used instead, being mostly ice.

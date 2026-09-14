@@ -33,22 +33,26 @@ def main() -> None:
     """Run one constrained search on the curved synthetic."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--tag", default="truth_13pf_6dpv",
-                        help="which config/match_tm_curved_<tag>.yaml to run")
+                        help="which configs/match_tm_<prefix><tag>.yaml to run")
+    parser.add_argument("--prefix", default="curved_",
+                        help="config name prefix; '' for a bare tag")
+    parser.add_argument("--results", default="results_curved",
+                        help="directory the correlation table is written to")
     parser.add_argument("--gpus", type=int, nargs="+", default=None)
     parser.add_argument("--constraint", type=Path, default=CONSTRAINT_YAML)
     args = parser.parse_args()
 
     os.chdir(MT_ROOT)
-    config_path = MT_ROOT / "configs" / f"match_tm_curved_{args.tag}.yaml"
+    config_path = MT_ROOT / "configs" / f"match_tm_{args.prefix}{args.tag}.yaml"
     if not config_path.exists():
         raise FileNotFoundError(config_path)
 
     manager = MatchTemplateManager.from_yaml(str(config_path))
     if args.gpus:
         manager.computational_config.gpu_ids = list(args.gpus)
-    manager.match_template_result.correlation_table_path = (
-        f"results_curved/output_correlation_table_{args.tag}.h5"
-    )
+    table = f"{args.results}/output_correlation_table_{args.prefix}{args.tag}.h5"
+    (MT_ROOT / args.results).mkdir(parents=True, exist_ok=True)
+    manager.match_template_result.correlation_table_path = table
 
     constraint = FilamentConstraint.from_yaml(str(args.constraint))
     constraint.stats_from_valid_orientations_defocus = (
@@ -69,7 +73,7 @@ def main() -> None:
     print(f"wall time {time.strftime('%H:%M:%S', time.gmtime(time.time() - start))}")
 
     frame = manager.results_to_dataframe(locate_peaks_kwargs={"false_positives": 1.0})
-    out = MT_ROOT / "results_curved" / f"results_{args.tag}.csv"
+    out = MT_ROOT / args.results / f"results_{args.prefix}{args.tag}.csv"
     out.parent.mkdir(parents=True, exist_ok=True)
     frame.to_csv(out, index=True)
     print(f"wrote {out}  ({len(frame)} peaks)")
