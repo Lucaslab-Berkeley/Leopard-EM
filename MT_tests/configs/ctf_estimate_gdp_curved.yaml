@@ -1,0 +1,80 @@
+# CTF estimation for the microtubule micrographs, PICASSO.
+#
+# Both frames are estimated together and deliberately so: the GMPCPP frame is the
+# CONTROL. Its defocus is already known (~8200 A) and a full 2DTM search on it worked
+# (max z 12.93), so if PICASSO reproduces that value the settings here are right and the
+# GDP answer can be trusted. Without the control, a GDP number would be unfalsifiable.
+#
+# Pixel size is 0.9194 A by external calibration. The MRC headers say 0.9432 A and are
+# WRONG -- the microscope was miscalibrated. Every template in maps/ is simulated at
+# 0.9194, so this must not be "corrected" to the header value.
+#
+# Knobs follow PICASSO's RECOMMENDED_CTF_ESTIMATE.md for untilted 300 kV movies.
+
+input_config:
+  # discover_images uses Path.glob, which has no brace expansion, so the two frames are
+  # named separately: the subject explicitly, the control by glob. Only the two real
+  # micrographs -- not the synthetics, which have no real CTF, and not the crops, which
+  # are the same specimen twice.
+  image_path: "/home/jdickerson/git/LucasLab/Leopard-EM/MT_tests/Frames/GDP_curved_mgraph.mrc"
+  images_directory: "/home/jdickerson/git/LucasLab/Leopard-EM/MT_tests/Frames"
+  images_pattern: "2025-05-23*_sum_DW.mrc"
+
+output_config:
+  output_directory: "/home/jdickerson/git/LucasLab/Leopard-EM/MT_tests/results_ctf"
+  allow_file_overwrite: true
+  output_plots: true
+  save_debug_arrays: false
+  optics_csv_filename: "ctf_estimate_optics.csv"
+  metrics_csv_filename: "ctf_estimate_metrics.csv"
+
+computational_config:
+  gpu_ids:
+    - 0
+    - 1
+    - 2
+    - 3
+  images_per_device: null
+  cpu_threads_per_worker: 1
+
+optical_config:
+  pixel_spacing_angstroms: 0.9194
+  voltage_kev: 300.0
+  spherical_aberration_mm: 2.7
+  amplitude_contrast_fraction: 0.07
+  target_pixel_spacing_angstroms: 1.4
+
+fitting_config:
+  defocus_grid_resolution: [1, 3, 3]
+  frequency_fit_range_angstroms: [30.0, 4.0]
+  defocus_range_microns: [0.0, 5.0]
+  patch_sidelength: 512
+  optimize_astigmatism: true
+  defocus_model: "grid"
+  optimize_phase_shift: false
+  optimize_envelope_1d: false
+  n_iterations_2d: 100
+  refine_steps_1d: 40
+  early_stopping: true
+  early_stopping_patience: 5
+  early_stopping_window_size: 3
+  early_stopping_tolerance: 1.0e-4
+
+# Grid then Adam on thickness only, with the 2D defocus frozen. Joint refinement pulls
+# the defocus away from CTFFind5.
+thickness_config:
+  refine_dim: "thickness"
+  use_tilt_corrected_ps: true
+  use_equiphase: true
+  frequency_fit_range_angstroms: [30.0, 4.0]
+  thickness_range_angstroms: [300.0, 4000.0]
+  thickness_step_angstroms: 100.0
+  n_iterations: 100
+  defocus_lr: 0.01
+  thickness_lr: 50.0
+  early_stopping: true
+  early_stopping_patience: 5
+  early_stopping_window_size: 3
+  early_stopping_tolerance: 1.0e-4
+
+laser_config: null

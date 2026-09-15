@@ -61,6 +61,39 @@ validated ice thickness, and do not jointly refine it with defocus.
 **Gate — do not skip.** A defocus fit with sensible astigmatism, not railed against the
 search bounds.
 
+### Cross-checking against CTFFIND — and the trap in it
+
+The lab's CTFFIND setup lives in `/home/data/jdickerson/MT_data/23May25_SPA_bare`
+(`ctffind_all.py` substitutes `&` in `ctffind_base.txt` and runs the result). It already
+uses pixel size 0.9194, so it is a genuine independent check. **But CTFFIND5 fits sample
+thickness by default, and on a low-defocus frame that breaks the defocus.**
+
+On `GDP_curved_mgraph` the thickness brute force railed at the top of its range (4000 Å) and
+the 2D refinement failed to recover it (3478 Å); a thickness model that wrong drags the
+defocus with it. Turning thickness off fixes it completely:
+
+| method | defocus_u | defocus_v | **mean** | astig angle |
+|---|---|---|---|---|
+| PICASSO | 2104.3 | 1873.9 | **1989.1** | −8.40° |
+| CTFFIND5, thickness **off** | 2183.0 | 1807.7 | **1995.3** | −9.92° |
+| independent 1D scan of CTFFIND's own radial spectrum | — | — | **2010** | — |
+| CTFFIND5, thickness on, 30–5 Å band | 4015.0 | 3243.9 | 3629.4 | +2.77° |
+| CTFFIND5, thickness on, 30–3.5 Å band | 3110.4 | 3045.0 | 3077.7 | +9.39° |
+
+The two thickness-on runs disagree with *each other* by 550 Å, which is the tell. Low defocus
+is exactly when this bites: at 1989 Å the first CTF zero is at 6.10 Å, so a 30–5 Å band holds
+a single zero at its very edge — not enough oscillation to pin thickness and defocus at once.
+On the GMPCPP control (8213 Å) there are six zeros in band and thickness-on is fine.
+
+⚠️ **`Thon rings with good fit up to ...` is not a quality flag on this build.** It returned
+the byte-identical `717.131958` on all three GDP runs, including ones that produced different
+defocus values.
+
+**Verdict for this frame: `GDP_curved_mgraph` is at ~1989 Å (0.199 µm)**, astigmatism 230 Å
+at −8.40°, thickness ~674 Å. The PICASSO per-micrograph YAML in `results_ctf/` is the value
+to use. Note the defocus *field* spans 1693–2291 Å across the frame (std 178 Å), so the
+±600 Å defocus search in the match_template config is both necessary and sufficient.
+
 > **This stage did not exist in the first version of this pipeline, and skipping it cost
 > ~4 GPU-hours for zero detections.** `setup_gdp_curved.py` copied another micrograph's
 > CTF: `defocus_u: 8390.503906`, `defocus_v: 8035.022461`,

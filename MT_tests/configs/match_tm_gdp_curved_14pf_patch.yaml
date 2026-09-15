@@ -23,12 +23,12 @@ match_template_result:
   relative_defocus_path: results_gdp_curved/output_relative_defocus_gdp_curved_14pf_patch.mrc
   scaled_mip_path: results_gdp_curved/output_scaled_mip_gdp_curved_14pf_patch.mrc
 optics_group:
-  label: micrograph_1
+  label: GDP_curved_mgraph
   amplitude_contrast_ratio: 0.07
   ctf_B_factor: 60.0
-  astigmatism_angle: -0.864719
-  defocus_u: 8390.503906
-  defocus_v: 8035.022461
+  astigmatism_angle: -8.400406971516361
+  defocus_u: 2104.2926609516144
+  defocus_v: 1873.9201128482819
   phase_shift: 0.0
   pixel_size: 0.9194
   spherical_aberration: 2.7
