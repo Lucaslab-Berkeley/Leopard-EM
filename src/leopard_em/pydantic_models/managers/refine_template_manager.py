@@ -25,6 +25,9 @@ from leopard_em.pydantic_models.data_structures import (
     export_particle_stack,
 )
 from leopard_em.pydantic_models.formats import REFINED_DF_COLUMN_ORDER
+from leopard_em.pydantic_models.results.match_template_result import (
+    check_file_path_and_permissions,
+)
 from leopard_em.utils.backend_setup import setup_particle_backend_kwargs
 from leopard_em.utils.data_io import (
     load_mrc_volume,
@@ -284,6 +287,8 @@ class RefineTemplateManager(BaseModel2DTM):
             Whether to overwrite an existing file at ``output_dataframe_path``. Defaults
             to False.
         """
+        check_file_path_and_permissions(output_dataframe_path, allow_file_overwrite)
+
         backend_kwargs = self.make_backend_core_function_kwargs()
 
         result = self.get_refine_result(backend_kwargs, correlation_batch_size)
@@ -339,6 +344,8 @@ class RefineTemplateManager(BaseModel2DTM):
             to False.
 
         """
+        check_file_path_and_permissions(output_dataframe_path, allow_file_overwrite)
+
         backend_kwargs = self.make_differentiable_backend_kwargs(
             image_stack=image_stack,
             mean_stack=mean_stack,

@@ -810,3 +810,44 @@ def setup_particle_backend_kwargs(
         "template_dft": template_dft,
         "projective_filters": projective_filters,
     }
+
+
+def ensure_phi_theta_major_euler_angles(euler_angles: torch.Tensor) -> torch.Tensor:
+    """Return ``euler_angles`` reordered into phi/theta-major Cartesian-product order.
+
+    Parameters
+    ----------
+    euler_angles : torch.Tensor
+        All Euler angles used in a search, shape ``(num_orientations, 3)``.
+
+    Returns
+    -------
+    torch.Tensor
+        ``euler_angles``, unchanged if already phi/theta-major (i.e., blocks of
+        ``n_psi`` consecutive rows share one (phi, theta) pair) or if it is not a
+        Cartesian product of (phi, theta) x psi at all. Otherwise, permuted to be
+        phi/theta-major.
+    """
+    phi_theta, phi_theta_idx = torch.unique(
+        euler_angles[:, :2], dim=0, return_inverse=True
+    )
+    psi, psi_idx = torch.unique(euler_angles[:, 2], return_inverse=True)
+
+    n_phi_theta = phi_theta.shape[0]
+    n_psi = psi.shape[0]
+
+    # Not a Cartesian product, so there is no phi/theta-major order to impose.
+    if n_phi_theta * n_psi != euler_angles.shape[0]:
+        return euler_angles
+
+    index = phi_theta_idx * n_psi + psi_idx
+    order = torch.argsort(index)
+
+    if torch.unique(index).numel() != euler_angles.shape[0]:
+        return euler_angles
+
+    # Short circuit if already in phi/theta-major order
+    if torch.equal(order, torch.arange(euler_angles.shape[0], device=order.device)):
+        return euler_angles
+
+    return euler_angles[order]

@@ -28,6 +28,7 @@ from leopard_em.pydantic_models.results import (
     MatchTemplateResultMRC,
 )
 from leopard_em.pydantic_models.results.correlation_table import CorrelationTable
+from leopard_em.utils.backend_setup import ensure_phi_theta_major_euler_angles
 from leopard_em.utils.ctf_utils import calculate_ctf_filter_stack
 from leopard_em.utils.data_io import load_mrc_image, load_mrc_volume
 from leopard_em.utils.fourier_slice import volume_to_rfft_fourier_slice
@@ -210,6 +211,7 @@ class MatchTemplateManager(BaseModel2DTM):
         # (phi, theta, psi) for ZYZ convention
         euler_angles = self.orientation_search_config.euler_angles
         euler_angles = euler_angles.to(torch.float32)
+        euler_angles = ensure_phi_theta_major_euler_angles(euler_angles)
 
         template_dft = volume_to_rfft_fourier_slice(template)
 

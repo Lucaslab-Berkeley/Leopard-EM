@@ -90,6 +90,10 @@ class CorrelationTable(BaseModel2DTM):
     psi_angles : list[float]
         List of in-plane rotation angles (in degrees, Euler angle psi, in ZYZ
         convention) used in the search.
+    euler_angles : list[tuple[float, float, float]] | None
+        Full (phi, theta, psi) angles per orientation. Set instead of
+        `phi_theta_angles` / `psi_angles` when the search space is not a Cartesian
+        product and so cannot be stored in the more compact factored form.
     search_index : list[int]
         Global search index defining defocus offset, phi/theta angles, and psi angle for
         each detection. Calculated as `i * (n_j * n_k) + j * n_k + k`, where `i` is the
@@ -122,8 +126,9 @@ class CorrelationTable(BaseModel2DTM):
 
     # Defining and indexing search space
     defocus_offsets: list[float]  # index 'i'
-    phi_theta_angles: list[tuple[float, float]]  # index 'j', out-of-plane rotations
-    psi_angles: list[float]  # index 'k', in-plane rotations
+    phi_theta_angles: list[tuple[float, float]] | None = None  # index 'j'
+    psi_angles: list[float] | None = None  # index 'k', in-plane rotations
+    euler_angles: list[tuple[float, float, float]] | None = None  # index 'j * n_k + k'
     search_index: list[int]  # i * (n_j * n_k) + j * n_k + k, length == num_observations
 
     # Other detection attributes
@@ -160,6 +165,7 @@ class CorrelationTable(BaseModel2DTM):
         df.attrs["defocus_offsets"] = self.defocus_offsets
         df.attrs["phi_theta_angles"] = self.phi_theta_angles
         df.attrs["psi_angles"] = self.psi_angles
+        df.attrs["euler_angles"] = self.euler_angles
         return df
 
     @classmethod
@@ -180,8 +186,9 @@ class CorrelationTable(BaseModel2DTM):
             correlation_threshold=float(df.attrs["correlation_threshold"]),
             num_observations=int(df.attrs["num_observations"]),
             defocus_offsets=list(df.attrs["defocus_offsets"]),
-            phi_theta_angles=[tuple(pair) for pair in df.attrs["phi_theta_angles"]],
-            psi_angles=list(df.attrs["psi_angles"]),
+            phi_theta_angles=df.attrs["phi_theta_angles"],
+            psi_angles=df.attrs["psi_angles"],
+            euler_angles=df.attrs.get("euler_angles"),
             search_index=df["search_index"].tolist(),
             x=df["x"].tolist(),
             y=df["y"].tolist(),
@@ -223,14 +230,20 @@ class CorrelationTable(BaseModel2DTM):
                 "defocus_offsets",
                 data=np.array(self.defocus_offsets, dtype=np.float32),
             )
-            search_space.create_dataset(
-                "phi_theta_angles",
-                data=np.array(self.phi_theta_angles, dtype=np.float32),
-            )
-            search_space.create_dataset(
-                "psi_angles",
-                data=np.array(self.psi_angles, dtype=np.float32),
-            )
+            if self.euler_angles is not None:
+                search_space.create_dataset(
+                    "euler_angles",
+                    data=np.array(self.euler_angles, dtype=np.float32),
+                )
+            else:
+                search_space.create_dataset(
+                    "phi_theta_angles",
+                    data=np.array(self.phi_theta_angles, dtype=np.float32),
+                )
+                search_space.create_dataset(
+                    "psi_angles",
+                    data=np.array(self.psi_angles, dtype=np.float32),
+                )
 
             detections = f.create_group("detections")
             detections.create_dataset(
@@ -270,9 +283,12 @@ class CorrelationTable(BaseModel2DTM):
             num_observations = int(f["metadata"].attrs["num_observations"])
 
             defocus_offsets = f["search_space/defocus_offsets"][:].tolist()
-            phi_theta_raw = f["search_space/phi_theta_angles"][:]
-            phi_theta_angles = [(float(row[0]), float(row[1])) for row in phi_theta_raw]
-            psi_angles = f["search_space/psi_angles"][:].tolist()
+            phi_theta_angles = psi_angles = full_angles = None
+            if "euler_angles" in f["search_space"]:
+                full_angles = f["search_space/euler_angles"][:].tolist()
+            else:
+                phi_theta_angles = f["search_space/phi_theta_angles"][:].tolist()
+                psi_angles = f["search_space/psi_angles"][:].tolist()
 
             search_index = f["detections/search_index"][:].tolist()
             x = f["detections/x"][:].tolist()
@@ -287,6 +303,7 @@ class CorrelationTable(BaseModel2DTM):
             defocus_offsets=defocus_offsets,
             phi_theta_angles=phi_theta_angles,
             psi_angles=psi_angles,
+            euler_angles=full_angles,
             search_index=search_index,
             x=x,
             y=y,
@@ -334,9 +351,16 @@ class CorrelationTable(BaseModel2DTM):
         corr_values = processed_correlation_table["correlation"]  # list[float]
 
         defocus_offsets = defocus_values.tolist()
-        phi_theta_angles, psi_angles = derive_orientation_grid_from_full_angles(
-            euler_angles
-        )
+        # Prefer the compact factored form, falling back to the full per-orientation
+        # angle list when the search space is not a Cartesian product.
+        full_angles = None
+        try:
+            phi_theta_angles, psi_angles = derive_orientation_grid_from_full_angles(
+                euler_angles
+            )
+        except ValueError:
+            phi_theta_angles, psi_angles = None, None
+            full_angles = euler_angles.tolist()
 
         search_index = (
             list(global_idx) if isinstance(global_idx, list) else global_idx.tolist()
@@ -359,6 +383,7 @@ class CorrelationTable(BaseModel2DTM):
             defocus_offsets=defocus_offsets,
             phi_theta_angles=phi_theta_angles,
             psi_angles=psi_angles,
+            euler_angles=full_angles,
             search_index=search_index,
             x=list(pos_x),
             y=list(pos_y),

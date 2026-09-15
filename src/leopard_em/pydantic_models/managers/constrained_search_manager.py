@@ -25,6 +25,9 @@ from leopard_em.pydantic_models.data_structures import (
     export_particle_stack,
 )
 from leopard_em.pydantic_models.formats import CONSTRAINED_DF_COLUMN_ORDER
+from leopard_em.pydantic_models.results.match_template_result import (
+    check_file_path_and_permissions,
+)
 from leopard_em.utils.backend_setup import (
     _setup_correlation_stacks_from_micrographs,
     setup_images_filters_particle_stack,
@@ -247,6 +250,14 @@ class ConstrainedSearchManager(BaseModel2DTM):
             Whether to overwrite an existing file at ``output_dataframe_path``. Defaults
             to False.
         """
+        output_base, _ = os.path.splitext(output_dataframe_path)
+        for path in (
+            output_dataframe_path,
+            f"{output_base}_parameters.csv",
+            f"{output_base}_above_threshold.csv",
+        ):
+            check_file_path_and_permissions(path, allow_file_overwrite)
+
         backend_kwargs = self.make_backend_core_function_kwargs()
 
         result = self.get_refine_result(backend_kwargs, orientation_batch_size)

@@ -584,7 +584,7 @@ def _core_match_template_single_gpu(
                 # flattened into one contiguous dimension.
                 indices = torch.arange(
                     i,
-                    i + orientation_batch_size,
+                    i + euler_angles_batch.shape[0],  # may be a partial batch
                     dtype=torch.int32,
                     device=device,
                 )

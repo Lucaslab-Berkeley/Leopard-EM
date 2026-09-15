@@ -144,6 +144,19 @@ class _MatchTemplateResultBase(BaseModel2DTM):
     orientation_phi: ExcludedTensor
     relative_defocus: ExcludedTensor
 
+    ###########################
+    ### Pydantic Validators ###
+    ###########################
+
+    @model_validator(mode="after")  # type: ignore
+    def validate_correlation_table_path(self) -> Self:
+        """Validate ``correlation_table_path``, when set, like the other outputs."""
+        if self.correlation_table_path is not None:
+            check_file_path_and_permissions(
+                self.correlation_table_path, self.allow_file_overwrite
+            )
+        return self
+
     ############################################
     ### Functional (data processing) methods ###
     ############################################
