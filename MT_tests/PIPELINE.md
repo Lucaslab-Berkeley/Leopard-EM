@@ -21,23 +21,54 @@ level and cannot do this test at any exposure.
 
 ---
 
-## Stage 0 — Imaging parameters  ·  **Template: NONE**
+## Stage 0 — CTF, per micrograph  ·  **Template: NONE**
 
-Estimate defocus and astigmatism **from this micrograph**, and settle the pixel size.
+Estimate defocus and astigmatism **from this micrograph**, with PICASSO.
 
-- `torch_ctf_estimation.estimate_ctf` (installed in the `torch-ctf-estimation` env).
-- Pixel size: the MRC header and the project's calibrated value are not always the same.
-  For `GDP_curved_mgraph.mrc` the header says **0.9432 Å** while the configs assert
-  **0.9194 Å**. A 2.5% error is a 15 px mismatch across a 600 px template.
+**Pixel size is not in question: it is 0.9194 Å**, externally calibrated. The MRC header
+says 0.9432 Å and the header is **wrong** — the microscope was miscalibrated. Do not
+"correct" configs back to the header value. Every template in `maps/` is simulated at
+0.9194, so changing it would invalidate the whole template library as well as the search.
 
-**Gate — do not skip.** Thon rings fit, astigmatism sensible.
+**CTF: use PICASSO** (`/home/jdickerson/git/LucasLab/PICASSO/programs/ctf_estimation`), which
+writes Leopard-EM optics columns directly — `ctf_estimate_optics.csv` plus a per-micrograph
+`*_optics.yaml` that drops straight into the `optics_group` block.
+
+Copy `ctf_estimate_example_config.yaml` and set:
+
+| knob | value | why |
+|---|---|---|
+| `optical_config.pixel_spacing_angstroms` | `0.9194` | our calibration, not the header |
+| `target_pixel_spacing_angstroms` | `1.4` | Nyquist 2.8 Å keeps the 4 Å thickness cutoff in band |
+| `fitting_config.frequency_fit_range_angstroms` | `[30, 4]` | defocus band |
+| `patch_sidelength` | `512` | matches a typical CTFFind box |
+| `defocus_grid_resolution` | `[1, 3, 3]` | gentle spatial field, untilted |
+| `defocus_range_microns` | `[0.0, 5.0]` | **widen if the fit rails at the edge** — this frame's defocus is unknown |
+| `optimize_envelope_1d` | `false` | envelope competes with thickness |
+| `thickness_config.refine_dim` | `"thickness"` | freeze the 2D defocus; joint refinement pulls defocus off |
+
+Run from the PICASSO repo root, always `uv run --no-sync`:
+
+```bash
+uv run --no-sync python programs/ctf_estimation/run_ctf_estimation.py
+```
+
+The **2D** defocus is the reported one (`defocus_u`/`defocus_v` in the optics CSV). On a
+5-micrograph set it tracked CTFFind5 to within ~40 Å. `thickness_angstroms` is PICASSO's own
+CTF\(_t\) number and is systematically ~170–270 Å thicker than CTFFind — do not treat it as
+validated ice thickness, and do not jointly refine it with defocus.
+
+**Gate — do not skip.** A defocus fit with sensible astigmatism, not railed against the
+search bounds.
 
 > **This stage did not exist in the first version of this pipeline, and skipping it cost
 > ~4 GPU-hours for zero detections.** `setup_gdp_curved.py` copied another micrograph's
-> CTF: the values `defocus_u: 8390.503906`, `defocus_v: 8035.022461`,
+> CTF: `defocus_u: 8390.503906`, `defocus_v: 8035.022461`,
 > `astigmatism_angle: -0.864719` appear in *every* config in `configs/`, GMPCPP and GDP
 > alike. Three full searches completed and found **0 peaks** (max z 6.67 / 6.81 / 6.84
-> against a 7.62 threshold).
+> against a 7.62 threshold). With the pixel size known to be right, **the wrong defocus is
+> the sole remaining explanation** — and the search only scanned ±600 Å around it, so a
+> frame at a genuinely different defocus could not have been found.
 
 Cost: seconds.
 
@@ -203,7 +234,7 @@ Period-2 alternation of patch score against the axial index from Stage 4.
 
 | stage | template | determines | cost |
 |---|---|---|---|
-| 0 CTF + pixel size | none | — (gate) | seconds |
+| 0 CTF (PICASSO) | none | — (gate) | seconds |
 | 1 annotation | none, sized for patch | filament paths, ψ field | minutes (human) |
 | 2 full `match_template` | **RING** | polarity; PF number (harmonic) | ~1.3 h |
 | 3 `refine_template` | **RING** | sharpened angles | minutes |
