@@ -1,0 +1,65 @@
+# Stage 3 of PIPELINE.md -- refine the RING reference on its own peaks.
+#
+# The coarse steps below are NOT free parameters: they are the steps the match_template
+# search actually used (psi 2.5, theta 3.5, defocus 200), because that is what
+# coarse_*_step means. get_local_high_resolution_angles builds a grid covering one
+# coarse cell at the fine step, so the refine samples what the coarse search skipped and
+# nothing it already did.
+#
+# Matching them is not cosmetic. The project's older refine config used 2.0/2.0/2.0,
+# which after composition with each particle's orientation spreads theta by only 1.94
+# degrees against a coarse theta cell of +/-1.75 -- it would miss half of every cell.
+# With 2.5/3.5 the spreads are phi 5.07, theta 3.55, psi 6.54 degrees, covering all three.
+#
+# phi_step_coarse is inert in the 'uniform' branch (phi's range is taken from
+# coarse_psi_step, and phi_step is ignored for non-cartesian base grids). It is set to
+# the match_template value anyway so the intent is on the record.
+
+template_volume_path: maps/6dpu_atoms_6dpv_lattice_13pf_2rings_flatB_0.9194_bscale0.5.mrc
+
+particle_stack:
+  df_path: results_gdp_curved/results_gdp_curved_13pf.csv
+  extracted_box_size: [640, 640]
+  original_template_size: [600, 600]
+
+# match_template stepped defocus by 200 A, so one coarse cell is +/-100. Refine inside it.
+defocus_refinement_config:
+  enabled: true
+  defocus_min: -100.0
+  defocus_max: 100.0
+  defocus_step: 25.0
+
+pixel_size_refinement_config:
+  enabled: false
+  pixel_size_min: -0.01
+  pixel_size_max: 0.01
+  pixel_size_step: 0.01
+
+orientation_refinement_config:
+  enabled: true
+  base_grid_method: uniform
+  phi_step_coarse: 2.5     # inert here; match_template's effective phi sampling
+  phi_step_fine: 0.4
+  theta_step_coarse: 3.5   # == match_template theta_step
+  theta_step_fine: 0.4
+  psi_step_coarse: 2.5     # == match_template psi_step
+  psi_step_fine: 0.4
+
+preprocessing_filters:
+  whitening_filter:
+    enabled: true
+    do_power_spectrum: true
+    max_freq: 1.0
+  bandpass_filter:
+    enabled: false
+
+computational_config:
+  gpu_ids: [0, 1, 2, 3]
+  num_cpus: 8
+
+movie_config:
+  enabled: false
+  movie_path: ""
+  deformation_field_path: ""
+  pre_exposure: 0.0
+  fluence_per_frame: 1.0
