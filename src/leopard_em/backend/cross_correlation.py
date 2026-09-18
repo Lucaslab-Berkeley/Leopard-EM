@@ -8,26 +8,7 @@ from leopard_em.backend.utils import (
     normalize_template_projection,
     normalize_template_projection_compiled,
 )
-
-# --- Import handling for zipfft library (which may not be installed) ------------------
-try:
-    import zipfft
-
-    # Determine which batch sizes are supported by zipFFT for powers of 2
-    # pylint: disable=c-extension-no-member
-    ZIPFFT_SUPPORTED_CONFIGS = zipfft.padded_rconv2d.get_supported_conv_configs()
-    ZIPFFT_SUPPORTED_BATCH_SIZES = [  # NOTE: restrictive to 4k images and 512 templates
-        x[-2]
-        for x in ZIPFFT_SUPPORTED_CONFIGS
-        if (x[0] == 512 and x[1] == 512 and x[2] == 4096 and x[3] == 4096)
-    ]
-    ZIPFFT_SUPPORTED_BATCH_SIZES.sort(reverse=True)  # largest to smallest
-    ZIPFFT_AVAILABLE = True
-except ImportError:
-    zipfft = None
-    ZIPFFT_SUPPORTED_BATCH_SIZES = []
-    ZIPFFT_SUPPORTED_CONFIGS = []
-    ZIPFFT_AVAILABLE = False
+from leopard_em.utils.zipfft_support import zipfft, zipfft_supported_batch_sizes
 
 
 # pylint: disable=too-many-locals,E1102
@@ -560,10 +541,13 @@ def do_batched_orientation_cross_correlate_zipfft(
 
     # Accounting for RFFT shape
     projection_shape_real = (template_dft.shape[1], template_dft.shape[2] * 2 - 2)
+    # NOTE: 'image_dft' is pre-transposed to (W // 2 + 1, H) for the zipFFT kernel's
+    # memory layout only; it is not a semantic transpose of the image, so the (H, W)
+    # real-space shape below must swap the axes back to recover true (rows, cols).
     image_shape_real = (
-        image_dft.shape[0] * 2 - 2,
         image_dft.shape[1],
-    )  # NOTE: transposed
+        image_dft.shape[0] * 2 - 2,
+    )
 
     num_orientations = rotation_matrices.shape[0]
     num_Cs = projective_filters.shape[0]  # pylint: disable=invalid-name
@@ -612,6 +596,13 @@ def do_batched_orientation_cross_correlate_zipfft(
         device=image_dft.device,
     )
 
+    # NOTE: zipFFT is compiled for a fixed set of (template, image, batch) configs.
+    # 'image_shape_real' is transposed here, matching the layout handed to
+    # 'zipfft.padded_rconv2d.corr' below.
+    supported_batch_sizes = zipfft_supported_batch_sizes(
+        projection_shape_real, image_shape_real
+    )
+
     for j in range(num_defocus):
         for k in range(num_Cs):
             # Use zipfft for cross-correlation
@@ -623,7 +614,7 @@ def do_batched_orientation_cross_correlate_zipfft(
             # NOTE: zipFFT only supports certain batch sizes for optimal performance.
             #       If requested orientation batch size not supported, fall back to
             #       per-orientation (batch=1) processing.
-            if num_orientations in ZIPFFT_SUPPORTED_BATCH_SIZES:
+            if num_orientations in supported_batch_sizes:
                 # pylint: disable=c-extension-no-member
                 zipfft.padded_rconv2d.corr(
                     projections[k, j, ...],

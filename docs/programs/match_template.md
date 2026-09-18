@@ -180,6 +180,22 @@ computational_config:
     If you encounter the error `RuntimeError: CUDA error: invalid device ordinal`, then you've probably listed more GPU devices than are on your machine!
     Check how many GPUs you have (for example with `nvidia-smi`) and update the `gpu_ids` field accordingly.
 
+### Padding to a fast FFT size
+
+Cross-correlation runtime is dominated by FFTs of the micrograph, and FFT cost depends strongly on the prime factorization of the image dimensions.
+Images may be padded to a "fast" size, and this is controlled by the `fast_fft_padding` block in the configuration file.
+
+```yaml
+fast_fft_padding:
+  enabled: true
+  allowed_factors: [2, 3]  # Prime factors allowed in the padded size; must include 2
+  target_shape:            # e.g. [4096, 4096] to force an exact size (null = automatic)
+  noise_seed: 0            # Seed for the noise filling the padded region
+```
+
+Padding is added only to the **bottom and right** of the image and is filled with Gaussian noise whose mean and standard deviation match the micrograph's.
+Results are automatically un-padded upon return from the backend; padding is invisible to the end-user and should not affect the results of the match template search.
+
 ### Choosing a cross-correlation backend
 
 The `computational_config.backend` field selects which implementation computes the 2D cross-correlations for each orientation/defocus combination.
@@ -200,6 +216,9 @@ computational_config:
 
     The `zipfft` backend requires the reference template volume to be cubic.
     By default, `zipfft` supports 512x512x512 templates and 4096x4096 images, but other sizes can be compiled from source (see the [zipFFT GitHub page](www.github.com/mgiammar/zipFFT) for details on compiling an expanded set of shapes/sizes).
+
+    When `backend: zipfft` is selected, [fast FFT padding](#padding-to-a-fast-fft-size) automatically snaps the image up to a compiled zipFFT size where one fits, which is usually what makes this backend usable on real micrographs.
+    A warning is emitted and the image is padded to the next fast FFT size instead — at which point the `zipfft` backend cannot run, and you should either compile the required shape or choose another backend.
 
     zipFFT also only supports a fixed set of batch sizes internally. For best performance, set `orientation_batch_size` (passed to `run_match_template`) to one of zipFFT's compiled supported batch sizes; any other value still runs correctly via an automatic per-orientation (batch=1) fallback, just without the full performance benefit.
 

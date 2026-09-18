@@ -25,6 +25,7 @@ def test_config_imports():
             ComputationalConfigMatch,
             ComputationalConfigRefine,
             DefocusSearchConfig,
+            FastFFTPaddingConfig,
             OrientationSearchConfig,
             PhaseRandomizationFilterConfig,
             PixelSizeSearchConfig,

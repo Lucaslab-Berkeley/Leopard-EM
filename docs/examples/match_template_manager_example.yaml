@@ -2,6 +2,8 @@ computational_config:
   gpu_ids:
   - 0
   num_cpus: 1
+fast_fft_padding:
+  enabled: true          # Pad the micrograph up to a fast FFT size, then crop results back
 defocus_search_config:
   defocus_max: 600.0
   defocus_min: -600.0

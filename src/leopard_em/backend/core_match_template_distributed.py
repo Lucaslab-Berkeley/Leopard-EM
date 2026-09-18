@@ -397,6 +397,7 @@ def core_match_template_distributed(
     num_cuda_streams: int = 1,
     backend: str = "streamed",
     compute_correlation_table: bool = True,
+    unpadded_valid_shape: tuple[int, int] | None = None,
     **kwargs: dict,
 ) -> dict[str, torch.Tensor]:
     """Distributed multi-node core function for the match template program.
@@ -423,6 +424,11 @@ def core_match_template_distributed(
         Whether to track cross-correlation values which surpass the correlation table
         threshold. If False, this (comparatively expensive) computation is skipped.
         Default is True.
+    unpadded_valid_shape : tuple[int, int], optional
+        Shape of the valid correlation region to accumulate, overriding the shape
+        implied by the image and template. Used when the image was padded up to a
+        fast FFT size. Only read on rank zero; broadcast to all other ranks.
+        Default is None.
     **kwargs : dict[str, torch.Tensor]
         Additional keyword arguments passed to the single-GPU core function. For the
         zeroth rank this should be a dictionary of Tensor objects with the following
@@ -471,6 +477,18 @@ def core_match_template_distributed(
         pixel_values,
     ) = _extract_and_broadcast_tensors(device, rank, kwargs)
 
+    # Broadcast the (optional) unpadded valid shape from rank zero.
+    valid_shape_list: list[tuple[int, int] | None] = [
+        unpadded_valid_shape if rank == 0 else None
+    ]
+    dist.broadcast_object_list(valid_shape_list, src=0)
+    unpadded_valid_shape = valid_shape_list[0]
+
+    # Broadcast backend from rank zero; only rank zero does fallback checking for zipfft
+    backend_list: list[str] = [backend]
+    dist.broadcast_object_list(backend_list, src=0)
+    backend = backend_list[0]
+
     ##############################################################
     ### Pre-multiply the whitening filter with the CTF filters ###
     ##############################################################
@@ -517,6 +535,7 @@ def core_match_template_distributed(
         backend=backend,
         device=device,
         compute_correlation_table=compute_correlation_table,
+        unpadded_valid_shape=unpadded_valid_shape,
     )
     dist.barrier()
 

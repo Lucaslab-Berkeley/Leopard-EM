@@ -164,6 +164,7 @@ def core_match_template(
     backend: str = "streamed",
     mag_matrix: torch.Tensor | None = None,
     compute_correlation_table: bool = True,
+    unpadded_valid_shape: tuple[int, int] | None = None,
 ) -> dict[str, torch.Tensor | dict | int]:
     """Core function for performing the whole-orientation search.
 
@@ -225,6 +226,11 @@ def core_match_template(
         Whether to track cross-correlation values which surpass the correlation table
         threshold. If False, this (comparatively expensive) computation is skipped and
         the returned "correlation_table" will be empty. Default is True.
+    unpadded_valid_shape : tuple[int, int], optional
+        Shape of the valid correlation region to accumulate, overriding the shape
+        implied by the image and template. Used when the image was padded up to a
+        fast FFT size so that results match an unpadded search exactly. Must not be
+        larger than the implied shape. Default is None (use the implied shape).
 
     Returns
     -------
@@ -331,6 +337,7 @@ def core_match_template(
             "device": d,
             "mag_matrix": mag_matrix,
             "compute_correlation_table": compute_correlation_table,
+            "unpadded_valid_shape": unpadded_valid_shape,
         }
 
         kwargs_per_device.append(kwargs)
@@ -387,6 +394,27 @@ def core_match_template(
     }
 
 
+def _resolve_valid_correlation_shape(
+    implied_shape: tuple[int, int],
+    unpadded_valid_shape: tuple[int, int] | None,
+) -> tuple[int, int]:
+    """Choose the region over which per-pixel statistics are accumulated."""
+    if unpadded_valid_shape is None:
+        return implied_shape
+
+    if (
+        unpadded_valid_shape[0] > implied_shape[0]
+        or unpadded_valid_shape[1] > implied_shape[1]
+    ):
+        raise ValueError(
+            f"'unpadded_valid_shape' {unpadded_valid_shape} is larger than the valid "
+            f"correlation shape {implied_shape} implied by the image and template "
+            f"shapes."
+        )
+
+    return unpadded_valid_shape
+
+
 # pylint: disable=too-many-locals
 # pylint: disable=too-many-arguments
 # pylint: disable=too-many-positional-arguments
@@ -405,6 +433,7 @@ def _core_match_template_single_gpu(
     device: torch.device,
     mag_matrix: torch.Tensor | None = None,
     compute_correlation_table: bool = True,
+    unpadded_valid_shape: tuple[int, int] | None = None,
 ) -> tuple[
     torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, tensordict.TensorDict
 ]:
@@ -453,6 +482,10 @@ def _core_match_template_single_gpu(
         Whether to track cross-correlation values which surpass the correlation table
         threshold. If False, this (comparatively expensive) computation is skipped and
         the returned correlation table will be empty. Default is True.
+    unpadded_valid_shape : tuple[int, int], optional
+        Shape of the valid correlation region to accumulate, overriding the shape
+        implied by the image and template. Used when the image was padded up to a
+        fast FFT size. Must not be larger than the implied shape. Default is None.
 
     Returns
     -------
@@ -475,6 +508,10 @@ def _core_match_template_single_gpu(
     valid_correlation_shape = (
         image_shape_real[0] - projection_shape_real[0] + 1,
         image_shape_real[1] - projection_shape_real[1] + 1,
+    )
+
+    valid_correlation_shape = _resolve_valid_correlation_shape(
+        valid_correlation_shape, unpadded_valid_shape
     )
 
     # Create CUDA streams for parallel computation
@@ -633,7 +670,7 @@ def _core_match_template_single_gpu(
                     threshold=CORRELATION_TABLE_THRESHOLD,
                     valid_shape_h=valid_correlation_shape[0],
                     valid_shape_w=valid_correlation_shape[1],
-                    needs_valid_cropping=(backend != "zipfft"),
+                    needs_valid_cropping=True,
                     compute_correlation_table=compute_correlation_table,
                 )
 
