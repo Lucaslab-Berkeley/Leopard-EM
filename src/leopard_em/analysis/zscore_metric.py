@@ -41,14 +41,13 @@ def gaussian_noise_zscore_cutoff(num_ccg: int, false_positives: float = 1.0) -> 
 def find_peaks_from_zscore(
     zscore_map: torch.Tensor,
     zscore_cutoff: float,
-    mask_radius: float = 5.0,
+    mask_radius: float = 10.0,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """
     Find peaks in a z-score map above a cutoff threshold using torch.
 
-    The function returns a tensor of peak indices sorted in descending order by
-    their z-score values. Peaks closer than mask_radius to an already picked peak
-    are suppressed.
+    The function returns a tensor of peak indices sorted in descending order by their
+    z-score values. Peaks closer than mask_radius to already picked peaks are excluded.
 
     Parameters
     ----------
@@ -57,7 +56,7 @@ def find_peaks_from_zscore(
     zscore_cutoff : float
         Minimum z-score value to consider as a peak.
     mask_radius : float, optional
-        Minimum allowed distance between peaks, default is 5.0.
+        Minimum allowed distance between peaks, default is 10.0.
 
     Returns
     -------
@@ -97,7 +96,7 @@ def extract_peaks_and_statistics_zscore(
     total_correlation_positions: int,
     false_positives: float = 1.0,
     z_score_cutoff: float | None = None,
-    mask_radius: float = 5.0,
+    mask_radius: float = 10.0,
 ) -> MatchTemplatePeaks:
     """Returns peak locations, heights, and pose stats from match template results.
 
@@ -129,7 +128,8 @@ def extract_peaks_and_statistics_zscore(
         Z-score cutoff value for peak detection. If not provided, it is calculated using
         the Gaussian noise model. Default is None.
     mask_radius : float, optional
-        Radius of the mask to apply around the peak, in units of pixels. Default is 5.0.
+        Radius of the mask to apply around the peak, in units of pixels.
+        Default is 10.0.
 
     Returns
     -------

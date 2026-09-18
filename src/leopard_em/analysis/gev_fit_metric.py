@@ -123,7 +123,7 @@ def extract_peaks_and_statistics_gev(
     correlation_variance: torch.Tensor,
     total_correlation_positions: int,
     false_positives: float = 1.0,
-    mask_radius: float = 5.0,
+    mask_radius: float = 10.0,
 ) -> MatchTemplatePeaks:
     """Returns peak locations, heights, and pose stats from match template results.
 
@@ -152,7 +152,8 @@ def extract_peaks_and_statistics_gev(
         Number of false positives to allow in the image (over all pixels). Default is
         1.0 which corresponds to a single false-positive.
     mask_radius : float, optional
-        Radius of the mask to apply around the peak, in units of pixels. Default is 5.0.
+        Radius of the mask to apply around the peak, in units of pixels.
+        Default is 10.0.
 
     Returns
     -------
