@@ -242,8 +242,10 @@ class MatchTemplateManager(BaseModel2DTM):
             results to disk directly after running the match template. Default is True.
         compute_correlation_table : bool
             If True, track cross-correlation values which surpass the correlation
-            table threshold during the search. If False, the `CorrelationTable` will be
-            empty. Incurs a small runtime overhead when enabled. Default is False.
+            table threshold during the search and build a `CorrelationTable` from them.
+            If False, no `CorrelationTable` is built at all and
+            `match_template_result.correlation_table` stays `None`. Incurs a runtime
+            overhead when enabled. Default is False.
 
         Returns
         -------
@@ -264,6 +266,7 @@ class MatchTemplateManager(BaseModel2DTM):
             defocus_values=core_kwargs["defocus_values"],
             euler_angles=core_kwargs["euler_angles"],
             do_result_export=do_result_export,
+            compute_correlation_table=compute_correlation_table,
         )
 
     def run_match_template_distributed(
@@ -292,8 +295,9 @@ class MatchTemplateManager(BaseModel2DTM):
             results to disk directly after running the match template. Default is True.
         compute_correlation_table : bool
             If True, track cross-correlation values which surpass the correlation
-            table threshold during the search. If False, the `CorrelationTable` will be
-            empty. Incurs a small runtime overhead when enabled. Default is False.
+            table threshold during the search and build a `CorrelationTable` from them.
+            If False, no `CorrelationTable` is computed or stored. Incurs a runtime
+            overhead when enabled. Default is False.
 
         Raises
         ------
@@ -338,6 +342,7 @@ class MatchTemplateManager(BaseModel2DTM):
                 defocus_values=core_kwargs["defocus_values"],
                 euler_angles=core_kwargs["euler_angles"],
                 do_result_export=do_result_export,
+                compute_correlation_table=compute_correlation_table,
             )
 
     def _populate_match_template_result(
@@ -346,6 +351,7 @@ class MatchTemplateManager(BaseModel2DTM):
         defocus_values: torch.Tensor,
         euler_angles: torch.Tensor,
         do_result_export: bool = True,
+        compute_correlation_table: bool = False,
     ) -> None:
         """Helper function to populate the MatchTemplateResult object post-core call."""
         # Place results into the `MatchTemplateResult` object
@@ -367,15 +373,19 @@ class MatchTemplateManager(BaseModel2DTM):
 
         # Build a typed CorrelationTable from the processed backend output, looking up
         # per-detection mean/variance from the statistics tensors independently.
-        self.match_template_result.correlation_table = (
-            CorrelationTable.from_match_template_results(
-                processed_correlation_table=results["correlation_table"],
-                defocus_values=defocus_values,
-                euler_angles=euler_angles,
-                correlation_average=results["correlation_mean"],
-                correlation_variance_map=results["correlation_variance"],
+        #
+        # Skipped entirely when the correlation table was never requested
+        processed_correlation_table = results.get("correlation_table")
+        if compute_correlation_table and processed_correlation_table is not None:
+            self.match_template_result.correlation_table = (
+                CorrelationTable.from_match_template_results(
+                    processed_correlation_table=processed_correlation_table,
+                    defocus_values=defocus_values,
+                    euler_angles=euler_angles,
+                    correlation_average=results["correlation_mean"],
+                    correlation_variance_map=results["correlation_variance"],
+                )
             )
-        )
 
         # Export the results to disk, if requested
         if do_result_export:

@@ -8,69 +8,6 @@ import torch
 from leopard_em.pydantic_models.custom_types import BaseModel2DTM
 
 
-def derive_orientation_grid_from_full_angles(
-    euler_angles: torch.Tensor,
-) -> tuple[list[tuple[float, float]], list[float]]:
-    """Extract unique (phi, theta) pairs and psi values from a grid angles tensor.
-
-    Assumes ``euler_angles`` is ordered as a Cartesian product: all psi values for
-    the first (phi, theta) pair, then all psi values for the second pair, etc.
-
-    Parameters
-    ----------
-    euler_angles : torch.Tensor
-        All Euler angles used in the search, shape (num_orientations, 3), in ZYZ
-        convention (degrees).
-
-    Returns
-    -------
-    tuple[list[tuple[float, float]], list[float]]
-        - ``phi_theta_angles``: list of unique (phi, theta) pairs, one per out-of-plane
-          orientation, in the order they appear in the search.
-        - ``psi_angles``: list of unique psi values, in the order they cycle within each
-          (phi, theta) group.
-
-    Raises
-    ------
-    ValueError
-        If ``euler_angles`` is not consistent with a Cartesian-product ordering,
-        i.e. its length is not evenly divisible by the number of unique psi
-        values, or the (phi, theta) / psi values do not repeat identically in
-        every consecutive block.
-    """
-    n_orientations = euler_angles.shape[0]
-    n_psi = int(torch.unique(euler_angles[:, 2]).shape[0])
-
-    if n_orientations % n_psi != 0:
-        raise ValueError(
-            f"euler_angles has {n_orientations} rows, which is not evenly "
-            f"divisible by the {n_psi} unique psi values found. Expected a "
-            "Cartesian-product ordering of (phi, theta) x psi."
-        )
-    n_phi_theta = n_orientations // n_psi
-
-    reshaped = euler_angles.view(n_phi_theta, n_psi, 3)
-    if not torch.all(reshaped[:, :, :2] == reshaped[:, :1, :2]):
-        raise ValueError(
-            "euler_angles is not a valid Cartesian product: not every block of "
-            f"{n_psi} consecutive rows shares the same (phi, theta) pair."
-        )
-    if not torch.all(reshaped[:, :, 2] == reshaped[:1, :, 2]):
-        raise ValueError(
-            "euler_angles is not a valid Cartesian product: the psi angle cycle "
-            f"differs across (phi, theta) blocks (expected the same {n_psi} psi "
-            "values to repeat identically in every block)."
-        )
-
-    phi_theta_angles = [
-        (float(euler_angles[i * n_psi, 0]), float(euler_angles[i * n_psi, 1]))
-        for i in range(n_phi_theta)
-    ]
-    psi_angles = euler_angles[:n_psi, 2].tolist()
-
-    return phi_theta_angles, psi_angles
-
-
 class CorrelationTable(BaseModel2DTM):
     """Correlation table data structure storing possible detections along a 2DTM search.
 
@@ -84,17 +21,17 @@ class CorrelationTable(BaseModel2DTM):
         which surpassed the correlation threshold).
     defocus_offsets : list[float]
         List of defocus offsets (in Angstroms) used in the search.
-    phi_theta_angles : list[tuple[float, float]]
-        List out-of-plane rotation angles (in degrees, Euler angles phi and theta, in
-        ZYZ convention) used in the search.
-    psi_angles : list[float]
-        List of in-plane rotation angles (in degrees, Euler angle psi, in ZYZ
-        convention) used in the search.
+    euler_angles : list[tuple[float, float, float]] | None
+        Every orientation searched, shape (num_orientations, 3), as ZYZ Euler angles
+        in degrees and in the exact order the search used them. These angles describe
+        passive rotations.
     search_index : list[int]
-        Global search index defining defocus offset, phi/theta angles, and psi angle for
-        each detection. Calculated as `i * (n_j * n_k) + j * n_k + k`, where `i` is the
-        index of the defocus offset, `j` is the index of the phi/theta angles, and `k`
-        is the index of the psi angle. Length will be equal to `num_observations`.
+        Global search index identifying the defocus offset and orientation of each
+        detection, as `defocus_index * num_orientations + orientation_index`. Length
+        will be equal to `num_observations`.
+
+        Decode it by indexing `euler_angles` directly -- `search_index %
+        num_orientations` gives the row.
     x : list[int]
         List of x-coordinates (in pixels) of the detections in the micrograph.
     y : list[int]
@@ -121,10 +58,11 @@ class CorrelationTable(BaseModel2DTM):
     num_observations: int
 
     # Defining and indexing search space
-    defocus_offsets: list[float]  # index 'i'
-    phi_theta_angles: list[tuple[float, float]]  # index 'j', out-of-plane rotations
-    psi_angles: list[float]  # index 'k', in-plane rotations
-    search_index: list[int]  # i * (n_j * n_k) + j * n_k + k, length == num_observations
+    defocus_offsets: list[float]
+    # Authoritative orientation axis; None only for tables from older files.
+    euler_angles: list[tuple[float, float, float]] | None = None
+    # defocus_index * num_orientations + orientation_index, length == num_observations
+    search_index: list[int]
 
     # Other detection attributes
     x: list[int]
@@ -158,8 +96,7 @@ class CorrelationTable(BaseModel2DTM):
         df.attrs["correlation_threshold"] = self.correlation_threshold
         df.attrs["num_observations"] = self.num_observations
         df.attrs["defocus_offsets"] = self.defocus_offsets
-        df.attrs["phi_theta_angles"] = self.phi_theta_angles
-        df.attrs["psi_angles"] = self.psi_angles
+        df.attrs["euler_angles"] = self.euler_angles
         return df
 
     @classmethod
@@ -180,8 +117,7 @@ class CorrelationTable(BaseModel2DTM):
             correlation_threshold=float(df.attrs["correlation_threshold"]),
             num_observations=int(df.attrs["num_observations"]),
             defocus_offsets=list(df.attrs["defocus_offsets"]),
-            phi_theta_angles=[tuple(pair) for pair in df.attrs["phi_theta_angles"]],
-            psi_angles=list(df.attrs["psi_angles"]),
+            euler_angles=df.attrs.get("euler_angles"),
             search_index=df["search_index"].tolist(),
             x=df["x"].tolist(),
             y=df["y"].tolist(),
@@ -190,7 +126,7 @@ class CorrelationTable(BaseModel2DTM):
             correlation_variance=df["correlation_variance"].tolist(),
         )
 
-    def to_hdf5(self, file_path: str) -> None:
+    def to_hdf5(self, file_path: str, compress: bool = True) -> None:
         """Write this CorrelationTable to an HDF5 file.
 
         Layout::
@@ -198,8 +134,8 @@ class CorrelationTable(BaseModel2DTM):
             /metadata              (attrs: correlation_threshold, num_observations)
             /search_space/
                 defocus_offsets    float32 1-D
-                phi_theta_angles   float32 (n, 2)
-                psi_angles         float32 1-D
+                euler_angles       float32 (num_orientations, 3), gzip-4 + shuffle
+                                   (if compress=True)
             /detections/
                 search_index       int32 1-D
                 x                  int32 1-D
@@ -212,7 +148,15 @@ class CorrelationTable(BaseModel2DTM):
         ----------
         file_path : str
             Destination HDF5 file path.
+        compress : bool
+            Whether to gzip-4 + byte-shuffle the ``euler_angles`` dataset.
         """
+        compression_kwargs: dict = (
+            {"compression": "gzip", "compression_opts": 4, "shuffle": True}
+            if compress
+            else {}
+        )
+
         with h5py.File(file_path, "w") as f:
             meta = f.create_group("metadata")
             meta.attrs["correlation_threshold"] = self.correlation_threshold
@@ -223,14 +167,12 @@ class CorrelationTable(BaseModel2DTM):
                 "defocus_offsets",
                 data=np.array(self.defocus_offsets, dtype=np.float32),
             )
-            search_space.create_dataset(
-                "phi_theta_angles",
-                data=np.array(self.phi_theta_angles, dtype=np.float32),
-            )
-            search_space.create_dataset(
-                "psi_angles",
-                data=np.array(self.psi_angles, dtype=np.float32),
-            )
+            if self.euler_angles is not None:
+                search_space.create_dataset(
+                    "euler_angles",
+                    data=np.array(self.euler_angles, dtype=np.float32),
+                    **compression_kwargs,
+                )
 
             detections = f.create_group("detections")
             detections.create_dataset(
@@ -264,15 +206,30 @@ class CorrelationTable(BaseModel2DTM):
         Returns
         -------
         CorrelationTable
+
+        Notes
+        -----
+        Files written with only ``phi_theta_angles`` and ``psi_angles`` (development and
+        v1.3 exactly format) automatically get unpacked into full ZYZ Euler angles under
+        ``euler_angles``. The order of the angles is preserved.
         """
         with h5py.File(file_path, "r") as f:
             correlation_threshold = float(f["metadata"].attrs["correlation_threshold"])
             num_observations = int(f["metadata"].attrs["num_observations"])
 
             defocus_offsets = f["search_space/defocus_offsets"][:].tolist()
-            phi_theta_raw = f["search_space/phi_theta_angles"][:]
-            phi_theta_angles = [(float(row[0]), float(row[1])) for row in phi_theta_raw]
-            psi_angles = f["search_space/psi_angles"][:].tolist()
+            search_space = f["search_space"]
+            full_angles = None
+            if "euler_angles" in search_space:
+                full_angles = search_space["euler_angles"][:].tolist()
+            elif "phi_theta_angles" in search_space and "psi_angles" in search_space:
+                phi_theta_angles = search_space["phi_theta_angles"][:].tolist()
+                psi_angles = search_space["psi_angles"][:].tolist()
+                full_angles = [
+                    (phi, theta, psi)
+                    for psi in psi_angles
+                    for phi, theta in phi_theta_angles
+                ]
 
             search_index = f["detections/search_index"][:].tolist()
             x = f["detections/x"][:].tolist()
@@ -285,8 +242,7 @@ class CorrelationTable(BaseModel2DTM):
             correlation_threshold=correlation_threshold,
             num_observations=num_observations,
             defocus_offsets=defocus_offsets,
-            phi_theta_angles=phi_theta_angles,
-            psi_angles=psi_angles,
+            euler_angles=full_angles,
             search_index=search_index,
             x=x,
             y=y,
@@ -316,8 +272,9 @@ class CorrelationTable(BaseModel2DTM):
             Defocus offsets used in the search. Shape (num_defocus,).
         euler_angles : torch.Tensor
             All Euler angles used in the search, shape (num_orientations, 3), in ZYZ
-            convention (degrees). Must be ordered as a grid: all psi values for the
-            first (phi, theta) pair, then all psi values for the second pair, etc.
+            convention (degrees), describing passive rotations, in the order the search
+            used them. Any order is accepted -- it is stored verbatim, and
+            ``search_index`` is resolved against it.
         correlation_average : torch.Tensor
             Per-pixel mean cross-correlation, shape (H, W).
         correlation_variance_map : torch.Tensor
@@ -332,11 +289,6 @@ class CorrelationTable(BaseModel2DTM):
         pos_x = processed_correlation_table["x"]  # list[int]
         pos_y = processed_correlation_table["y"]  # list[int]
         corr_values = processed_correlation_table["correlation"]  # list[float]
-
-        defocus_offsets = defocus_values.tolist()
-        phi_theta_angles, psi_angles = derive_orientation_grid_from_full_angles(
-            euler_angles
-        )
 
         search_index = (
             list(global_idx) if isinstance(global_idx, list) else global_idx.tolist()
@@ -356,9 +308,12 @@ class CorrelationTable(BaseModel2DTM):
         return cls(
             correlation_threshold=float(threshold),
             num_observations=num_observations,
-            defocus_offsets=defocus_offsets,
-            phi_theta_angles=phi_theta_angles,
-            psi_angles=psi_angles,
+            defocus_offsets=defocus_values.tolist(),
+            # Recorded verbatim: this is what makes search_index decodable.
+            # `.tolist()` converts the whole tensor in one C call; row-by-row
+            # `float()` conversion is over an order of magnitude slower on the
+            # full search grid (1M+ orientations).
+            euler_angles=[tuple(row) for row in euler_angles.tolist()],
             search_index=search_index,
             x=list(pos_x),
             y=list(pos_y),

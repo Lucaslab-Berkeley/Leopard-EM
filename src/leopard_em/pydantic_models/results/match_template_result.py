@@ -144,6 +144,19 @@ class _MatchTemplateResultBase(BaseModel2DTM):
     orientation_phi: ExcludedTensor
     relative_defocus: ExcludedTensor
 
+    ###########################
+    ### Pydantic Validators ###
+    ###########################
+
+    @model_validator(mode="after")  # type: ignore
+    def validate_correlation_table_path(self) -> Self:
+        """Validate ``correlation_table_path``, when set, like the other outputs."""
+        if self.correlation_table_path is not None:
+            check_file_path_and_permissions(
+                self.correlation_table_path, self.allow_file_overwrite
+            )
+        return self
+
     ############################################
     ### Functional (data processing) methods ###
     ############################################
@@ -187,11 +200,20 @@ class _MatchTemplateResultBase(BaseModel2DTM):
         """Write the held CorrelationTable to ``self.correlation_table_path``.
 
         No-op if ``correlation_table_path`` is not set.
+
+        Raises
+        ------
+        ValueError
+            If ``correlation_table_path`` already exists and ``allow_file_overwrite`` is
+            False.
         """
         if self.correlation_table is None:
             raise ValueError("No correlation_table to export.")
         if self.correlation_table_path is None:
             return
+        check_file_path_and_permissions(
+            self.correlation_table_path, self.allow_file_overwrite
+        )
         self.correlation_table.to_hdf5(self.correlation_table_path)
 
     def load_correlation_table_from_path(self) -> None:
