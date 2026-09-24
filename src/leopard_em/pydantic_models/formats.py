@@ -1,5 +1,7 @@
 """Submodule for shared formats used in pydantic models."""
 
+from collections.abc import Iterable
+
 # Full-micrograph 2DTM result map paths, shared across the column-order
 # lists below and by ``_DEFAULT_LOCAL_STAT_COLUMNS`` in particle_stack.py.
 STATISTIC_MAP_PATH_COLUMNS = [
@@ -10,6 +12,34 @@ STATISTIC_MAP_PATH_COLUMNS = [
     "phi_path",
     "defocus_path",
 ]
+
+# Unique, human-readable identifier column for each particle. Not indexed currently.
+PARTICLE_ID_COLUMN = "particle_id"
+
+# Name of the HDF5 group holding result tensors in a ``MatchTemplateResultHDF5`` file.
+HDF5_TENSORS_GROUP = "tensors"
+
+# Maps each dataframe "*_path" statistic-map column to the dataset name it corresponds
+# to inside a ``MatchTemplateResultHDF5`` file's ``tensors`` group.
+STATISTIC_MAP_PATH_TO_HDF5_DATASET = {
+    "mip_path": "mip",
+    "scaled_mip_path": "scaled_mip",
+    "psi_path": "orientation_psi",
+    "theta_path": "orientation_theta",
+    "phi_path": "orientation_phi",
+    "defocus_path": "relative_defocus",
+    "correlation_average_path": "correlation_average",
+    "correlation_variance_path": "correlation_variance",
+}
+
+# Scalar CTF parameter columns which must hold one value shared by all particles
+SHARED_CTF_PARAMETER_COLUMNS = (
+    "voltage",
+    "spherical_aberration",
+    "amplitude_contrast_ratio",
+    "phase_shift",
+    "ctf_B_factor",
+)
 
 MATCH_TEMPLATE_DF_COLUMN_ORDER = [
     "particle_index",
@@ -163,3 +193,12 @@ CONSTRAINED_DF_COLUMN_ORDER = [
     "correlation_average_path",
     "correlation_variance_path",
 ]
+
+
+def result_column_order(
+    column_order: list[str], available_columns: Iterable[str]
+) -> list[str]:
+    """Return ``column_order``, prefixed with ``particle_id`` when it is available."""
+    if PARTICLE_ID_COLUMN in available_columns:
+        return [PARTICLE_ID_COLUMN, *column_order]
+    return list(column_order)

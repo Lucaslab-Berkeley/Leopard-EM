@@ -4,10 +4,12 @@ import json
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
+import pandas as pd
 import torch
 from torch_ctf import calculate_ctf_2d
 from torch_fourier_filter.envelopes import b_envelope
 
+from leopard_em.pydantic_models.formats import SHARED_CTF_PARAMETER_COLUMNS
 from leopard_em.utils.search_utils import get_cs_range
 
 # Using the TYPE_CHECKING statement to avoid circular imports
@@ -231,6 +233,39 @@ def _parse_json_string_from_series_value(value: Any) -> dict | None:
     )
 
 
+def _canonical_value(value: Any) -> Any:
+    """Return a hashable, representation-independent form of a per-particle value."""
+
+    def _to_float(obj: Any) -> Any:
+        if isinstance(obj, dict):
+            return {str(k): _to_float(v) for k, v in obj.items()}
+        if isinstance(obj, list | tuple):
+            return [_to_float(v) for v in obj]
+        if isinstance(obj, int | float) and not isinstance(obj, bool):
+            return float(obj)
+        return obj
+
+    if value is None or (isinstance(value, float) and np.isnan(value)):
+        return None
+    if isinstance(value, np.ndarray):
+        value = value.tolist()
+    if isinstance(value, str):
+        if value == "":
+            return None
+        try:
+            value = json.loads(value)
+        except json.JSONDecodeError:
+            return value
+    if isinstance(value, list | tuple | dict):
+        return json.dumps(_to_float(value), sort_keys=True)
+    return value
+
+
+def _nunique_canonical(series: pd.Series) -> int:
+    """Number of distinct non-empty values, comparing lists/dicts/JSON by content."""
+    return len({v for v in map(_canonical_value, series) if v is not None})
+
+
 def _setup_ctf_kwargs_from_particle_stack(
     particle_stack: "ParticleStackCSV | ParticleStackHDF5",
     template_shape: tuple[int, int],
@@ -252,20 +287,13 @@ def _setup_ctf_kwargs_from_particle_stack(
     # Keyword arguments for the CTF filter calculation call
     # NOTE: We currently enforce the parameters (other than the defocus values) are
     # all the same. This could be updated in the future...
-    assert particle_stack["voltage"].nunique() == 1
-    assert particle_stack["spherical_aberration"].nunique() == 1
-    assert particle_stack["amplitude_contrast_ratio"].nunique() == 1
-    assert particle_stack["phase_shift"].nunique() == 1
-    assert particle_stack["ctf_B_factor"].nunique() == 1
-    assert (
-        particle_stack["mag_matrix"].nunique() <= 1
-    ), "mag_matrix must be the same across all particles"
-    assert (
-        particle_stack["even_zernikes"].nunique() <= 1
-    ), "even_zernikes must be the same across all particles"
-    assert (
-        particle_stack["odd_zernikes"].nunique() <= 1
-    ), "odd_zernikes must be the same across all particles"
+    for column in SHARED_CTF_PARAMETER_COLUMNS:
+        if particle_stack[column].nunique() != 1:
+            raise ValueError(f"'{column}' must be the same across all particles.")
+    # List/dict valued columns: compare by content, whatever their representation
+    for column in ("mag_matrix", "even_zernikes", "odd_zernikes"):
+        if _nunique_canonical(particle_stack[column]) > 1:
+            raise ValueError(f"'{column}' must be the same across all particles.")
 
     # Convert mag_matrix from list to 2x2 tensor if provided
     # Handle empty/NaN values from CSV (pandas converts empty fields to NaN)
@@ -279,7 +307,10 @@ def _setup_ctf_kwargs_from_particle_stack(
             mag_matrix_list = [
                 float(x) for x in mag_matrix_value.strip("[]").split(",")
             ]
-            assert len(mag_matrix_list) == 4
+            if len(mag_matrix_list) != 4:
+                raise ValueError(
+                    f"mag_matrix must have 4 elements, got {len(mag_matrix_list)}."
+                )
         else:
             mag_matrix_list = mag_matrix_value
         if isinstance(mag_matrix_list, list) and len(mag_matrix_list) == 4:
@@ -316,13 +347,13 @@ def _setup_ctf_kwargs_from_particle_stack(
         }
 
     return {
-        "voltage": particle_stack["voltage"][0].item(),
-        "spherical_aberration": particle_stack["spherical_aberration"][0].item(),
-        "amplitude_contrast_ratio": particle_stack["amplitude_contrast_ratio"][
-            0
-        ].item(),
-        "ctf_B_factor": particle_stack["ctf_B_factor"][0].item(),
-        "phase_shift": particle_stack["phase_shift"][0].item(),
+        "voltage": particle_stack["voltage"].iloc[0].item(),
+        "spherical_aberration": particle_stack["spherical_aberration"].iloc[0].item(),
+        "amplitude_contrast_ratio": particle_stack["amplitude_contrast_ratio"]
+        .iloc[0]
+        .item(),
+        "ctf_B_factor": particle_stack["ctf_B_factor"].iloc[0].item(),
+        "phase_shift": particle_stack["phase_shift"].iloc[0].item(),
         "pixel_size": particle_stack["refined_pixel_size"].mean().item(),
         "template_shape": template_shape,
         "even_zernikes": even_zernikes_dict,

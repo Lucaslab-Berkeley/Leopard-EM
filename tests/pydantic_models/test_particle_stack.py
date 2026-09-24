@@ -9,7 +9,12 @@ import torch
 from leopard_em.pydantic_models.data_structures.particle_stack import (
     ParticleStack,
     ParticleStackHDF5,
+    export_particle_stack,
 )
+from leopard_em.pydantic_models.results.match_template_result import (
+    MatchTemplateResultHDF5,
+)
+from leopard_em.utils.backend_setup import _setup_correlation_stacks_from_micrographs
 
 # Tests construct minimal ParticleStack instances by assigning their backing frames.
 # pylint: disable=protected-access
@@ -597,3 +602,196 @@ def test_hdf5_get_local_stat_maps_falls_back_when_not_stored(tmp_path):
 
     assert np.allclose(stat_maps["mip_path"][0].numpy(), mip1_ground_truth)
     assert np.allclose(stat_maps["mip_path"][1].numpy(), mip2_ground_truth)
+
+
+def _write_bundled_result(path, shape, seed):
+    """Write a MatchTemplateResultHDF5 file with spatially varying random maps."""
+    gen = torch.Generator().manual_seed(seed)
+    tensor_names = (
+        "mip",
+        "scaled_mip",
+        "correlation_average",
+        "correlation_variance",
+        "orientation_psi",
+        "orientation_theta",
+        "orientation_phi",
+        "relative_defocus",
+    )
+    tensors = {
+        name: torch.rand(shape, generator=gen, dtype=torch.float32) + 0.5
+        for name in tensor_names
+    }
+    MatchTemplateResultHDF5(
+        hdf5_path=str(path),
+        allow_file_overwrite=True,
+        total_projections=1,
+        total_orientations=1,
+        total_defocus=1,
+        **tensors,
+    ).to_hdf5()
+    return tensors
+
+
+STATISTIC_COLUMN_TO_TENSOR_NAME = {
+    "mip_path": "mip",
+    "scaled_mip_path": "scaled_mip",
+    "psi_path": "orientation_psi",
+    "theta_path": "orientation_theta",
+    "phi_path": "orientation_phi",
+    "defocus_path": "relative_defocus",
+    "correlation_average_path": "correlation_average",
+    "correlation_variance_path": "correlation_variance",
+}
+
+
+def test_load_images_grouped_by_column_disambiguates_bundled_hdf5_result(tmp_path):
+    """All eight statistic columns may point at the same MatchTemplateResultHDF5 file.
+
+    This mirrors ``MatchTemplateManager.results_to_dataframe``'s HDF5 branch, where
+    every ``*_path`` column is set to the same ``hdf5_path`` because all eight result
+    maps are bundled as distinct datasets in one file. Loading must disambiguate by
+    dataset name rather than assume "one path == one map".
+
+    Two result files (micrographs) are interleaved in the particle table, which is
+    indexed by string ``particle_id`` labels, so crops must land on the right rows.
+    """
+    shape = (16, 16)
+    maps = {
+        0: _write_bundled_result(tmp_path / "result_0.h5", shape, seed=0),
+        1: _write_bundled_result(tmp_path / "result_1.h5", shape, seed=1),
+    }
+
+    df = make_minimal_df(num_rows=4)
+    source = [0, 1, 0, 1]  # which result file each particle comes from
+    df["pos_x"] = [1, 5, 9, 3]
+    df["pos_y"] = [2, 7, 4, 8]
+    for column in STATISTIC_COLUMN_TO_TENSOR_NAME:
+        df[column] = [str(tmp_path / f"result_{i}.h5") for i in source]
+    df.index = pd.Index([f"p_{i:05d}" for i in range(4)], name="particle_id")
+
+    ps = ParticleStackHDF5(
+        hdf5_path=str(tmp_path / "particles.h5"),
+        extracted_box_size=(6, 6),
+        original_template_size=(4, 4),
+        skip_df_load=True,
+    )
+    ps._set_dataframe(df)
+    assert list(ps["particle_id"]) == [f"p_{i:05d}" for i in range(4)]
+
+    for column, tensor_name in STATISTIC_COLUMN_TO_TENSOR_NAME.items():
+        images, _indices = ps.load_images_grouped_by_column(column_name=column)
+        assert images.shape == (2, *shape)
+        torch.testing.assert_close(images[0], maps[0][tensor_name])
+        torch.testing.assert_close(images[1], maps[1][tensor_name])
+
+    # End-to-end: the correlation mean/std setup used by every standard
+    # refine_template run must also work against bundled HDF5 results. The valid
+    # region for box 6 / template 4 is 3x3 and starts at (pos - (6 - 4) // 2).
+    corr_mean_stack, corr_std_stack = _setup_correlation_stacks_from_micrographs(
+        particle_stack=ps,
+        mean_stack=None,
+        std_stack=None,
+        particle_indices=None,
+        extracted_box_size=(3, 3),
+        device=torch.device("cpu"),
+    )
+    assert corr_mean_stack.shape == (4, 3, 3)
+    for row, (i, x, y) in enumerate(zip(source, df["pos_x"], df["pos_y"], strict=True)):
+        y0, x0 = y - 1, x - 1
+        region = (slice(y0, y0 + 3), slice(x0, x0 + 3))
+        torch.testing.assert_close(
+            corr_mean_stack[row], maps[i]["correlation_average"][region]
+        )
+        # The stored "correlation_variance" map already is the standard deviation
+        torch.testing.assert_close(
+            corr_std_stack[row], maps[i]["correlation_variance"][region]
+        )
+
+
+def test_construct_projective_filters_assigns_rows_by_position(tmp_path):
+    """Filters computed per micrograph land on that micrograph's particle rows."""
+    df = make_minimal_df(num_rows=4)
+    df.index = pd.Index([f"p_{i:05d}" for i in range(4)], name="particle_id")
+    ps = ParticleStackHDF5(
+        hdf5_path=str(tmp_path / "particles.h5"),
+        extracted_box_size=(6, 6),
+        original_template_size=(4, 4),
+        skip_df_load=True,
+    )
+    ps._set_dataframe(df)
+
+    class _ConstantFilter:
+        def get_combined_filter(self, ref_img_rfft, output_shape):
+            return torch.full(output_shape, float(ref_img_rfft.real.mean()))
+
+    images_dft = torch.stack([torch.full((4, 3), 1.0), torch.full((4, 3), 2.0)])
+    filters = ps.construct_projective_filters(
+        preprocess_filters=_ConstantFilter(),
+        output_shape=(2, 2),
+        images_dft=images_dft.to(torch.complex64),
+        indices=[pd.Index([0, 2]), pd.Index([1, 3])],
+    )
+    assert filters[:, 0, 0].tolist() == [1.0, 2.0, 1.0, 2.0]
+
+    # Labels (particle_id strings) or out-of-range positions are rejected
+    with pytest.raises(TypeError, match="integer row positions"):
+        ps.construct_projective_filters(
+            _ConstantFilter(), (2, 2), images_dft[:1], [pd.Index(["p_00000"])]
+        )
+    with pytest.raises(IndexError, match="out of range"):
+        ps.construct_projective_filters(
+            _ConstantFilter(), (2, 2), images_dft[:1], [pd.Index([4])]
+        )
+
+
+def test_load_images_grouped_by_column_rejects_missing_paths():
+    """Particles without an image path raise instead of silently getting zeros."""
+    df = make_minimal_df(num_rows=2)
+    df["micrograph_path"] = ["/some/mic.mrc", None]
+    ps = ParticleStack(
+        df_path="",
+        extracted_box_size=(6, 6),
+        original_template_size=(4, 4),
+        skip_df_load=True,
+    )
+    ps._set_dataframe(df)
+    with pytest.raises(ValueError, match="empty for 1 particle"):
+        ps.load_images_grouped_by_column("micrograph_path")
+
+
+def test_load_images_grouped_by_column_names_missing_file():
+    """A missing referenced file raises FileNotFoundError naming the column."""
+    df = make_minimal_df(num_rows=2)
+    df["mip_path"] = "/nonexistent/mip.mrc"
+    ps = ParticleStack(
+        df_path="",
+        extracted_box_size=(6, 6),
+        original_template_size=(4, 4),
+        skip_df_load=True,
+    )
+    ps._set_dataframe(df)
+    with pytest.raises(FileNotFoundError, match="mip_path"):
+        ps.load_images_grouped_by_column("mip_path")
+
+
+def test_export_particle_stack_requires_box_sizes_without_source():
+    """Without a source particle stack, box sizes must be given explicitly."""
+    df = make_minimal_df(num_rows=1)
+    with pytest.raises(ValueError, match="extracted_box_size"):
+        export_particle_stack(
+            df=df,
+            output_path="unused.h5",
+            output_format="hdf5",
+        )
+
+
+def test_export_particle_stack_requires_output_format_without_source(tmp_path):
+    """Without a source stack or known extension, output_format can't be inferred."""
+    df = make_minimal_df(num_rows=1)
+    with pytest.raises(ValueError, match="output_format"):
+        export_particle_stack(
+            df=df,
+            output_path=str(tmp_path / "out_without_extension"),
+            extracted_box_size=(34, 34),
+            original_template_size=(32, 32),
+        )

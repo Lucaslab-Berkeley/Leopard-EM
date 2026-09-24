@@ -19,6 +19,7 @@ nav = [
     { "Comparing Scoring Metrics"       = "examples/03_compare_scoring_metrics.ipynb" },
     { "Plotting match template results" = "examples/04_plotting_2dtm_results.ipynb" },
     { "Structure re-projection plot"    = "examples/05_structure_reprojection.ipynb" },
+    { "HDF5 refine template"            = "examples/07_hdf5_refine_template.ipynb" },
   ]},
   { "Programs" = [
     { "Overview"                   = "programs/overview.md" },

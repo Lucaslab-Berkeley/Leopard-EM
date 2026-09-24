@@ -20,9 +20,9 @@ Each of the "best" statistics (i.e. orientation, defocus) is stored on a per-pos
 We have the following tracked statistics for each valid (x, y) position:
 
 - Maximum Intensity Projection (MIP): Maximum attained cross-correlation value over the entire search space, per-pixel.
-- Scaled MIP (z-score or 2DTM SNR): The MIP value normalized by the mean and variance of the cross-correlation over the entire search space, per-pixel.
+- Scaled MIP (z-score or 2DTM SNR): The MIP value normalized by the mean and standard deviation of the cross-correlation over the entire search space, per-pixel.
 - Correlation Mean: The mean of the cross-correlation values over the entire search space. Used to calculate the scaled MIP.
-- Correlation Variance: The variance of the cross-correlation values over the entire search space. Used to calculate the scaled MIP.
+- Correlation Variance: The standard deviation (despite the historical name) of the cross-correlation values over the entire search space. Used to calculate the scaled MIP.
 - Phi: The \( \phi \) angle (in degrees) which produced the MIP value.
 - Theta: The \( \theta \) angle (in degrees) which produced the MIP value.
 - Psi: The \( \psi \) angle (in degrees) which produced the MIP value.
@@ -68,9 +68,9 @@ The columns and corresponding descriptions are as follows:
 |-------------------------------|-------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `particle_index`              | int   | An integer descriptor for ordering picked particles. Useful when operating on multiple dataframes.                                                                                    |
 | `mip`                         | float | Maximum cross-correlation value over all search orientations and relative defocus values.                                                                                             |
-| `scaled_mip`                  | float | Scaled MIP value (z-score) normalized by cross-correlation mean and variance.                                                                                                         |
+| `scaled_mip`                  | float | Scaled MIP value (z-score) normalized by cross-correlation mean and standard deviation.                                                                                               |
 | `correlation_mean`            | float | Mean of the cross-correlation values over the entire search space.                                                                                                                    |
-| `correlation_variance`        | float | Variance of the cross-correlation values over the entire search space.                                                                                                                |
+| `correlation_variance`        | float | Standard deviation (despite the name) of the cross-correlation values over the entire search space.                                                                                   |
 | `total_correlations`          | int   | Total number of cross-correlations performs in the search space (number of defocus planes times number of orientations).                                                              |
 | `pos_x`                       | int   | Particle x position (units of pixels) in the statistics maps. Corresponds to the top-left corner of the template.                                                                     |
 | `pos_y`                       | int   | Particle y position (units of pixels) in the statistics maps. Corresponds to the top-left corner of the template.                                                                     |
@@ -128,7 +128,7 @@ New columns with descriptions are listed below:
 | Column Name                   | Type  | Description                                                                                       |
 |-------------------------------|-------|---------------------------------------------------------------------------------------------------|
 | `refined_mip`                 | float | New maximum cross-correlation over refinement search space.                                       |
-| `refined_scaled_mip`          | float | New scaled MIP value (z-score) normalized by cross-correlation mean and variance.                 |
+| `refined_scaled_mip`          | float | New scaled MIP value (z-score) normalized by cross-correlation mean and standard deviation.       |
 | `refined_pos_x`               | int   | The refined x position of the particle, top-left corner of the template.                          |
 | `refined_pos_y`               | int   | The refined y position of the particle, top-left corner of the template.                          |
 | `refined_pos_x_img`           | int   | The refined x position of the particle, center of the particle in the micrograph.                 |

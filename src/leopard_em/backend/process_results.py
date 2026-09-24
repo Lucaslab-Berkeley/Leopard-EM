@@ -178,7 +178,11 @@ def correlation_sum_and_squared_sum_to_mean_and_variance(
     correlation_squared_sum: torch.Tensor,
     total_correlation_positions: int,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """Convert the sum and squared sum of the correlation values to mean and variance.
+    """Convert the sum and squared sum of the correlation values to mean and std.
+
+    NOTE: Despite the function (and the downstream "correlation_variance" result names),
+    the second returned tensor is the per-pixel *standard deviation*,
+    ``sqrt(E[x^2] - E[x]^2)``. The names are kept for backward compatibility.
 
     Parameters
     ----------
@@ -192,7 +196,7 @@ def correlation_sum_and_squared_sum_to_mean_and_variance(
     Returns
     -------
     tuple[torch.Tensor, torch.Tensor]
-        Tuple containing the mean and variance of the correlation values.
+        Tuple containing the mean and standard deviation of the correlation values.
     """
     correlation_mean = correlation_sum / total_correlation_positions
     correlation_variance = correlation_squared_sum / total_correlation_positions

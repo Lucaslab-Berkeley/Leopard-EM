@@ -20,11 +20,18 @@ from leopard_em.pydantic_models.config import (
 )
 from leopard_em.pydantic_models.custom_types import BaseModel2DTM, ExcludedTensor
 from leopard_em.pydantic_models.data_structures import (
+    AnyParticleStack,
     ParticleStackCSV,
     ParticleStackHDF5,
     export_particle_stack,
 )
-from leopard_em.pydantic_models.formats import REFINED_DF_COLUMN_ORDER
+from leopard_em.pydantic_models.data_structures.particle_stack import (
+    _warn_allow_file_overwrite_deprecated,
+)
+from leopard_em.pydantic_models.formats import (
+    REFINED_DF_COLUMN_ORDER,
+    result_column_order,
+)
 from leopard_em.pydantic_models.results.match_template_result import (
     check_file_path_and_permissions,
 )
@@ -86,7 +93,7 @@ class RefineTemplateManager(BaseModel2DTM):
     model_config: ClassVar = ConfigDict(arbitrary_types_allowed=True)
 
     template_volume_path: str  # In df per-particle, but ensure only one reference
-    particle_stack: ParticleStackCSV | ParticleStackHDF5
+    particle_stack: AnyParticleStack
     defocus_refinement_config: DefocusSearchConfig
     pixel_size_refinement_config: PixelSizeSearchConfig
     orientation_refinement_config: RefineOrientationConfig
@@ -269,7 +276,7 @@ class RefineTemplateManager(BaseModel2DTM):
         output_dataframe_path: str,
         correlation_batch_size: int = 32,
         output_format: Literal["csv", "hdf5"] | None = None,
-        allow_file_overwrite: bool = False,
+        allow_file_overwrite: bool | None = None,
     ) -> None:
         """Run the refine template program and export the resultant DataFrame.
 
@@ -280,14 +287,17 @@ class RefineTemplateManager(BaseModel2DTM):
         correlation_batch_size : int
             Number of cross-correlations to process in one batch, defaults to 32.
         output_format : Literal["csv", "hdf5"] | None
-            Output back-end to write. Defaults to None, which matches the back-end of
-            ``self.particle_stack`` (CSV in, CSV out; HDF5 in, HDF5 out). Pass "csv" or
-            "hdf5" to override.
-        allow_file_overwrite : bool
-            Whether to overwrite an existing file at ``output_dataframe_path``. Defaults
-            to False.
+            Output back-end to write. Defaults to None, which infers it from the
+            extension of ``output_dataframe_path`` (``.csv`` / ``.h5``, ``.hdf5``) and
+            otherwise matches the back-end of ``self.particle_stack``.
+        allow_file_overwrite : bool | None
+            Deprecated and ignored; an existing file at ``output_dataframe_path`` is
+            always overwritten (atomically).
         """
-        check_file_path_and_permissions(output_dataframe_path, allow_file_overwrite)
+        if allow_file_overwrite is not None:
+            _warn_allow_file_overwrite_deprecated()
+        # Fail before the run if the output directory is not writable
+        check_file_path_and_permissions(output_dataframe_path, allow_overwrite=True)
 
         backend_kwargs = self.make_backend_core_function_kwargs()
 
@@ -297,7 +307,6 @@ class RefineTemplateManager(BaseModel2DTM):
             output_dataframe_path=output_dataframe_path,
             result=result,
             output_format=output_format,
-            allow_file_overwrite=allow_file_overwrite,
         )
 
     # pylint: disable=too-many-positional-arguments,too-many-arguments
@@ -312,7 +321,7 @@ class RefineTemplateManager(BaseModel2DTM):
         correlation_batch_size: int = 32,
         images_are_particles: bool = False,
         output_format: Literal["csv", "hdf5"] | None = None,
-        allow_file_overwrite: bool = False,
+        allow_file_overwrite: bool | None = None,
     ) -> None:
         """Run the differentiable refine template program and export the DataFrame.
 
@@ -336,15 +345,18 @@ class RefineTemplateManager(BaseModel2DTM):
         images_are_particles : bool
             Whether the images are particles or not. Defaults to False.
         output_format : Literal["csv", "hdf5"] | None
-            Output back-end to write. Defaults to None, which matches the back-end of
-            ``self.particle_stack`` (CSV in, CSV out; HDF5 in, HDF5 out). Pass "csv" or
-            "hdf5" to override.
-        allow_file_overwrite : bool
-            Whether to overwrite an existing file at ``output_dataframe_path``. Defaults
-            to False.
+            Output back-end to write. Defaults to None, which infers it from the
+            extension of ``output_dataframe_path`` (``.csv`` / ``.h5``, ``.hdf5``) and
+            otherwise matches the back-end of ``self.particle_stack``.
+        allow_file_overwrite : bool | None
+            Deprecated and ignored; an existing file at ``output_dataframe_path`` is
+            always overwritten (atomically).
 
         """
-        check_file_path_and_permissions(output_dataframe_path, allow_file_overwrite)
+        if allow_file_overwrite is not None:
+            _warn_allow_file_overwrite_deprecated()
+        # Fail before the run if the output directory is not writable
+        check_file_path_and_permissions(output_dataframe_path, allow_overwrite=True)
 
         backend_kwargs = self.make_differentiable_backend_kwargs(
             image_stack=image_stack,
@@ -363,7 +375,6 @@ class RefineTemplateManager(BaseModel2DTM):
             output_dataframe_path=output_dataframe_path,
             result=result,
             output_format=output_format,
-            allow_file_overwrite=allow_file_overwrite,
         )
 
     def get_refine_result(
@@ -526,7 +537,9 @@ class RefineTemplateManager(BaseModel2DTM):
         df_refined["refined_scaled_mip"] = refined_scaled_mip
 
         # Reorder the columns
-        df_refined = df_refined.reindex(columns=REFINED_DF_COLUMN_ORDER)
+        df_refined = df_refined.reindex(
+            columns=result_column_order(REFINED_DF_COLUMN_ORDER, df_refined.columns)
+        )
 
         return df_refined
 
@@ -536,7 +549,7 @@ class RefineTemplateManager(BaseModel2DTM):
         result: dict[str, np.ndarray | torch.Tensor],
         prefer_refined_angles: bool = True,
         output_format: Literal["csv", "hdf5"] | None = None,
-        allow_file_overwrite: bool = False,
+        allow_file_overwrite: bool | None = None,
     ) -> ParticleStackCSV | ParticleStackHDF5:
         """Build the refined DataFrame and write it to disk.
 
@@ -550,12 +563,12 @@ class RefineTemplateManager(BaseModel2DTM):
         prefer_refined_angles : bool
             Whether to use the refined angles or not. Defaults to True.
         output_format : Literal["csv", "hdf5"] | None
-            Output back-end to write. Defaults to None, which matches the back-end of
-            ``self.particle_stack`` (CSV in, CSV out; HDF5 in, HDF5 out). Pass "csv" or
-            "hdf5" to override.
-        allow_file_overwrite : bool
-            Whether to overwrite an existing file at ``output_dataframe_path``. Defaults
-            to False.
+            Output back-end to write. Defaults to None, which infers it from the
+            extension of ``output_dataframe_path`` (``.csv`` / ``.h5``, ``.hdf5``) and
+            otherwise matches the back-end of ``self.particle_stack``.
+        allow_file_overwrite : bool | None
+            Deprecated and ignored; an existing file at ``output_dataframe_path`` is
+            always overwritten (atomically).
 
         Returns
         -------
@@ -564,6 +577,9 @@ class RefineTemplateManager(BaseModel2DTM):
             Reuse directly instead of re-reading from disk if feeding into another
             program.
         """
+        if allow_file_overwrite is not None:
+            _warn_allow_file_overwrite_deprecated()
+
         df_refined = self.refine_result_to_dataframe(
             result=result, prefer_refined_angles=prefer_refined_angles
         )
@@ -572,5 +588,4 @@ class RefineTemplateManager(BaseModel2DTM):
             output_path=output_dataframe_path,
             source_particle_stack=self.particle_stack,
             output_format=output_format,
-            allow_file_overwrite=allow_file_overwrite,
         )

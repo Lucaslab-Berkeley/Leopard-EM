@@ -5,6 +5,7 @@ from .ctf_utils import calculate_ctf_filter_stack
 from .data_io import (
     load_mrc_image,
     load_mrc_volume,
+    load_result_map_image,
     load_template_tensor,
     read_mrc_to_numpy,
     read_mrc_to_tensor,
@@ -40,6 +41,10 @@ __all__ = [
     "read_mrc_to_tensor",
     "write_mrc_from_numpy",
     "write_mrc_from_tensor",
+    "load_mrc_image",
+    "load_mrc_volume",
+    "load_result_map_image",
+    "load_template_tensor",
     # FFT padding
     "DEFAULT_FFT_FACTORS",
     "FFTPaddingPlan",

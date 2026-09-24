@@ -2,6 +2,7 @@
 
 from .optics_group import OpticsGroup
 from .particle_stack import (
+    AnyParticleStack,
     ParticleStack,
     ParticleStackCSV,
     ParticleStackHDF5,
@@ -9,6 +10,7 @@ from .particle_stack import (
 )
 
 __all__ = [
+    "AnyParticleStack",
     "OpticsGroup",
     "ParticleStack",
     "ParticleStackCSV",

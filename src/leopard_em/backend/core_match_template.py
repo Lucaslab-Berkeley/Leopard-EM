@@ -244,11 +244,11 @@ def core_match_template(
             - "best_theta": Best theta angle for each pixel.
             - "best_psi": Best psi angle for each pixel.
             - "best_defocus": Best defocus value for each pixel.
-            - "correlation_mean": Sum of cross-correlation values for each pixel.
-            - "correlation_variance": Sum of squared cross-correlation values for
+            - "correlation_mean": Mean of the cross-correlation values for each pixel.
+            - "correlation_variance": Standard deviation (despite the name) of the
+              cross-correlation values for each pixel.
             - "correlation_table": Processed correlation table with all points in search
               space and image positions where correlation value exceeded a threshold.
-              each pixel.
             - "total_projections": Total number of cross-correlations computed.
             - "total_orientations": Total number of orientations searched.
             - "total_defocus": Total number of defocus values searched.

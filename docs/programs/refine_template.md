@@ -58,6 +58,13 @@ particle_stack:
   original_template_size: [512, 512]
 ```
 
+An HDF5 particle stack records its box sizes, so only its path is needed (see [particle stack formats](../data_formats/particle_stack.md#hdf5-back-end-particlestackhdf5)):
+
+```yaml
+particle_stack:
+  hdf5_path: /some/path/to/particles.h5
+```
+
 ### Configuring the defocus refinement search
 
 2DTM is highly sensitive to particle defocus, and particle refinement can localize a particle to a higher accuracy than the initial full-orientation search.

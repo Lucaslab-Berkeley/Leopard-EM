@@ -32,6 +32,7 @@ from leopard_em.analysis import (
     match_template_peaks_to_dict,
 )
 from leopard_em.pydantic_models.custom_types import BaseModel2DTM, ExcludedTensor
+from leopard_em.pydantic_models.formats import HDF5_TENSORS_GROUP
 from leopard_em.pydantic_models.results.correlation_table import CorrelationTable
 from leopard_em.utils.data_io import load_mrc_image, write_mrc_from_tensor
 
@@ -53,8 +54,6 @@ _TENSOR_NAMES = (
     "orientation_phi",
     "relative_defocus",
 )
-
-_HDF5_TENSORS_GROUP = "tensors"
 
 
 def check_file_path_and_permissions(path: str, allow_overwrite: bool) -> None:
@@ -473,7 +472,7 @@ class MatchTemplateResultHDF5(_MatchTemplateResultBase):
             f.attrs["total_orientations"] = self.total_orientations
             f.attrs["total_defocus"] = self.total_defocus
 
-            tensors_group = f.create_group(_HDF5_TENSORS_GROUP)
+            tensors_group = f.create_group(HDF5_TENSORS_GROUP)
             for name in _TENSOR_NAMES:
                 tensor: torch.Tensor | None = getattr(self, name)
                 if tensor is not None:
@@ -515,8 +514,8 @@ class MatchTemplateResultHDF5(_MatchTemplateResultBase):
             total_orientations = int(f.attrs["total_orientations"])
             total_defocus = int(f.attrs["total_defocus"])
 
-            if _HDF5_TENSORS_GROUP in f:
-                grp = f[_HDF5_TENSORS_GROUP]
+            if HDF5_TENSORS_GROUP in f:
+                grp = f[HDF5_TENSORS_GROUP]
                 for name in _TENSOR_NAMES:
                     if name in grp:
                         tensors[name] = torch.from_numpy(grp[name][:])

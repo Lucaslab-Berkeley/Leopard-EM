@@ -20,16 +20,25 @@ from leopard_em.pydantic_models.config import (
 )
 from leopard_em.pydantic_models.custom_types import BaseModel2DTM, ExcludedTensor
 from leopard_em.pydantic_models.data_structures import (
+    AnyParticleStack,
     ParticleStackCSV,
     ParticleStackHDF5,
     export_particle_stack,
 )
-from leopard_em.pydantic_models.formats import CONSTRAINED_DF_COLUMN_ORDER
+from leopard_em.pydantic_models.data_structures.particle_stack import (
+    _warn_allow_file_overwrite_deprecated,
+)
+from leopard_em.pydantic_models.formats import (
+    CONSTRAINED_DF_COLUMN_ORDER,
+    result_column_order,
+)
 from leopard_em.pydantic_models.results.match_template_result import (
     check_file_path_and_permissions,
 )
 from leopard_em.utils.backend_setup import (
     _setup_correlation_stacks_from_micrographs,
+    astigmatism_angle_tensor,
+    resolve_particle_image_source,
     setup_images_filters_particle_stack,
 )
 from leopard_em.utils.ctf_utils import _setup_ctf_kwargs_from_particle_stack
@@ -93,8 +102,8 @@ class ConstrainedSearchManager(BaseModel2DTM):
     template_volume_path: str  # In df per-particle, but ensure only one reference
     center_vector: list[float] = Field(default=[0.0, 0.0, 0.0])
 
-    particle_stack_reference: ParticleStackCSV | ParticleStackHDF5
-    particle_stack_constrained: ParticleStackCSV | ParticleStackHDF5
+    particle_stack_reference: AnyParticleStack
+    particle_stack_constrained: AnyParticleStack
     defocus_refinement_config: DefocusSearchConfig
     orientation_refinement_config: ConstrainedOrientationConfig
     preprocessing_filters: PreprocessingFilters
@@ -142,12 +151,22 @@ class ConstrainedSearchManager(BaseModel2DTM):
         pixel_size_offsets = torch.tensor([0.0])
 
         # Extract and preprocess images and filters
+        stored_images, apply_global_filtering = resolve_particle_image_source(
+            particle_stack=part_stk,
+            apply_global_filtering=True,
+            warn_on_filter_switch=False,
+        )
         (
             particle_images_dft,
             template_dft,
             projective_filters,
         ) = setup_images_filters_particle_stack(
-            part_stk, self.preprocessing_filters, template
+            part_stk,
+            self.preprocessing_filters,
+            template,
+            apply_global_filtering=apply_global_filtering,
+            image_stack=stored_images,
+            images_are_particles=stored_images is not None,
         )
 
         # get z diff for each particle
@@ -167,7 +186,7 @@ class ConstrainedSearchManager(BaseModel2DTM):
         defocus_v = defocus_v - new_z_diffs
         # Store defocus values as instance attributes for later access
         self.zdiffs = new_z_diffs
-        defocus_angle = torch.tensor(part_stk["astigmatism_angle"])
+        defocus_angle = astigmatism_angle_tensor(part_stk, template.device)
 
         # The relative defocus values to search over
         defocus_offsets = self.defocus_refinement_config.defocus_values
@@ -179,19 +198,10 @@ class ConstrainedSearchManager(BaseModel2DTM):
         # Ger corr mean and variance
         # The position of the extracted areas needs to be from the larger particle, but
         # the mean and variance must come from the initial match template on the
-        # smaller constrained particle.
-        # Currently, we just set the searched file (as in paths below) to the first
-        # element in the constrained particle stack.
-        # NOTE: This will *not* work if the constrained particle stack contains
-        # particles from multiple reference images.
-        part_stk.set_column(
-            "correlation_average_path",
-            self.particle_stack_constrained["correlation_average_path"][0],
-        )
-        part_stk.set_column(
-            "correlation_variance_path",
-            self.particle_stack_constrained["correlation_variance_path"][0],
-        )
+        # smaller constrained particle, so point the reference stack at the constrained
+        # stack's (single) correlation statistic maps.
+        for column, path in self._constrained_correlation_map_paths().items():
+            part_stk.set_column(column, path)
         # Get correlation statistics
         h, w = part_stk.original_template_size
         box_h, box_w = part_stk.extracted_box_size
@@ -203,6 +213,9 @@ class ConstrainedSearchManager(BaseModel2DTM):
             particle_indices=None,
             extracted_box_size=extracted_box_size,
             device=template.device,
+            # The constrained stack's maps, cropped at the reference positions, can
+            # never come from the reference stack's stored local stats.
+            use_stored_local_stats=False,
         )
 
         return {
@@ -222,13 +235,33 @@ class ConstrainedSearchManager(BaseModel2DTM):
             "device": device_list,  # Pass all devices to core_refine_template
         }
 
+    def _constrained_correlation_map_paths(self) -> dict[str, str]:
+        """Return the constrained stack's correlation average/variance map paths.
+
+        Raises
+        ------
+        ValueError
+            If the constrained particle stack does not reference exactly one
+            correlation average and one correlation variance map.
+        """
+        paths = {}
+        for column in ("correlation_average_path", "correlation_variance_path"):
+            unique_paths = self.particle_stack_constrained[column].dropna().unique()
+            if len(unique_paths) != 1:
+                raise ValueError(
+                    f"Constrained search requires the constrained particle stack to "
+                    f"reference exactly one '{column}' file, found {len(unique_paths)}."
+                )
+            paths[column] = str(unique_paths[0])
+        return paths
+
     def run_constrained_search(
         self,
         output_dataframe_path: str,
         false_positives: float = 0.005,
         orientation_batch_size: int = 64,
         output_format: Literal["csv", "hdf5"] | None = None,
-        allow_file_overwrite: bool = False,
+        allow_file_overwrite: bool | None = None,
     ) -> None:
         """Run the constrained search program and export the resultant DataFrame.
 
@@ -241,22 +274,25 @@ class ConstrainedSearchManager(BaseModel2DTM):
         orientation_batch_size : int
             Number of orientations to process at once. Defaults to 64.
         output_format : Literal["csv", "hdf5"] | None
-            Output back-end for the main refined table. Defaults to None, which matches
-            the back-end of ``self.particle_stack_reference`` (CSV in, CSV out; HDF5 in,
-            HDF5 out). Pass "csv" or "hdf5" to override. The accompanying "_parameters"
-            and "_above_threshold" sibling tables are always written as CSV regardless
-            of this setting.
-        allow_file_overwrite : bool
-            Whether to overwrite an existing file at ``output_dataframe_path``. Defaults
-            to False.
+            Output back-end for the main refined table. Defaults to None, which infers
+            it from the extension of ``output_dataframe_path`` (``.csv`` / ``.h5``,
+            ``.hdf5``) and otherwise matches the back-end of
+            ``self.particle_stack_reference``. The accompanying "_parameters" and
+            "_above_threshold" sibling tables are always written as CSV regardless of
+            this setting.
+        allow_file_overwrite : bool | None
+            Deprecated and ignored; an existing file at ``output_dataframe_path`` is
+            always overwritten (atomically).
         """
+        if allow_file_overwrite is not None:
+            _warn_allow_file_overwrite_deprecated()
         output_base, _ = os.path.splitext(output_dataframe_path)
         for path in (
             output_dataframe_path,
             f"{output_base}_parameters.csv",
             f"{output_base}_above_threshold.csv",
         ):
-            check_file_path_and_permissions(path, allow_file_overwrite)
+            check_file_path_and_permissions(path, allow_overwrite=True)
 
         backend_kwargs = self.make_backend_core_function_kwargs()
 
@@ -267,7 +303,6 @@ class ConstrainedSearchManager(BaseModel2DTM):
             result=result,
             false_positives=false_positives,
             output_format=output_format,
-            allow_file_overwrite=allow_file_overwrite,
         )
 
     def get_refine_result(
@@ -375,7 +410,9 @@ class ConstrainedSearchManager(BaseModel2DTM):
         df_refined["refined_scaled_mip"] = refined_scaled_mip
 
         # Reorder the columns
-        df_refined = df_refined.reindex(columns=CONSTRAINED_DF_COLUMN_ORDER)
+        df_refined = df_refined.reindex(
+            columns=result_column_order(CONSTRAINED_DF_COLUMN_ORDER, df_refined.columns)
+        )
 
         return df_refined
 
@@ -386,7 +423,7 @@ class ConstrainedSearchManager(BaseModel2DTM):
         result: dict[str, np.ndarray],
         false_positives: float = 0.005,
         output_format: Literal["csv", "hdf5"] | None = None,
-        allow_file_overwrite: bool = False,
+        allow_file_overwrite: bool | None = None,
     ) -> ParticleStackCSV | ParticleStackHDF5:
         """Build the refined DataFrame and write it, plus two CSV siblings, to disk.
 
@@ -399,12 +436,12 @@ class ConstrainedSearchManager(BaseModel2DTM):
         false_positives : float
             The number of false positives to allow per particle.
         output_format : Literal["csv", "hdf5"] | None
-            Output back-end for the main refined table. Defaults to None,
-            which matches the back-end of ``self.particle_stack_reference``.
-            Pass "csv" or "hdf5" to override.
-        allow_file_overwrite : bool
-            Whether to overwrite an existing file at ``output_dataframe_path``.
-            Defaults to False.
+            Output back-end for the main refined table. Defaults to None, which infers
+            it from the extension of ``output_dataframe_path`` and otherwise matches
+            the back-end of ``self.particle_stack_reference``.
+        allow_file_overwrite : bool | None
+            Deprecated and ignored; an existing file at ``output_dataframe_path`` is
+            always overwritten (atomically).
 
         Returns
         -------
@@ -412,6 +449,9 @@ class ConstrainedSearchManager(BaseModel2DTM):
             The refined particle stack (main table only), already written to
             ``output_dataframe_path``.
         """
+        if allow_file_overwrite is not None:
+            _warn_allow_file_overwrite_deprecated()
+
         df_refined = self.refine_result_to_dataframe(result=result)
 
         # Save the main refined DataFrame, matching the input back-end by default
@@ -420,7 +460,6 @@ class ConstrainedSearchManager(BaseModel2DTM):
             output_path=output_dataframe_path,
             source_particle_stack=self.particle_stack_reference,
             output_format=output_format,
-            allow_file_overwrite=allow_file_overwrite,
         )
 
         # Save a second dataframe

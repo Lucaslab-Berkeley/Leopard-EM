@@ -1,5 +1,7 @@
 """Output paths must be rejected up front, not after an expensive run completes."""
 
+import os
+
 import pytest
 
 from leopard_em.pydantic_models.managers import (
@@ -99,45 +101,63 @@ class TestCorrelationTablePathReassignmentBypass:
 
 
 class TestManagersCheckOutputPathBeforeCompute:
-    """The run_* methods must raise before any backend work is started."""
+    """The run_* methods validate the output directory before any backend work.
 
-    @staticmethod
-    def _fail_if_called(*args, **kwargs):
-        raise AssertionError("compute started before the output path was validated")
+    Existing outputs are not rejected: ``allow_file_overwrite`` is deprecated and
+    particle stack outputs are always overwritten atomically.
+    """
 
-    def test_refine_template(self, monkeypatch, existing_file):
-        monkeypatch.setattr(
-            RefineTemplateManager,
-            "make_backend_core_function_kwargs",
-            self._fail_if_called,
-        )
-        manager = RefineTemplateManager.model_construct()
+    class ComputeStarted(Exception):
+        """Raised in place of the backend to mark that validation passed."""
 
-        with pytest.raises(ValueError, match="already exists"):
-            manager.run_refine_template(output_dataframe_path=existing_file)
+    @classmethod
+    def _run_method(cls, monkeypatch, manager_cls, method_name):
+        def _started(*args, **kwargs):
+            raise cls.ComputeStarted
 
-    def test_constrained_search(self, monkeypatch, existing_file):
-        monkeypatch.setattr(
-            ConstrainedSearchManager,
-            "make_backend_core_function_kwargs",
-            self._fail_if_called,
-        )
-        manager = ConstrainedSearchManager.model_construct()
+        monkeypatch.setattr(manager_cls, "make_backend_core_function_kwargs", _started)
+        return getattr(manager_cls.model_construct(), method_name)
 
-        with pytest.raises(ValueError, match="already exists"):
-            manager.run_constrained_search(output_dataframe_path=existing_file)
+    @pytest.fixture(
+        params=[
+            (RefineTemplateManager, "run_refine_template"),
+            (ConstrainedSearchManager, "run_constrained_search"),
+        ],
+        ids=["refine", "constrained"],
+    )
+    def run(self, request, monkeypatch):
+        return self._run_method(monkeypatch, *request.param)
 
-    def test_constrained_search_checks_sibling_tables(self, monkeypatch, tmp_path):
-        """The '_parameters' / '_above_threshold' siblings are checked too."""
-        monkeypatch.setattr(
-            ConstrainedSearchManager,
-            "make_backend_core_function_kwargs",
-            self._fail_if_called,
-        )
+    def test_existing_output_is_not_rejected(self, run, existing_file):
+        with pytest.raises(self.ComputeStarted):
+            run(output_dataframe_path=existing_file)
+
+    def test_allow_file_overwrite_is_deprecated(self, run, existing_file):
+        with pytest.warns(DeprecationWarning, match="allow_file_overwrite"):
+            with pytest.raises(self.ComputeStarted):
+                run(output_dataframe_path=existing_file, allow_file_overwrite=False)
+
+    @pytest.mark.skipif(
+        hasattr(os, "geteuid") and os.geteuid() == 0,
+        reason="root ignores directory permissions",
+    )
+    def test_unwritable_directory_is_rejected(self, run, tmp_path):
+        locked = tmp_path / "locked"
+        locked.mkdir()
+        locked.chmod(0o500)
+        try:
+            with pytest.raises(ValueError, match="does not permit writing"):
+                run(output_dataframe_path=str(locked / "out.csv"))
+        finally:
+            locked.chmod(0o700)
+
+    def test_constrained_search_sibling_tables_are_not_rejected(
+        self, monkeypatch, tmp_path
+    ):
+        """The '_parameters' / '_above_threshold' siblings are overwritten too."""
         (tmp_path / "out_above_threshold.csv").write_text("occupied")
-        manager = ConstrainedSearchManager.model_construct()
-
-        with pytest.raises(ValueError, match="already exists"):
-            manager.run_constrained_search(
-                output_dataframe_path=str(tmp_path / "out.csv")
-            )
+        run = self._run_method(
+            monkeypatch, ConstrainedSearchManager, "run_constrained_search"
+        )
+        with pytest.raises(self.ComputeStarted):
+            run(output_dataframe_path=str(tmp_path / "out.csv"))
