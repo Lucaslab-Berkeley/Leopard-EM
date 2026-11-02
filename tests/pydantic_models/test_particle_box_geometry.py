@@ -5,10 +5,10 @@ import pandas as pd
 import pytest
 import torch
 
-from leopard_em.pydantic_models.data_structures.particle_box_geometry import (
+from leopard_em.pydantic_models.data_structures.particle_stack import ParticleStack
+from leopard_em.pydantic_models.data_structures.particle_stack.geometry import (
     ParticleBoxGeometry,
 )
-from leopard_em.pydantic_models.data_structures.particle_stack import ParticleStack
 
 # Non-square sizes with odd differences so swapped axes or rounding errors show up
 BOX = (24, 22)

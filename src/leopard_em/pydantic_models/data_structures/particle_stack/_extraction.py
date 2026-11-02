@@ -13,7 +13,7 @@ import numpy as np
 import pandas as pd
 import torch
 
-from leopard_em.pydantic_models.data_structures._particle_stack_table import (
+from leopard_em.pydantic_models.data_structures.particle_stack._table import (
     as_row_positions,
 )
 from leopard_em.pydantic_models.formats import (
@@ -67,7 +67,7 @@ def load_grouped_images(
     ----------
     groups : dict[Any, np.ndarray]
         Maps each image path to the row positions of its particles (see
-        ``_particle_stack_table.group_rows``).
+        ``_table.group_rows``).
     column_name : str
         The column the paths come from. Statistic-map columns may reference a
         ``MatchTemplateResultHDF5`` file, read from that column's dataset.

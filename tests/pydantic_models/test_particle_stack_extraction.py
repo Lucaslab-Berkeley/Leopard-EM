@@ -5,15 +5,15 @@ import pandas as pd
 import pytest
 import torch
 
-from leopard_em.pydantic_models.data_structures import _particle_stack_movie as movie
-from leopard_em.pydantic_models.data_structures._particle_stack_extraction import (
+from leopard_em.pydantic_models.data_structures.particle_stack import ParticleStack
+from leopard_em.pydantic_models.data_structures.particle_stack import _movie as movie
+from leopard_em.pydantic_models.data_structures.particle_stack._extraction import (
     LARGE_STD_PADDING,
     combined_filter_stack,
     crop_by_group,
     local_stat_padding,
     scatter_by_group,
 )
-from leopard_em.pydantic_models.data_structures.particle_stack import ParticleStack
 
 
 def test_local_stat_padding():

@@ -16,8 +16,8 @@ from leopard_em.pydantic_models.data_structures import (
     ParticleStackHDF5,
     export_particle_stack,
 )
-from leopard_em.pydantic_models.data_structures import (
-    _particle_stack_hdf5_io as hdf5_io,
+from leopard_em.pydantic_models.data_structures.particle_stack import (
+    _hdf5_io as hdf5_io,
 )
 from leopard_em.pydantic_models.managers import RefineTemplateManager
 

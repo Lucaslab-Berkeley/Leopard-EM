@@ -5,7 +5,7 @@ import pandas as pd
 import pytest
 import torch
 
-from leopard_em.pydantic_models.data_structures._particle_stack_table import (
+from leopard_em.pydantic_models.data_structures.particle_stack._table import (
     as_row_positions,
     choose_refined_columns,
     column_tensor,

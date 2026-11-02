@@ -7,7 +7,7 @@ import pandas as pd
 import torch
 from torch_motion_correction.deformation_field import DeformationField
 
-from leopard_em.pydantic_models.data_structures._particle_stack_extraction import (
+from leopard_em.pydantic_models.data_structures.particle_stack._extraction import (
     LARGE_STD_PADDING,
     local_stat_padding,
 )
