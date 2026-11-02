@@ -17,7 +17,6 @@ metadata, and all analysis methods and is not intended to be used directly.
 # pylint: disable=too-many-instance-attributes
 
 import os
-from importlib.metadata import PackageNotFoundError, version
 from typing import ClassVar, Self
 
 import h5py
@@ -25,6 +24,7 @@ import pandas as pd
 import torch
 from pydantic import ConfigDict, Field, model_validator
 
+import leopard_em
 from leopard_em.analysis import (
     MatchTemplatePeaks,
     extract_peaks_and_statistics_zscore,
@@ -35,14 +35,6 @@ from leopard_em.pydantic_models.custom_types import BaseModel2DTM, ExcludedTenso
 from leopard_em.pydantic_models.formats import HDF5_TENSORS_GROUP
 from leopard_em.pydantic_models.results.correlation_table import CorrelationTable
 from leopard_em.utils.data_io import load_mrc_image, write_mrc_from_tensor
-
-
-def _leopard_em_version() -> str:
-    try:
-        return version("leopard_em")
-    except PackageNotFoundError:
-        return "uninstalled"
-
 
 _TENSOR_NAMES = (
     "mip",
@@ -126,7 +118,7 @@ class _MatchTemplateResultBase(BaseModel2DTM):
     correlation_table_path: str | None = Field(default=None)
 
     # Scalar (non-tensor) attributes
-    leopard_em_version: str = Field(default_factory=_leopard_em_version)
+    leopard_em_version: str = Field(default_factory=lambda: leopard_em.__version__)
     total_projections: int = 0
     total_orientations: int = 0
     total_defocus: int = 0

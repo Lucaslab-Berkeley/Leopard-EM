@@ -297,7 +297,10 @@ def _setup_images_filters_from_micrographs(
             fluence_per_frame=fluence_per_frame,
         )
     else:
-        particle_images = particle_stack.construct_image_stack(
+        # Not construct_image_stack: the micrographs may be globally filtered here, and
+        # filtered crops must not end up in particle_stack.image_stack (to_hdf5 would
+        # store them as unfiltered images).
+        particle_images = particle_stack.crop_particle_regions(
             images=micrograph_images,
             indices=micrograph_indexes,
             extraction_size=particle_stack.extracted_box_size,

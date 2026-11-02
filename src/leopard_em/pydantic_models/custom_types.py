@@ -20,6 +20,7 @@ ExcludedTensorDict = SkipJsonSchema[
     Annotated[dict[str, torch.Tensor], Field(default_factory=dict, exclude=True)]
 ]
 
+
 class _TupleAsSequenceDumper(yaml.Dumper):  # pylint: disable=too-many-ancestors
     """YAML dumper writing tuples as plain sequences.
 

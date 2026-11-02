@@ -126,9 +126,16 @@ def to_pixel_positions(values: np.ndarray) -> np.ndarray:
 
 
 def position_columns(df: pd.DataFrame) -> tuple[str, str]:
-    """Return the y/x position column names to use (refined preferred, per axis)."""
-    y_col = "refined_pos_y" if "refined_pos_y" in df.columns else "pos_y"
-    x_col = "refined_pos_x" if "refined_pos_x" in df.columns else "pos_x"
+    """Return the y/x position column names to use.
+    """
+    y_col, x_col = choose_refined_columns(
+        df,
+        ["pos_y", "pos_x"],
+        prefer_refined=True,
+        refined_name="positions",
+        original_name="positions",
+        warn_if_absent=False,
+    )
     return y_col, x_col
 
 
@@ -208,10 +215,16 @@ def choose_refined_columns(
     *,
     refined_name: str,
     original_name: str,
-    check_finite: bool = True,
+    warn_if_absent: bool = True,
     stacklevel: int = 3,
 ) -> list[str]:
     """Pick the ``refined_*`` versions of ``columns`` when they are usable.
+
+    Notes
+    -----
+    The refined columns are used together or not at all: only when every one of them
+    is present and holds finite values for every particle. Otherwise the original
+    columns are returned with a warning.
 
     Parameters
     ----------
@@ -225,9 +238,9 @@ def choose_refined_columns(
         Name of the refined quantity used in warnings, e.g. "defocus values".
     original_name : str
         Name of the original quantity used in warnings.
-    check_finite : bool, optional
-        Fall back to the original columns (with a warning) if any refined value is NaN
-        or infinite, by default True.
+    warn_if_absent : bool, optional
+        Warn when none of the refined columns exist, by default True. A partial set of
+        refined columns, or non-finite refined values, are always warned about.
     stacklevel : int, optional
         Passed to ``warnings.warn``, by default 3 (the caller of the caller).
 
@@ -240,15 +253,25 @@ def choose_refined_columns(
         return list(columns)
 
     refined = [f"refined_{column}" for column in columns]
-    if not all(column in df.columns for column in refined):
+    missing = [column for column in refined if column not in df.columns]
+    if len(missing) == len(refined):
+        if warn_if_absent:
+            warnings.warn(
+                f"Refined {refined_name} not found in DataFrame, using original "
+                f"{original_name}...",
+                stacklevel=stacklevel,
+            )
+        return list(columns)
+
+    if missing:
         warnings.warn(
-            f"Refined {refined_name} not found in DataFrame, using original "
-            f"{original_name}...",
+            f"Refined {refined_name} incomplete in DataFrame (missing {missing}), "
+            f"using original {original_name}...",
             stacklevel=stacklevel,
         )
         return list(columns)
 
-    if check_finite and any(any_nan_or_inf(df[column]) for column in refined):
+    if any(any_nan_or_inf(df[column]) for column in refined):
         warnings.warn(
             f"Refined {refined_name} contain NaN or inf values, using original "
             f"{original_name}...",

@@ -8,7 +8,6 @@ used directly; see ``ParticleStackCSV`` and ``ParticleStackHDF5``.
 
 import os
 import warnings
-from importlib.metadata import PackageNotFoundError, version
 from typing import Any, ClassVar, Literal
 
 import numpy as np
@@ -59,14 +58,6 @@ _DEPRECATION_SKIP_PREFIXES = (
     os.path.dirname(os.path.abspath(pydantic.__file__)),
     os.path.dirname(os.path.abspath(leopard_em.__file__)),
 )
-
-
-# TODO: Make this a shared utility function across the package somehow
-def _leopard_em_version() -> str:
-    try:
-        return version("leopard_em")
-    except PackageNotFoundError:
-        return "uninstalled"
 
 
 def _warn_allow_file_overwrite_deprecated() -> None:
@@ -130,7 +121,7 @@ class _ParticleStackBase(BaseModel2DTM):
 
     model_config: ClassVar = ConfigDict(arbitrary_types_allowed=True)
 
-    leopard_em_version: str = Field(default_factory=_leopard_em_version)
+    leopard_em_version: str = Field(default_factory=lambda: leopard_em.__version__)
     extracted_box_size: tuple[int, int]
     original_template_size: tuple[int, int]
 
@@ -198,7 +189,7 @@ class _ParticleStackBase(BaseModel2DTM):
 
     @property
     def position_columns(self) -> tuple[str, str]:
-        """The ``(y, x)`` position columns in use (``refined_pos_*`` when present)."""
+        """The ``(y, x)`` position columns in use (``refined_pos_*`` when usable)."""
         return position_columns(self._df)
 
     @property
@@ -392,7 +383,8 @@ class _ParticleStackBase(BaseModel2DTM):
         Parameters
         ----------
         prefer_refined_angles : bool, optional
-            When true, refined angles are used if present, by default True.
+            When true, refined angles are used if all three are present and finite,
+            by default True.
 
         Returns
         -------
@@ -405,7 +397,6 @@ class _ParticleStackBase(BaseModel2DTM):
             prefer_refined_angles,
             refined_name="angles",
             original_name="angles",
-            check_finite=False,
         )
         phi, theta, psi = (column_tensor(self._df, column) for column in columns)
 

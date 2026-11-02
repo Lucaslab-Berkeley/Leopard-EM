@@ -126,6 +126,27 @@ def test_correlation_setup_does_not_touch_image_stack(workspace):
     assert corr_mean.shape == corr_std.shape == (len(workspace.df), 5, 5)
 
 
+
+@pytest.mark.parametrize("apply_global_filtering", [True, False])
+def test_image_setup_does_not_store_crops_in_image_stack(
+    workspace, apply_global_filtering
+):
+    """Globally filtered crops must not land in ``image_stack`` (and then in to_hdf5)."""
+    workspace.df["refined_relative_defocus"] = 0.0
+    stack = export_particle_stack(
+        workspace.df,
+        str(workspace.root / "stack.h5"),
+        extracted_box_size=workspace.extracted_box_size,
+        original_template_size=workspace.original_template_size,
+    )
+    assert stack.image_stack is None
+
+    _backend_kwargs(workspace, stack, apply_global_filtering=apply_global_filtering)
+
+    assert stack.image_stack is None
+    with pytest.raises(ValueError, match="image_stack is None"):
+        stack.to_hdf5(include_image_stack=True)
+
 def test_zero_padded_std_maps_give_finite_zscores(workspace):
     """v1.3 stored variance crops were zero-padded; they must not yield inf z-scores."""
     stack = export_particle_stack(

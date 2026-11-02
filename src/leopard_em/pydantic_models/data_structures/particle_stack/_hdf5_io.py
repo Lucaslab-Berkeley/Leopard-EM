@@ -20,7 +20,6 @@ import json
 import os
 import warnings
 from dataclasses import dataclass, field
-from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any
 
@@ -29,6 +28,7 @@ import numpy as np
 import pandas as pd
 import torch
 
+import leopard_em
 from leopard_em.utils.data_io import atomic_write_path
 
 FORMAT_VERSION = 2
@@ -50,13 +50,6 @@ PREPROCESSING_FLAG_ATTRS = (
     "global_normalization_applied",
     "local_normalization_applied",
 )
-
-
-def _leopard_em_version() -> str:
-    try:
-        return version("leopard_em")
-    except PackageNotFoundError:
-        return "uninstalled"
 
 
 @dataclass
@@ -168,7 +161,7 @@ def write_particle_stack_hdf5(
     """
     with atomic_write_path(path) as tmp_path, h5py.File(tmp_path, "w") as f:
         f.attrs["format_version"] = FORMAT_VERSION
-        f.attrs["writer_version"] = _leopard_em_version()
+        f.attrs["writer_version"] = leopard_em.__version__
         for key, value in metadata.items():
             f.attrs[key] = list(value) if isinstance(value, tuple) else value
 
