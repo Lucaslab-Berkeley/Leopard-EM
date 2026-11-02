@@ -7,6 +7,10 @@ import pandas as pd
 import torch
 from torch_motion_correction.deformation_field import DeformationField
 
+from leopard_em.pydantic_models.data_structures._particle_stack_extraction import (
+    LARGE_STD_PADDING,
+    local_stat_padding,
+)
 from leopard_em.utils.ctf_utils import _setup_ctf_kwargs_from_particle_stack
 from leopard_em.utils.fourier_slice import volume_to_rfft_fourier_slice
 from leopard_em.utils.image_processing import apply_image_filtering
@@ -449,10 +453,6 @@ def setup_images_filters_particle_stack(
     )
 
 
-# Constant used to replace non-positive / non-finite correlation standard deviations,
-# so those pixels get a ~zero z-score instead of an infinite one.
-_LARGE_STD = 1e10
-
 _CORR_AVERAGE_COLUMN = "correlation_average_path"
 _CORR_STD_COLUMN = "correlation_variance_path"  # NOTE: actually per-pixel std
 
@@ -461,7 +461,7 @@ def _sanitize_corr_std(corr_std_stack: torch.Tensor) -> torch.Tensor:
     """Replace non-finite or non-positive standard deviations with a large value."""
     valid = torch.isfinite(corr_std_stack) & (corr_std_stack > 0)
     return torch.where(
-        valid, corr_std_stack, torch.full_like(corr_std_stack, _LARGE_STD)
+        valid, corr_std_stack, torch.full_like(corr_std_stack, LARGE_STD_PADDING)
     )
 
 
@@ -523,15 +523,14 @@ def _setup_correlation_stacks_from_micrographs(
                 "particle_indices must be provided when mean_stack or std_stack is "
                 "provided."
             )
-        # pylint: disable=protected-access
-        stacks[column] = particle_stack._crop_particle_regions(
+        stacks[column] = particle_stack.crop_particle_regions(
             images=full_maps,
             indices=particle_indices,
             extraction_size=extracted_box_size,
             pos_reference="top-left",
             handle_bounds="pad",
             padding_mode="constant",
-            padding_value=_LARGE_STD if column == _CORR_STD_COLUMN else 0.0,
+            padding_value=local_stat_padding(column),
         ).to(device)
 
     corr_mean_stack = stacks[_CORR_AVERAGE_COLUMN]

@@ -444,7 +444,7 @@ def test_construct_image_stack_from_movie_preserves_summed_output_shape(monkeypa
         ).sum(dim=0)
 
     monkeypatch.setattr(
-        "leopard_em.pydantic_models.data_structures.particle_stack."
+        "leopard_em.pydantic_models.data_structures._particle_stack_movie."
         "dose_weight_movie_to_micrograph",
         fake_dose_weight_movie_to_micrograph,
     )
