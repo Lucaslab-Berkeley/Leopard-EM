@@ -203,9 +203,7 @@ class ConstrainedSearchManager(BaseModel2DTM):
         for column, path in self._constrained_correlation_map_paths().items():
             part_stk.set_column(column, path)
         # Get correlation statistics
-        h, w = part_stk.original_template_size
-        box_h, box_w = part_stk.extracted_box_size
-        extracted_box_size = (box_h - h + 1, box_w - w + 1)
+        extracted_box_size = part_stk.geometry.valid_size
         corr_mean_stack, corr_std_stack = _setup_correlation_stacks_from_micrographs(
             particle_stack=part_stk,
             mean_stack=None,

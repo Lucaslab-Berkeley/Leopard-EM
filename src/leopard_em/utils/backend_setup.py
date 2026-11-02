@@ -702,9 +702,7 @@ def setup_static_particle_kwargs(
         Dictionary of the image-independent backend keyword arguments.
     """
     device = template.device
-    h, w = particle_stack.original_template_size
-    box_h, box_w = particle_stack.extracted_box_size
-    extracted_box_size = (box_h - h + 1, box_w - w + 1)
+    extracted_box_size = particle_stack.geometry.valid_size
 
     # Setup correlation stacks
     if images_are_particles and (mean_stack is not None or std_stack is not None):

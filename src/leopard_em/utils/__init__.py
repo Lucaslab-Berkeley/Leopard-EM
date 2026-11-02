@@ -1,5 +1,6 @@
 """Utilities submodule for various data and pre- and post-processing tasks."""
 
+from .cropping import get_cropped_image_regions
 from .cross_correlation import handle_correlation_mode
 from .ctf_utils import calculate_ctf_filter_stack
 from .data_io import (
@@ -29,6 +30,8 @@ from .search_utils import (
 )
 
 __all__ = [
+    # Cropping
+    "get_cropped_image_regions",
     # Cross correlation
     "handle_correlation_mode",
     # CTF utilities

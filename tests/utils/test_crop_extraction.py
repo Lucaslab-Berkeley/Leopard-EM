@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 import torch
 
-from leopard_em.pydantic_models.data_structures.particle_stack import (
+from leopard_em.utils.cropping import (
     _get_cropped_image_regions_numpy,
     _get_cropped_image_regions_torch,
     get_cropped_image_regions,

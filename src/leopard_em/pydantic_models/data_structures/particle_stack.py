@@ -51,20 +51,23 @@ from leopard_em.pydantic_models.data_structures._particle_stack_hdf5_io import (
     read_particle_stack_hdf5,
     write_particle_stack_hdf5,
 )
+from leopard_em.pydantic_models.data_structures.particle_box_geometry import (
+    ParticleBoxGeometry,
+)
 from leopard_em.pydantic_models.formats import (
     MATCH_TEMPLATE_DF_COLUMN_ORDER,
     PARTICLE_ID_COLUMN,
     STATISTIC_MAP_PATH_COLUMNS,
     STATISTIC_MAP_PATH_TO_HDF5_DATASET,
 )
+
+# TORCH_TO_NUMPY_PADDING_MODE is re-exported from this module for backward compatibility
+from leopard_em.utils.cropping import (  # pylint: disable=unused-import
+    TORCH_TO_NUMPY_PADDING_MODE,  # noqa: F401
+    get_cropped_image_regions,
+)
 from leopard_em.utils.data_io import atomic_write_path, load_result_map_image
 from leopard_em.utils.image_processing import dose_weight_movie_to_micrograph
-
-TORCH_TO_NUMPY_PADDING_MODE = {
-    "constant": "constant",
-    "reflect": "reflect",
-    "replicate": "edge",
-}
 
 # Full-micrograph 2DTM result maps extracted per-particle by
 # ``get_local_stat_maps`` when no explicit columns are requested.
@@ -213,242 +216,6 @@ def _to_pixel_positions(values: np.ndarray) -> np.ndarray:
 
 
 # ---------------------------------------------------------------------------
-# Stand-alone image-extraction helpers (unchanged from original module)
-# ---------------------------------------------------------------------------
-
-
-def get_cropped_image_regions(
-    image: torch.Tensor | np.ndarray,
-    pos_y: torch.Tensor | np.ndarray,
-    pos_x: torch.Tensor | np.ndarray,
-    box_size: int | tuple[int, int],
-    pos_reference: Literal["center", "top-left"] = "top-left",
-    handle_bounds: Literal["pad", "error"] = "pad",
-    padding_mode: Literal["constant", "reflect", "replicate"] = "constant",
-    padding_value: float = 0.0,
-) -> torch.Tensor | np.ndarray:
-    """Extracts regions from an image into a stack of cropped images.
-
-    The `pos_reference` argument determines how the (y, x) coordinates are interpreted
-    when extracting boxes:
-
-    - If ``pos_reference="center"``:
-        The (y, x) coordinate refers to the **center** of the box.
-        The box extends from (y - height // 2, x - width // 2) to
-        (y + height // 2, x + width // 2).
-
-        Example:
-            :                +------------------+
-            :                |                  |
-            :              height      * (y, x) |
-            :                |                  |
-            :                +------ width -----+
-
-    - If ``pos_reference="top-left"``:
-        The (y, x) coordinate refers to the **top-left corner** of the box.
-        The box extends from (y, x) to (y + height, x + width).
-
-        Example:
-            :         (y, x) *------ width -----+
-            :                |                  |
-            :                |                height
-            :                |                  |
-            :                +------------------+
-
-    Parameters
-    ----------
-    image : torch.Tensor | np.ndarray
-        The input image from which to extract the regions.
-    pos_y : torch.Tensor | np.ndarray
-        The y positions of the regions to extract. Type must mach `image`
-    pos_x : torch.Tensor | np.ndarray
-        The x positions of the regions to extract. Type must mach `image`
-    box_size : int | tuple[int, int]
-        The size of the box to extract. If an integer is passed, the box will be square.
-    pos_reference : Literal["center", "top-left"], optional
-        The reference point for the positions, by default "center". If "center", the
-        boxes extracted will be image[y - box_size // 2 : y + box_size // 2, ...]. If
-        "top-left", the boxes will be image[y : y + box_size, ...].
-    handle_bounds : Literal["pad", "clip", "error"], optional
-        How to handle the bounds of the image, by default "pad". If "pad", the image
-        will be padded with the padding value based on the padding mode. If "error", an
-        error will be raised if any region exceeds the image bounds. Note clipping is
-        not supported since returned stack may have inhomogeneous sizes.
-    padding_mode : Literal["constant", "reflect", "replicate"], optional
-        The padding mode to use when padding the image, by default "constant".
-        "constant" pads with the value `padding_value`, "reflect" pads with the
-        reflection of the image at the edge, and "replicate" pads with the last pixel
-        of the image. These match the modes available in `torch.nn.functional.pad`.
-    padding_value : float, optional
-        The value to use for padding when `padding_mode` is "constant", by default 0.0.
-
-    Returns
-    -------
-    torch.Tensor | np.ndarray
-        The stack of cropped images extracted from the input image. Type will match the
-        input image type.
-
-    Raises
-    ------
-    ValueError
-        If `pos_reference` is not one of "center" or "top-left", or if `image` is not a
-        torch.Tensor or np.ndarray.
-    """
-    if isinstance(box_size, int):
-        box_size = (box_size, box_size)
-
-    if pos_reference == "center":
-        pos_y = pos_y - box_size[0] // 2
-        pos_x = pos_x - box_size[1] // 2
-    elif pos_reference == "top-left":
-        pass
-    else:
-        raise ValueError(f"Unknown pos_reference: {pos_reference}")
-
-    if isinstance(image, torch.Tensor):
-        return _get_cropped_image_regions_torch(
-            image=image,
-            pos_y=pos_y,
-            pos_x=pos_x,
-            box_size=box_size,
-            handle_bounds=handle_bounds,
-            padding_mode=padding_mode,
-            padding_value=padding_value,
-        )
-
-    if isinstance(image, np.ndarray):
-        padding_mode_np = TORCH_TO_NUMPY_PADDING_MODE[padding_mode]
-        return _get_cropped_image_regions_numpy(
-            image=image,
-            pos_y=pos_y,
-            pos_x=pos_x,
-            box_size=box_size,
-            handle_bounds=handle_bounds,
-            padding_mode=padding_mode_np,
-            padding_value=padding_value,
-        )
-
-    raise ValueError(f"Unknown image type: {type(image)}")
-
-
-# pylint: disable=too-many-locals
-def _get_cropped_image_regions_numpy(
-    image: np.ndarray,
-    pos_y: np.ndarray,
-    pos_x: np.ndarray,
-    box_size: tuple[int, int],
-    handle_bounds: Literal["pad", "error"],
-    padding_mode: str,
-    padding_value: float,
-) -> np.ndarray:
-    """Helper function for extracting regions from a numpy array.
-
-    NOTE: this function assumes that the position reference is the top-left corner.
-    Reference value is handled by the user-exposed 'get_cropped_image_regions' function.
-    """
-    if handle_bounds == "pad":
-        bs1 = box_size[1] - 1
-        bs0 = box_size[0] - 1
-        pad_kwargs = {}
-        if padding_mode == "constant":
-            pad_kwargs["constant_values"] = padding_value
-        image = np.pad(
-            image,
-            pad_width=((bs0, bs0), (bs1, bs1)),
-            mode=padding_mode,
-            **pad_kwargs,
-        )
-        pos_y = pos_y + bs0
-        pos_x = pos_x + bs1
-
-    regions = []
-    for y, x in zip(pos_y, pos_x, strict=False):
-        if (
-            y < 0
-            or x < 0
-            or y + box_size[0] > image.shape[0]
-            or x + box_size[1] > image.shape[1]
-        ):
-            raise IndexError(
-                f"Region bounds [{y}:{y + box_size[0]}, {x}:{x + box_size[1]}] exceed "
-                f"image dimensions {image.shape}"
-            )
-
-        regions.append(image[y : y + box_size[0], x : x + box_size[1]])
-
-    cropped_images = np.stack(regions)
-
-    return cropped_images
-
-
-# pylint: disable=too-many-locals
-def _get_cropped_image_regions_torch(
-    image: torch.Tensor,
-    pos_y: torch.Tensor,
-    pos_x: torch.Tensor,
-    box_size: tuple[int, int],
-    handle_bounds: Literal["pad", "error"],
-    padding_mode: Literal["constant", "reflect", "replicate"],
-    padding_value: float = 0.0,
-) -> torch.Tensor:
-    """Helper function for extracting regions from a torch tensor.
-
-    NOTE: this function assumes that the position reference is the top-left corner.
-    Reference value is handled by the user-exposed 'get_cropped_image_regions' function.
-    """
-    if handle_bounds == "pad":
-        bs1 = box_size[1] - 1
-        bs0 = box_size[0] - 1
-        pad_kwargs = {}
-        if padding_mode == "constant":
-            pad_kwargs["value"] = padding_value
-        # NOTE: Need to do unsqueeze/squeeze workaround to make torch happy with input
-        # tensor shapes. Looks like API for padding may change in the future torch...
-        image = torch.nn.functional.pad(
-            image.unsqueeze(0),
-            pad=(bs1, bs1, bs0, bs0),
-            mode=padding_mode,
-            **pad_kwargs,
-        ).squeeze(0)
-        pos_y = pos_y + bs0
-        pos_x = pos_x + bs1
-
-    regions = []
-    for y, x in zip(pos_y, pos_x, strict=False):
-        y = int(y.item() if hasattr(y, "item") else y)
-        x = int(x.item() if hasattr(x, "item") else x)
-        original_y, original_x = y, x
-
-        if (
-            y < 0
-            or x < 0
-            or y + box_size[0] > image.shape[0]
-            or x + box_size[1] > image.shape[1]
-        ):
-            if handle_bounds == "error":
-                raise IndexError(
-                    f"Region bounds [{original_y}:{original_y + box_size[0]}, "
-                    f"{original_x}:{original_x + box_size[1]}] exceed "
-                    f"image dimensions {image.shape}"
-                )
-            warnings.warn(
-                f"Region bounds [{original_y}:{original_y + box_size[0]}, "
-                f"{original_x}:{original_x + box_size[1]}] exceed "
-                f"image dimensions {image.shape}. Clamping to edges.",
-                UserWarning,
-                stacklevel=2,
-            )
-            y = max(0, min(y, image.shape[0] - box_size[0]))
-            x = max(0, min(x, image.shape[1] - box_size[1]))
-
-        regions.append(image[y : y + box_size[0], x : x + box_size[1]])
-
-    cropped_images = torch.stack(regions)
-
-    return cropped_images
-
-
-# ---------------------------------------------------------------------------
 # Base class
 # ---------------------------------------------------------------------------
 
@@ -572,6 +339,14 @@ class _ParticleStackBase(BaseModel2DTM):
     def num_particles(self) -> int:
         """Number of particles in the stack."""
         return len(self._df)
+
+    @property
+    def geometry(self) -> ParticleBoxGeometry:
+        """Crop geometry implied by the extracted box and original template sizes."""
+        return ParticleBoxGeometry(
+            extracted_box_size=self.extracted_box_size,
+            original_template_size=self.original_template_size,
+        )
 
     # ------------------------------------------------------------------
     # DataFrame accessor / mutator helpers
@@ -965,9 +740,7 @@ class _ParticleStackBase(BaseModel2DTM):
             columns = list(_DEFAULT_LOCAL_STAT_COLUMNS)
 
         if valid_size is None:
-            box_h, box_w = self.extracted_box_size
-            h, w = self.original_template_size
-            valid_size = (box_h - h + 1, box_w - w + 1)
+            valid_size = self.geometry.valid_size
         expected_shape = (self.num_particles, *valid_size)
 
         device = torch.device(device)
@@ -997,6 +770,7 @@ class _ParticleStackBase(BaseModel2DTM):
 
         return stat_maps
 
+    # pylint: disable=too-many-locals
     def _crop_particle_regions(
         self,
         images: torch.Tensor,
@@ -1013,42 +787,12 @@ class _ParticleStackBase(BaseModel2DTM):
         (refined_pos_x, refined_pos_y) if they are present in the DataFrame, falling
         back to unrefined positions (pos_x, pos_y) otherwise.
 
-        This method uses columns pos_x and pos_y (or refined_pos_x and refined_pos_y if
-        available) to extract the boxes from the images. When using top-left reference
-        position, the boxes are extracted as follows, where the dots represent the
-        actual particle in the image
-
-        Example:
-            :                +----------------------------------+
-            :                |                                  |
-            :                |                                  |
-            :                |     (x, y) *=== box_w ===+       |
-            :                |            |             |       |
-            :                |            |     ....  box_h     |
-            :           img_height        |    ......   |       |
-            :                |            |     ....    |       |
-            :                |            |             |       |
-            :                |            +=============+       |
-            :                |                                  |
-            :                +------------ img_width -----------+
-
-        When center reference is used, then the position columns in the DataFrame are
-        interpreted as the center of the particle, and the boxes are extracted around
-        this x and y position as follows:
-
-        Example:
-            :                +----------------------------------+
-            :                |                                  |
-            :                |                                  |
-            :                |            +=== box_w ===+       |
-            :                |            |             |       |
-            :                |            |     ....    |       |
-            :           img_height        |(x, y).*.. box_h     |
-            :                |            |     ....    |       |
-            :                |            |             |       |
-            :                |            +=============+       |
-            :                |                                  |
-            :                +------------ img_width -----------+
+        Each crop starts at the origin given by ``ParticleBoxGeometry.box_origins``:
+        the template footprint located by the position columns, shifted up/left by
+        ``(extracted_box_size - original_template_size) // 2``. Cropping
+        ``extracted_box_size`` from there gives the particle image, and cropping
+        ``valid_size`` gives the matching valid cross-correlation region of a
+        statistic map (see :mod:`particle_box_geometry`).
 
         Parameters
         ----------
@@ -1074,8 +818,6 @@ class _ParticleStackBase(BaseModel2DTM):
         """
         y_col, x_col = self._get_position_reference_columns()
 
-        h, w = self.original_template_size
-        box_h, box_w = self.extracted_box_size
         device = images.device
         region_stack = torch.zeros(
             (self.num_particles, *extraction_size), device=device
@@ -1093,18 +835,12 @@ class _ParticleStackBase(BaseModel2DTM):
         for i, indexes in enumerate(indices):
             img = images[i]
             positions = self._as_positions(indexes)
-            pos_y = all_pos_y[positions]
-            pos_x = all_pos_x[positions]
+            origin_y, origin_x = self.geometry.box_origins(
+                all_pos_y[positions], all_pos_x[positions], pos_reference
+            )
 
-            if pos_reference == "center":
-                pos_y = pos_y - h // 2
-                pos_x = pos_x - w // 2
-
-            pos_y = pos_y - (box_h - h) // 2
-            pos_x = pos_x - (box_w - w) // 2
-
-            pos_y = torch.tensor(pos_y, device=img.device)
-            pos_x = torch.tensor(pos_x, device=img.device)
+            pos_y = torch.tensor(origin_y, device=img.device)
+            pos_x = torch.tensor(origin_x, device=img.device)
 
             cropped_images = get_cropped_image_regions(
                 img,
@@ -1380,6 +1116,7 @@ class _ParticleStackBase(BaseModel2DTM):
 
     # pylint: disable=too-many-arguments
     # pylint: disable=too-many-positional-arguments
+    # pylint: disable=too-many-locals
     # pylint: disable=too-many-statements
     # pylint: disable=too-many-branches
     def _construct_particle_movie_rfft_stack(
@@ -1453,7 +1190,6 @@ class _ParticleStackBase(BaseModel2DTM):
             )
         pixel_sizes = self.get_pixel_size()
         y_col, x_col = self._get_position_reference_columns()
-        h, w = self.original_template_size
         box_h, box_w = self.extracted_box_size
         t, img_h, img_w = movie.shape
         if deformation_field is not None:
@@ -1483,20 +1219,14 @@ class _ParticleStackBase(BaseModel2DTM):
 
         pos_y = _to_pixel_positions(self._df[y_col].to_numpy())[positions]
         pos_x = _to_pixel_positions(self._df[x_col].to_numpy())[positions]
-        # If the position reference is "top-left", shift (x, y) by half the original
-        # template width/height so reference is now in the center
-        if pos_reference == "center":
-            pos_y = pos_y - h // 2
-            pos_x = pos_x - w // 2
-
-        pos_y_center = pos_y + h // 2
-        pos_x_center = pos_x + w // 2
-        pos_y -= (box_h - h) // 2
-        pos_x -= (box_w - w) // 2
-        pos_y = torch.tensor(pos_y)
-        pos_x = torch.tensor(pos_x)
-        pos_y_center = torch.tensor(pos_y_center)
-        pos_x_center = torch.tensor(pos_x_center)
+        # Motion is sampled at the template center; crops start at the box origin
+        geometry = self.geometry
+        center_y, center_x = geometry.template_centers(pos_y, pos_x, pos_reference)
+        origin_y, origin_x = geometry.box_origins(pos_y, pos_x, pos_reference)
+        pos_y = torch.tensor(origin_y)
+        pos_x = torch.tensor(origin_x)
+        pos_y_center = torch.tensor(center_y)
+        pos_x_center = torch.tensor(center_x)
 
         aligned_particle_movies_rfft = torch.zeros(
             (num_particles_to_process, t, box_h, box_w // 2 + 1),
@@ -1607,6 +1337,7 @@ class _ParticleStackBase(BaseModel2DTM):
 
     # pylint: disable=too-many-arguments
     # pylint: disable=too-many-positional-arguments
+    # pylint: disable=too-many-locals
     def construct_image_stack_from_movie(
         self,
         movie: torch.Tensor,
@@ -1946,17 +1677,12 @@ class ParticleStackHDF5(_ParticleStackBase):
             self._stored_image_stack = contents.image_stack.data
             self.image_stack = contents.image_stack.data
 
-        valid_shape = (n, *self._valid_local_stat_size())
+        valid_shape = (n, *self.geometry.valid_size)
         self.local_stats = {
             column: stored.data
             for column, stored in contents.local_stats.items()
             if _compatible(f"local_stats/{column}", stored, valid_shape)
         }
-
-    def _valid_local_stat_size(self) -> tuple[int, int]:
-        box_h, box_w = self.extracted_box_size
-        h, w = self.original_template_size
-        return box_h - h + 1, box_w - w + 1
 
     def get_stored_image_stack(self) -> torch.Tensor | None:
         """Return the stored image stack, unless ``use_stored_image_stack`` is False.
@@ -2069,7 +1795,7 @@ class ParticleStackHDF5(_ParticleStackBase):
                     "first, e.g. "
                     "self.local_stats.update(self.get_local_stat_maps())."
                 )
-            expected = (num_particles, *self._valid_local_stat_size())
+            expected = (num_particles, *self.geometry.valid_size)
             for column, stat_map in self.local_stats.items():
                 if tuple(stat_map.shape) != expected:
                     raise ValueError(
