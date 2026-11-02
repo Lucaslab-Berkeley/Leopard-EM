@@ -16,10 +16,8 @@ tensor fields.  It is not intended to be used directly.
 
 # pylint: disable=too-many-lines
 
-import hashlib
 import os
 import warnings
-from collections import Counter
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Annotated, Any, ClassVar, Literal
@@ -51,11 +49,22 @@ from leopard_em.pydantic_models.data_structures._particle_stack_hdf5_io import (
     read_particle_stack_hdf5,
     write_particle_stack_hdf5,
 )
+from leopard_em.pydantic_models.data_structures._particle_stack_table import (
+    POSITION_COLUMNS,
+    as_row_positions,
+    check_required_columns,
+    choose_refined_columns,
+    column_tensor,
+    generate_particle_ids,
+    group_rows,
+    normalize_particle_dataframe,
+    pixel_positions,
+    position_columns,
+)
 from leopard_em.pydantic_models.data_structures.particle_box_geometry import (
     ParticleBoxGeometry,
 )
 from leopard_em.pydantic_models.formats import (
-    MATCH_TEMPLATE_DF_COLUMN_ORDER,
     PARTICLE_ID_COLUMN,
     STATISTIC_MAP_PATH_COLUMNS,
     STATISTIC_MAP_PATH_TO_HDF5_DATASET,
@@ -79,9 +88,6 @@ _DEFAULT_LOCAL_STAT_COLUMNS = tuple(STATISTIC_MAP_PATH_COLUMNS)
 _LARGE_STD_PADDING = 1e10
 _DEFAULT_LOCAL_STAT_PADDING = {"correlation_variance_path": _LARGE_STD_PADDING}
 
-# Columns holding particle positions which if changed invalidate per-particle tensors
-_POSITION_COLUMNS = frozenset({"pos_x", "pos_y", "refined_pos_x", "refined_pos_y"})
-
 # Frames skipped when attributing deprecation warnings, so they point at user code
 # (e.g. a script or the YAML-loading call site) rather than library internals.
 _DEPRECATION_SKIP_PREFIXES = (
@@ -98,11 +104,6 @@ def _leopard_em_version() -> str:
         return "uninstalled"
 
 
-def _any_nan_or_inf(s: pd.Series) -> bool:
-    """Helper function to check if any value in the Series is NaN or infinite."""
-    return bool(s.isna().any() or s.isin([float("inf"), float("-inf")]).any())
-
-
 def _warn_allow_file_overwrite_deprecated() -> None:
     """Emit the DeprecationWarning for the ignored ``allow_file_overwrite`` option."""
     warnings.warn(
@@ -113,106 +114,6 @@ def _warn_allow_file_overwrite_deprecated() -> None:
         stacklevel=2,
         skip_file_prefixes=_DEPRECATION_SKIP_PREFIXES,
     )
-
-
-def _check_required_columns(df: pd.DataFrame, source: str) -> None:
-    """Raise if ``df`` lacks any column required of a particle table."""
-    missing_columns = [
-        col for col in MATCH_TEMPLATE_DF_COLUMN_ORDER if col not in df.columns
-    ]
-    if missing_columns:
-        raise ValueError(
-            f"Missing the following columns in DataFrame from {source}: "
-            f"{missing_columns}"
-        )
-
-
-def _generate_particle_ids(df: pd.DataFrame) -> list[str]:
-    """Generate unique particle IDs of the form ``{mic_stem}_{local_idx:05d}``.
-
-    Raises
-    ------
-    ValueError
-        If ``micrograph_path`` is missing or contains empty values.
-    """
-    if "micrograph_path" not in df.columns:
-        raise ValueError("Cannot generate particle IDs without 'micrograph_path'.")
-    if df["micrograph_path"].isna().any():
-        raise ValueError(
-            "Cannot generate particle IDs: 'micrograph_path' is empty for "
-            f"{int(df['micrograph_path'].isna().sum())} particle(s)."
-        )
-
-    groups = df.groupby("micrograph_path", sort=False).indices
-    stems = {path: Path(str(path)).stem for path in groups}
-    stem_counts = Counter(stems.values())
-
-    ids = np.empty(len(df), dtype=object)
-    for path, positions in groups.items():
-        stem = stems[path]
-        if stem_counts[stem] > 1:
-            digest = hashlib.blake2b(str(path).encode(), digest_size=4).hexdigest()
-            stem = f"{stem}-{digest}"
-        for local_idx, position in enumerate(positions):
-            ids[position] = f"{stem}_{local_idx:05d}"
-
-    res: list[str] = ids.tolist()
-    return res
-
-
-def _normalize_particle_dataframe(
-    df: pd.DataFrame,
-    on_invalid_ids: Literal["raise", "regenerate"] = "raise",
-) -> pd.DataFrame:
-    """Return a copy of ``df`` in the canonical in-memory particle-table layout.
-
-    Parameters
-    ----------
-    df : pd.DataFrame
-        The particle table.
-    on_invalid_ids : Literal["raise", "regenerate"]
-        What to do when a ``particle_id`` column is present but contains duplicate or
-        empty values. "regenerate" replaces it (with a warning) and is used for legacy
-        inputs; "raise" is used everywhere else.
-
-    Returns
-    -------
-    pd.DataFrame
-    """
-    if df.index.name == PARTICLE_ID_COLUMN and PARTICLE_ID_COLUMN not in df.columns:
-        df = df.reset_index()
-    else:
-        df = df.reset_index(drop=True)
-
-    if PARTICLE_ID_COLUMN not in df.columns:
-        return df
-
-    ids = df[PARTICLE_ID_COLUMN]
-    num_empty = int(ids.isna().sum() + (ids.astype(str) == "").sum())
-    duplicated = ids[ids.duplicated(keep=False)].unique().tolist()
-    if not num_empty and not duplicated:
-        return df
-
-    problem = (
-        f"{num_empty} empty value(s)"
-        if not duplicated
-        else f"duplicate value(s) (e.g. {duplicated[:5]})"
-    )
-    if on_invalid_ids == "raise":
-        raise ValueError(f"Column '{PARTICLE_ID_COLUMN}' contains {problem}.")
-
-    warnings.warn(
-        f"Column '{PARTICLE_ID_COLUMN}' contains {problem}; regenerating particle IDs.",
-        UserWarning,
-        stacklevel=3,
-    )
-    df[PARTICLE_ID_COLUMN] = _generate_particle_ids(df)
-    return df
-
-
-def _to_pixel_positions(values: np.ndarray) -> np.ndarray:
-    """Convert (possibly float-typed) pixel coordinates to int64."""
-    return np.rint(np.asarray(values, dtype=np.float64)).astype(np.int64)
 
 
 # ---------------------------------------------------------------------------
@@ -320,12 +221,6 @@ class _ParticleStackBase(BaseModel2DTM):
     # Internal helpers
     # ------------------------------------------------------------------
 
-    def _get_position_reference_columns(self) -> tuple[str, str]:
-        """Return the y/x position column names to use (refined preferred)."""
-        y_col = "refined_pos_y" if "refined_pos_y" in self._df.columns else "pos_y"
-        x_col = "refined_pos_x" if "refined_pos_x" in self._df.columns else "pos_x"
-        return y_col, x_col
-
     # ------------------------------------------------------------------
     # Properties
     # ------------------------------------------------------------------
@@ -339,6 +234,11 @@ class _ParticleStackBase(BaseModel2DTM):
     def num_particles(self) -> int:
         """Number of particles in the stack."""
         return len(self._df)
+
+    @property
+    def position_columns(self) -> tuple[str, str]:
+        """The ``(y, x)`` position columns in use (``refined_pos_*`` when present)."""
+        return position_columns(self._df)
 
     @property
     def geometry(self) -> ParticleBoxGeometry:
@@ -377,7 +277,7 @@ class _ParticleStackBase(BaseModel2DTM):
 
     def _invalidate_derived_tensors(self, column_name: str) -> None:
         """Drop stored per-particle tensors that depended on ``column_name``."""
-        if column_name in _POSITION_COLUMNS:
+        if column_name in POSITION_COLUMNS:
             self._stored_image_stack = None
             self.local_stats = {}
         elif column_name == "micrograph_path":
@@ -433,48 +333,14 @@ class _ParticleStackBase(BaseModel2DTM):
         on_invalid_ids: Literal["raise", "regenerate"] = "raise",
     ) -> None:
         """Replace the underlying DataFrame, normalizing it to the canonical layout."""
-        self._df = _normalize_particle_dataframe(df, on_invalid_ids=on_invalid_ids)
+        self._df = normalize_particle_dataframe(df, on_invalid_ids=on_invalid_ids)
 
     def _as_positions(self, indexes: Any) -> np.ndarray:
         """Validate and convert particle indexes to 0-based row positions.
 
-        Parameters
-        ----------
-        indexes : Any
-            Integer row positions (e.g. a ``pd.Index`` from
-            :meth:`load_images_grouped_by_column`, a list or an array).
-
-        Returns
-        -------
-        np.ndarray
-            1-D int64 array of row positions.
-
-        Raises
-        ------
-        TypeError
-            If ``indexes`` are not integers (e.g. ``particle_id`` strings).
-        IndexError
-            If any position is outside ``[0, num_particles)``.
+        See :func:`_particle_stack_table.as_row_positions`.
         """
-        positions = np.asarray(indexes).reshape(-1)
-        if positions.size == 0:
-            return positions.astype(np.int64)
-        if positions.dtype.kind not in "iu":
-            raise TypeError(
-                "Particle indexes must be integer row positions (0..N-1), got dtype "
-                f"'{positions.dtype}'. To select by particle_id, look up the positions "
-                f"in the '{PARTICLE_ID_COLUMN}' column first."
-            )
-        positions = positions.astype(np.int64)
-        num_particles = self.num_particles
-        out_of_range = (positions < 0) | (positions >= num_particles)
-        if out_of_range.any():
-            examples = positions[out_of_range][:5].tolist()
-            raise IndexError(
-                f"{int(out_of_range.sum())} particle index(es) out of range for a "
-                f"stack of {num_particles} particles (e.g. {examples})."
-            )
-        return positions
+        return as_row_positions(indexes, self.num_particles)
 
     def get_dataframe_copy(self) -> pd.DataFrame:
         """Return a copy of the underlying DataFrame.
@@ -504,24 +370,14 @@ class _ParticleStackBase(BaseModel2DTM):
         -------
         torch.Tensor
         """
-        rel_defocus_col = "relative_defocus"
-        if prefer_refined_defocus:
-            if "refined_relative_defocus" not in self._df.columns:
-                warnings.warn(
-                    "Refined defocus values not found in DataFrame, using original "
-                    "defocus values...",
-                    stacklevel=2,
-                )
-            elif _any_nan_or_inf(self._df["refined_relative_defocus"]):
-                warnings.warn(
-                    "Refined defocus values contain NaN or inf values, using original "
-                    "defocus values...",
-                    stacklevel=2,
-                )
-            else:
-                rel_defocus_col = "refined_relative_defocus"
-
-        return torch.tensor(self._df[rel_defocus_col].to_numpy().copy())
+        (column,) = choose_refined_columns(
+            self._df,
+            ["relative_defocus"],
+            prefer_refined_defocus,
+            refined_name="defocus values",
+            original_name="defocus values",
+        )
+        return column_tensor(self._df, column)
 
     def get_absolute_defocus(
         self, prefer_refined_defocus: bool = True
@@ -539,8 +395,8 @@ class _ParticleStackBase(BaseModel2DTM):
             ``(defocus_u, defocus_v)`` tensors in Angstroms.
         """
         particle_defocus = self.get_relative_defocus(prefer_refined_defocus)
-        defocus_u = torch.tensor(self._df["defocus_u"].to_numpy().copy())
-        defocus_v = torch.tensor(self._df["defocus_v"].to_numpy().copy())
+        defocus_u = column_tensor(self._df, "defocus_u")
+        defocus_v = column_tensor(self._df, "defocus_v")
         defocus_u = defocus_u + particle_defocus
         defocus_v = defocus_v + particle_defocus
         return defocus_u, defocus_v
@@ -560,24 +416,14 @@ class _ParticleStackBase(BaseModel2DTM):
         -------
         torch.Tensor
         """
-        pixel_size_col = "pixel_size"
-        if prefer_refined_pixel_size:
-            if "refined_pixel_size" not in self._df.columns:
-                warnings.warn(
-                    "Refined pixel size not found in DataFrame, using original"
-                    " pixel size values...",
-                    stacklevel=2,
-                )
-            elif _any_nan_or_inf(self._df["refined_pixel_size"]):
-                warnings.warn(
-                    "Refined pixel size contain NaN or inf values, using original"
-                    " pixel size values...",
-                    stacklevel=2,
-                )
-            else:
-                pixel_size_col = "refined_pixel_size"
-
-        return torch.tensor(self._df[pixel_size_col].to_numpy().copy())
+        (column,) = choose_refined_columns(
+            self._df,
+            ["pixel_size"],
+            prefer_refined_pixel_size,
+            refined_name="pixel size",
+            original_name="pixel size values",
+        )
+        return column_tensor(self._df, column)
 
     def get_euler_angles(self, prefer_refined_angles: bool = True) -> torch.Tensor:
         """Return the Euler angles (phi, theta, psi) of all particles as a tensor.
@@ -592,26 +438,15 @@ class _ParticleStackBase(BaseModel2DTM):
         torch.Tensor
             Shape ``(N, 3)`` — columns correspond to (phi, theta, psi) in ZYZ.
         """
-        phi_col = "phi"
-        theta_col = "theta"
-        psi_col = "psi"
-        if prefer_refined_angles:
-            if not all(
-                x in self._df.columns
-                for x in ["refined_phi", "refined_theta", "refined_psi"]
-            ):
-                warnings.warn(
-                    "Refined angles not found in DataFrame, using original angles...",
-                    stacklevel=2,
-                )
-            else:
-                phi_col = "refined_phi"
-                theta_col = "refined_theta"
-                psi_col = "refined_psi"
-
-        phi = torch.tensor(self._df[phi_col].to_numpy().copy())
-        theta = torch.tensor(self._df[theta_col].to_numpy().copy())
-        psi = torch.tensor(self._df[psi_col].to_numpy().copy())
+        columns = choose_refined_columns(
+            self._df,
+            ["phi", "theta", "psi"],
+            prefer_refined_angles,
+            refined_name="angles",
+            original_name="angles",
+            check_finite=False,
+        )
+        phi, theta, psi = (column_tensor(self._df, column) for column in columns)
 
         return torch.stack((phi, theta, psi), dim=-1)
 
@@ -649,21 +484,9 @@ class _ParticleStackBase(BaseModel2DTM):
         ValueError
             If the column is missing or is empty for any particle.
         """
-        if column_name not in self._df.columns:
-            raise ValueError(f"Column '{column_name}' not found in the DataFrame.")
-
-        num_missing = int(self._df[column_name].isna().sum())
-        if num_missing:
-            raise ValueError(
-                f"Column '{column_name}' is empty for {num_missing} particle(s); every "
-                "particle must reference an image file."
-            )
-
+        image_index_groups = group_rows(self._df, column_name)
         dataset_name = STATISTIC_MAP_PATH_TO_HDF5_DATASET.get(column_name)
 
-        # ``.indices`` gives row *positions*, which is what the positional tensors
-        # built from these groups need regardless of the DataFrame's index.
-        image_index_groups = self._df.groupby(column_name).indices
         images_list = []
         indices = []
         for img_path, positions in image_index_groups.items():
@@ -816,8 +639,6 @@ class _ParticleStackBase(BaseModel2DTM):
         torch.Tensor
             Stack of extracted images ``(N, extraction_h, extraction_w)``.
         """
-        y_col, x_col = self._get_position_reference_columns()
-
         device = images.device
         region_stack = torch.zeros(
             (self.num_particles, *extraction_size), device=device
@@ -829,8 +650,7 @@ class _ParticleStackBase(BaseModel2DTM):
                 f"indices ({len(indices)})."
             )
 
-        all_pos_y = _to_pixel_positions(self._df[y_col].to_numpy())
-        all_pos_x = _to_pixel_positions(self._df[x_col].to_numpy())
+        all_pos_y, all_pos_x = pixel_positions(self._df)
 
         for i, indexes in enumerate(indices):
             img = images[i]
@@ -1189,7 +1009,6 @@ class _ParticleStackBase(BaseModel2DTM):
                 stacklevel=2,
             )
         pixel_sizes = self.get_pixel_size()
-        y_col, x_col = self._get_position_reference_columns()
         box_h, box_w = self.extracted_box_size
         t, img_h, img_w = movie.shape
         if deformation_field is not None:
@@ -1217,8 +1036,8 @@ class _ParticleStackBase(BaseModel2DTM):
         particle_indexes = positions.tolist()
         num_particles_to_process = len(particle_indexes)
 
-        pos_y = _to_pixel_positions(self._df[y_col].to_numpy())[positions]
-        pos_x = _to_pixel_positions(self._df[x_col].to_numpy())[positions]
+        all_pos_y, all_pos_x = pixel_positions(self._df)
+        pos_y, pos_x = all_pos_y[positions], all_pos_x[positions]
         # Motion is sampled at the template center; crops start at the box origin
         geometry = self.geometry
         center_y, center_x = geometry.template_centers(pos_y, pos_x, pos_reference)
@@ -1432,7 +1251,7 @@ class ParticleStackCSV(_ParticleStackBase):
             If required columns are missing from the CSV.
         """
         tmp_df = pd.read_csv(self.df_path)
-        _check_required_columns(tmp_df, source=f"'{self.df_path}'")
+        check_required_columns(tmp_df, source=f"'{self.df_path}'")
         self._set_dataframe(tmp_df, on_invalid_ids="regenerate")
 
     # ---------------------------------------------------------------------------
@@ -1639,13 +1458,13 @@ class ParticleStackHDF5(_ParticleStackBase):
 
     def _apply_file_contents(self, contents: ParticleStackFileContents) -> None:
         """Adopt the particle table and compatible stored tensors read from file."""
-        _check_required_columns(contents.df, source=f"'{self.hdf5_path}'")
+        check_required_columns(contents.df, source=f"'{self.hdf5_path}'")
         self._set_dataframe(
             contents.df,
             on_invalid_ids="raise" if contents.format_version >= 2 else "regenerate",
         )
 
-        position_columns = self._get_position_reference_columns()
+        stack_position_columns = self.position_columns
 
         def _compatible(
             name: str, stored: StoredTensor, shape: tuple[int, ...]
@@ -1655,10 +1474,10 @@ class ParticleStackHDF5(_ParticleStackBase):
                     f"shape {tuple(stored.data.shape)} does not match the expected "
                     f"{shape}"
                 )
-            elif stored.position_columns not in (None, position_columns):
+            elif stored.position_columns not in (None, stack_position_columns):
                 reason = (
                     f"it was extracted at {stored.position_columns}, not "
-                    f"{position_columns}"
+                    f"{stack_position_columns}"
                 )
             else:
                 return True
@@ -1712,7 +1531,7 @@ class ParticleStackHDF5(_ParticleStackBase):
         contents = read_particle_stack_hdf5(
             self.hdf5_path, load_image_stack=False, load_local_stats=False
         )
-        _check_required_columns(contents.df, source=f"'{self.hdf5_path}'")
+        check_required_columns(contents.df, source=f"'{self.hdf5_path}'")
         self._set_dataframe(
             contents.df,
             on_invalid_ids="raise" if contents.format_version >= 2 else "regenerate",
@@ -1765,9 +1584,9 @@ class ParticleStackHDF5(_ParticleStackBase):
         """
         df = self._df
         if PARTICLE_ID_COLUMN not in df.columns:
-            df.insert(0, PARTICLE_ID_COLUMN, _generate_particle_ids(df))
+            df.insert(0, PARTICLE_ID_COLUMN, generate_particle_ids(df))
         # Validate IDs, and keep `particle_id` as the first column on disk
-        df = _normalize_particle_dataframe(df, on_invalid_ids="raise")
+        df = normalize_particle_dataframe(df, on_invalid_ids="raise")
         df = df[[PARTICLE_ID_COLUMN, *(c for c in df.columns if c != "particle_id")]]
         self._df = df
 
@@ -1816,7 +1635,7 @@ class ParticleStackHDF5(_ParticleStackBase):
             df=df,
             image_stack=image_stack,
             local_stats=local_stats,
-            position_columns=self._get_position_reference_columns(),
+            position_columns=self.position_columns,
         )
 
         # Mirror what is now on disk

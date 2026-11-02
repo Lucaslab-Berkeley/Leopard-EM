@@ -20,6 +20,19 @@ ExcludedTensorDict = SkipJsonSchema[
     Annotated[dict[str, torch.Tensor], Field(default_factory=dict, exclude=True)]
 ]
 
+class _TupleAsSequenceDumper(yaml.Dumper):  # pylint: disable=too-many-ancestors
+    """YAML dumper writing tuples as plain sequences.
+
+    Notes
+    -----
+    The default dumper tags tuples as ``!!python/tuple``, which ``yaml.safe_load`` (used
+    by ``from_yaml``) refuses to construct. Pydantic coerces the loaded lists back into
+    tuple-typed fields.
+    """
+
+
+_TupleAsSequenceDumper.add_representer(tuple, yaml.Dumper.represent_list)
+
 
 class BaseModel2DTM(BaseModel):
     """Implementation of a Pydantic BaseModel with additional, useful methods.
@@ -131,4 +144,4 @@ class BaseModel2DTM(BaseModel):
         None
         """
         with open(yaml_path, "w", encoding="utf-8") as f:
-            yaml.dump(self.model_dump(), f)
+            yaml.dump(self.model_dump(), f, Dumper=_TupleAsSequenceDumper)

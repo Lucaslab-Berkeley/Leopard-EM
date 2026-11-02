@@ -848,9 +848,10 @@ class FrameInspectionManager(PeakInspectionManager):
             [kwargs["defocus_u"], kwargs["defocus_v"], kwargs["defocus_angle"]],
             dim=-1,
         )
-        df = self.particle_stack._df  # pylint: disable=protected-access
         particle_index = (
-            df["particle_index"].to_numpy() if "particle_index" in df.columns else None
+            self.particle_stack["particle_index"].to_numpy()
+            if "particle_index" in self.particle_stack.df_columns
+            else None
         )
 
         return save_inspection_result(

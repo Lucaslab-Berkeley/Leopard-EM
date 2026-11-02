@@ -128,8 +128,7 @@ class ConstrainedSearchManager(BaseModel2DTM):
         part_stk = self.particle_stack_reference
 
         # Checks to make sure manager is properly configured
-        # pylint: disable=protected-access
-        assert part_stk._df["micrograph_path"].nunique() == 1, (
+        assert part_stk["micrograph_path"].nunique() == 1, (
             "Constrained search can only be run on data from a single micrograph. "
             "Please ensure that the particle stack contains particles from only one "
             "micrograph."
