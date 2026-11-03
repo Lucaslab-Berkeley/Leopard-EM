@@ -52,14 +52,15 @@ def test_positions_keep_torch_type():
 
 def test_stat_map_crop_matches_particle_box_correlation():
     """Image box and valid stat region share an origin; peak sits at the margin."""
+    # float64: the two correlations accumulate in different orders, and float32
+    # round-off differs between CPU backends (e.g. macOS) by more than its tolerance
     rng = np.random.default_rng(0)
-    image = torch.from_numpy(rng.normal(size=(80, 70)).astype(np.float32))
-    template = torch.from_numpy(rng.normal(size=TEMPLATE).astype(np.float32))
+    image = torch.from_numpy(rng.normal(size=(80, 70)))
+    template = torch.from_numpy(rng.normal(size=TEMPLATE))
 
     def valid_xcorr(img):
         return torch.nn.functional.conv2d(img[None, None], template[None, None])[0, 0]
 
-    full_map = valid_xcorr(image)
     valid_h, valid_w = GEOMETRY.valid_size
     margin_y, margin_x = GEOMETRY.margin
 

@@ -509,7 +509,7 @@ class ConstrainedSearchManager(BaseModel2DTM):
             df_refined_above_threshold["refined_scaled_mip"] != np.inf
         ]
         df_refined_above_threshold = df_refined_above_threshold[
-            df_refined_above_threshold["refined_scaled_mip"] != np.nan
+            df_refined_above_threshold["refined_scaled_mip"].notna()
         ]
         # Save the above threshold dataframe
         df_refined_above_threshold.to_csv(above_threshold_path)

@@ -179,8 +179,8 @@ class TestHDF5Roundtrip:
             assert recovered.defocus_offsets == pytest.approx(
                 minimal_table.defocus_offsets, abs=1e-5
             )
-            assert recovered.euler_angles == pytest.approx(
-                minimal_table.euler_angles, abs=1e-5
+            np.testing.assert_allclose(
+                recovered.euler_angles, minimal_table.euler_angles, rtol=1e-6, atol=1e-5
             )
         finally:
             os.unlink(path)
@@ -291,8 +291,11 @@ class TestHDF5Compression:
             try:
                 large_table.to_hdf5(path, compress=compress)
                 recovered = CorrelationTable.from_hdf5(path)
-                assert recovered.euler_angles == pytest.approx(
-                    large_table.euler_angles, abs=1e-4
+                np.testing.assert_allclose(
+                    recovered.euler_angles,
+                    large_table.euler_angles,
+                    rtol=1e-6,
+                    atol=1e-4,
                 )
             finally:
                 os.unlink(path)
@@ -412,7 +415,9 @@ class TestEulerAnglesAlwaysStored:
         try:
             ct.to_hdf5(path)
             recovered = CorrelationTable.from_hdf5(path)
-            assert recovered.euler_angles == pytest.approx(ct.euler_angles, abs=1e-5)
+            np.testing.assert_allclose(
+                recovered.euler_angles, ct.euler_angles, rtol=1e-6, atol=1e-5
+            )
         finally:
             os.unlink(path)
 
@@ -477,7 +482,9 @@ class TestLegacyFileReconstruction:
         try:
             _write_legacy_v1_3_hdf5(path, phi_theta_angles, psi_angles)
             recovered = CorrelationTable.from_hdf5(path)
-            assert recovered.euler_angles == pytest.approx(
+            # pytest.approx's default tolerances (it rejects nested sequences)
+            np.testing.assert_allclose(
+                recovered.euler_angles,
                 [
                     (0.0, 0.0, 0.0),
                     (45.0, 30.0, 0.0),
@@ -485,7 +492,9 @@ class TestLegacyFileReconstruction:
                     (45.0, 30.0, 90.0),
                     (0.0, 0.0, 180.0),
                     (45.0, 30.0, 180.0),
-                ]
+                ],
+                rtol=1e-6,
+                atol=1e-12,
             )
         finally:
             os.unlink(path)
