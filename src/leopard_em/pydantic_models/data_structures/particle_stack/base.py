@@ -38,6 +38,7 @@ from leopard_em.pydantic_models.data_structures.particle_stack._movie import (
 from leopard_em.pydantic_models.data_structures.particle_stack._table import (
     POSITION_COLUMNS,
     as_row_positions,
+    changed_columns,
     choose_refined_columns,
     column_tensor,
     group_rows,
@@ -50,6 +51,7 @@ from leopard_em.pydantic_models.data_structures.particle_stack.geometry import (
 )
 from leopard_em.pydantic_models.formats import (
     DEFAULT_LOCAL_STAT_COLUMNS,
+    PARTICLE_ID_COLUMN,
     local_stat_padding,
 )
 
@@ -287,8 +289,32 @@ class _ParticleStackBase(BaseModel2DTM):
         df: pd.DataFrame,
         on_invalid_ids: Literal["raise", "regenerate"] = "raise",
     ) -> None:
-        """Replace the underlying DataFrame, normalizing it to the canonical layout."""
-        self._df = normalize_particle_dataframe(df, on_invalid_ids=on_invalid_ids)
+        """Replace the underlying DataFrame, normalizing it to the canonical layout.
+
+        Notes
+        -----
+        The particle images and other tensors stored are coupled to the original rows
+        they correspond to. For example, the positions of the particles within the
+        image. When the DataFrame is replaced, any stored tensors that depend on changed
+        rows or columns are dropped to ensure present data remains valid.
+        """
+        new_df = normalize_particle_dataframe(df, on_invalid_ids=on_invalid_ids)
+        old_df = getattr(self, "_df", None)
+        self._df = new_df
+        if old_df is None:
+            return
+
+        dependencies = [
+            PARTICLE_ID_COLUMN,
+            *sorted(POSITION_COLUMNS),
+            "micrograph_path",
+            *self.local_stats,
+        ]
+        for column in changed_columns(old_df, new_df, dependencies):
+            # A reordered or resized table invalidates tensors like moved positions
+            self._invalidate_derived_tensors(
+                "pos_y" if column == PARTICLE_ID_COLUMN else column
+            )
 
     def _as_positions(self, indexes: Any) -> np.ndarray:
         """Validate and convert particle indexes to 0-based row positions.

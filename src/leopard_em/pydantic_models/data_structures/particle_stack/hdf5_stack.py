@@ -24,6 +24,9 @@ from leopard_em.pydantic_models.data_structures.particle_stack.base import (
     _ParticleStackBase,
     _warn_allow_file_overwrite_deprecated,
 )
+from leopard_em.pydantic_models.data_structures.particle_stack.geometry import (
+    ParticleBoxGeometry,
+)
 from leopard_em.pydantic_models.formats import PARTICLE_ID_COLUMN
 
 
@@ -159,6 +162,16 @@ class ParticleStackHDF5(_ParticleStackBase):
         )
 
         stack_position_columns = self.position_columns
+        # Crops start `margin` pixels before the template footprint, so tensors cut
+        # with the file's box/template sizes only line up if the margin is unchanged
+        # (an explicit `original_template_size` override can change it).
+        file_margin = None
+        if all(key in contents.metadata for key in BOX_SIZE_ATTRS):
+            file_margin = ParticleBoxGeometry(
+                extracted_box_size=contents.metadata["extracted_box_size"],
+                original_template_size=contents.metadata["original_template_size"],
+            ).margin
+        stack_margin = self.geometry.margin
 
         def _compatible(
             name: str, stored: StoredTensor, shape: tuple[int, ...]
@@ -167,6 +180,11 @@ class ParticleStackHDF5(_ParticleStackBase):
                 reason = (
                     f"shape {tuple(stored.data.shape)} does not match the expected "
                     f"{shape}"
+                )
+            elif file_margin is not None and file_margin != stack_margin:
+                reason = (
+                    f"its crop origin differs (cropped {file_margin} px before the "
+                    f"template, not {stack_margin} px)"
                 )
             elif stored.position_columns not in (None, stack_position_columns):
                 reason = (

@@ -224,6 +224,59 @@ def test_explicit_box_size_overrides_file_and_drops_incompatible_tensors(workspa
     assert loaded.local_stats_stored  # the file still has them
 
 
+def test_template_size_override_drops_stored_image_stack(workspace):
+    """A different crop margin means the stored crops sit at the wrong origin."""
+    stack = _export(workspace)
+    images, indices = stack.load_images_grouped_by_column("micrograph_path")
+    stack.construct_image_stack(images, indices, stack.extracted_box_size)
+    stack.to_hdf5(include_image_stack=True)
+
+    tmpl_h, tmpl_w = workspace.original_template_size
+    with pytest.warns(UserWarning, match="crop origin differs"):
+        loaded = ParticleStackHDF5(
+            hdf5_path=stack.hdf5_path, original_template_size=(tmpl_h - 4, tmpl_w - 4)
+        )
+    # Same box size, so the shape check alone would have accepted it
+    assert loaded.extracted_box_size == workspace.extracted_box_size
+    assert loaded.image_stack is None
+    assert loaded.get_stored_image_stack() is None
+
+
+def _stack_with_stored_tensors(workspace):
+    stack = _export(workspace)
+    images, indices = stack.load_images_grouped_by_column("micrograph_path")
+    stack.construct_image_stack(images, indices, stack.extracted_box_size)
+    stack.local_stats.update(
+        stack.get_local_stat_maps(columns=["mip_path", "psi_path"])
+    )
+    stack.to_hdf5(include_image_stack=True, include_local_stats=True)
+    return ParticleStackHDF5(hdf5_path=stack.hdf5_path)
+
+
+def test_replacing_table_keeps_tensors_of_unchanged_rows(workspace):
+    loaded = _stack_with_stored_tensors(workspace)
+    loaded.load_df()  # same file, same rows
+    loaded._set_dataframe(loaded.get_dataframe_copy())
+    assert loaded.get_stored_image_stack() is not None
+    assert set(loaded.local_stats) == {"mip_path", "psi_path"}
+
+    # Only the maps a changed column referenced are dropped
+    df = loaded.get_dataframe_copy()
+    df["psi_path"] = str(workspace.result_paths[0])
+    loaded._set_dataframe(df)
+    assert set(loaded.local_stats) == {"mip_path"}
+    assert loaded.image_stack is not None
+
+
+def test_reordered_table_drops_tensors(workspace):
+    """Rows paired with another particle's images/maps would refine silently wrong."""
+    loaded = _stack_with_stored_tensors(workspace)
+    loaded._set_dataframe(loaded.get_dataframe_copy().iloc[::-1])
+    assert loaded.image_stack is None
+    assert loaded.get_stored_image_stack() is None
+    assert loaded.local_stats == {}
+
+
 def test_rewrite_without_tensors_updates_stored_flags(workspace):
     """Re-exporting without tensors must not leave stale *_stored attributes."""
     stack = _export(workspace)

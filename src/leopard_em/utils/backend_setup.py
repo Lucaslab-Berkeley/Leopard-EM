@@ -830,9 +830,14 @@ def setup_particle_backend_kwargs(
     -----
     When no ``image_stack`` is passed and the particle stack holds a stored image stack
     (see :func:`resolve_particle_image_source`), the stored particle images are used
-    with per-particle filtering instead of extracting from the micrographs.
+    with per-particle filtering instead of extracting from the micrographs. This only
+    happens when ``mean_stack``, ``std_stack`` and ``particle_indices`` are not given
+    either: those describe full-size micrograph maps, so the micrographs are used.
     """
-    if image_stack is None:
+    caller_gave_micrograph_inputs = (
+        mean_stack is not None or std_stack is not None or particle_indices is not None
+    )
+    if image_stack is None and not caller_gave_micrograph_inputs:
         movie_in_use = movie is not None and (
             deformation_field is not None or particle_shifts is not None
         )

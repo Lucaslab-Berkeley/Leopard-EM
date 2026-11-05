@@ -91,6 +91,39 @@ def test_stored_image_stack_matches_micrograph_path(workspace, self_contained_st
         torch.testing.assert_close(from_stored[key], from_micrographs[key], msg=key)
 
 
+def test_caller_micrograph_stats_bypass_stored_image_stack(
+    workspace, self_contained_stack
+):
+    """Full-micrograph mean/std from the caller mean the micrograph path is in use."""
+    path = self_contained_stack.hdf5_path
+    expected = _backend_kwargs(
+        workspace,
+        ParticleStackHDF5(hdf5_path=path, use_stored_image_stack=False),
+        apply_global_filtering=True,
+    )
+
+    stack = ParticleStackHDF5(hdf5_path=path)
+    assert stack.get_stored_image_stack() is not None
+    mean_maps, indices = stack.load_images_grouped_by_column("correlation_average_path")
+    std_maps, _ = stack.load_images_grouped_by_column("correlation_variance_path")
+    kwargs = setup_particle_backend_kwargs(
+        particle_stack=stack,
+        template=load_mrc_volume(workspace.template_path),
+        preprocessing_filters=PreprocessingFilters(),
+        euler_angles=stack.get_euler_angles(prefer_refined_angles=False),
+        euler_angle_offsets=torch.zeros(1, 3),
+        defocus_offsets=torch.tensor([0.0]),
+        pixel_size_offsets=torch.tensor([0.0]),
+        apply_global_filtering=True,
+        device_list=[torch.device("cpu")],
+        mean_stack=mean_maps,
+        std_stack=std_maps,
+        particle_indices=indices,
+    )
+    for key in COMPARED_KEYS:
+        torch.testing.assert_close(kwargs[key], expected[key], msg=key)
+
+
 def test_opting_out_of_stored_image_stack_needs_micrographs(
     workspace, self_contained_stack
 ):
@@ -126,12 +159,11 @@ def test_correlation_setup_does_not_touch_image_stack(workspace):
     assert corr_mean.shape == corr_std.shape == (len(workspace.df), 5, 5)
 
 
-
 @pytest.mark.parametrize("apply_global_filtering", [True, False])
 def test_image_setup_does_not_store_crops_in_image_stack(
     workspace, apply_global_filtering
 ):
-    """Globally filtered crops must not land in ``image_stack`` (and then in to_hdf5)."""
+    """Globally filtered crops must not land in ``image_stack`` (or to_hdf5)."""
     workspace.df["refined_relative_defocus"] = 0.0
     stack = export_particle_stack(
         workspace.df,
@@ -146,6 +178,7 @@ def test_image_setup_does_not_store_crops_in_image_stack(
     assert stack.image_stack is None
     with pytest.raises(ValueError, match="image_stack is None"):
         stack.to_hdf5(include_image_stack=True)
+
 
 def test_zero_padded_std_maps_give_finite_zscores(workspace):
     """v1.3 stored variance crops were zero-padded; they must not yield inf z-scores."""

@@ -120,6 +120,42 @@ def normalize_particle_dataframe(
     return df
 
 
+def changed_columns(
+    old: pd.DataFrame, new: pd.DataFrame, columns: Sequence[str]
+) -> list[str]:
+    """Columns (of ``columns``) whose presence or row-wise values differ.
+
+    Parameters
+    ----------
+    old : pd.DataFrame
+        The previous particle table.
+    new : pd.DataFrame
+        The replacement particle table.
+    columns : Sequence[str]
+        Columns to compare. Every one present in either table counts as changed when
+        the number of rows differs.
+
+    Returns
+    -------
+    list[str]
+        The changed columns, in the order given.
+    """
+    changed = []
+    for column in dict.fromkeys(columns):
+        in_old, in_new = column in old.columns, column in new.columns
+        if not in_old and not in_new:
+            continue
+        if (
+            in_old != in_new
+            or len(old) != len(new)
+            or not old[column]
+            .reset_index(drop=True)
+            .equals(new[column].reset_index(drop=True))
+        ):
+            changed.append(column)
+    return changed
+
+
 def to_pixel_positions(values: np.ndarray) -> np.ndarray:
     """Convert (possibly float-typed) pixel coordinates to int64."""
     return np.rint(np.asarray(values, dtype=np.float64)).astype(np.int64)
