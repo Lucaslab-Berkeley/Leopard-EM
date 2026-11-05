@@ -232,9 +232,11 @@ class _ParticleStackBase(BaseModel2DTM):
         """Drop stored per-particle tensors that depended on ``column_name``."""
         if column_name in POSITION_COLUMNS:
             self._stored_image_stack = None
+            self.image_stack = None
             self.local_stats = {}
         elif column_name == "micrograph_path":
             self._stored_image_stack = None
+            self.image_stack = None
         else:
             self.local_stats.pop(column_name, None)
 

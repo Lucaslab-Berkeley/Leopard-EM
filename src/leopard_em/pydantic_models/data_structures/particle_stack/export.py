@@ -1,5 +1,7 @@
 """Back-end selection: ``AnyParticleStack``, result export and conversion."""
 
+import os
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
@@ -16,6 +18,7 @@ from leopard_em.pydantic_models.data_structures.particle_stack.csv_stack import 
 from leopard_em.pydantic_models.data_structures.particle_stack.hdf5_stack import (
     ParticleStackHDF5,
 )
+from leopard_em.pydantic_models.formats import split_compression_suffix
 
 
 def _particle_stack_tag(value: Any) -> str | None:
@@ -74,7 +77,15 @@ def _resolve_output_format(
     source_particle_stack: _ParticleStackBase | None,
 ) -> Literal["csv", "hdf5"]:
     """Pick the output back-end: explicit > file extension > source back-end."""
-    suffix_format = _SUFFIX_TO_FORMAT.get(Path(output_path).suffix.lower())
+    uncompressed_path, compression = split_compression_suffix(output_path)
+    suffix_format = _SUFFIX_TO_FORMAT.get(Path(uncompressed_path).suffix.lower())
+    if compression is not None:
+        if "hdf5" in (suffix_format, output_format):
+            raise ValueError(
+                f"'{output_path}' has a compression suffix, which is only supported "
+                "for CSV output."
+            )
+        suffix_format = "csv"
     if output_format is not None:
         if output_format not in ("csv", "hdf5"):
             raise ValueError(
@@ -94,6 +105,52 @@ def _resolve_output_format(
         "'output_format' must be specified when it cannot be inferred from the "
         f"extension of '{output_path}' or from 'source_particle_stack'."
     )
+
+
+def _backing_path(stack: _ParticleStackBase) -> str | None:
+    """The file a particle stack was loaded from / writes to, if any."""
+    if isinstance(stack, ParticleStackHDF5):
+        return stack.hdf5_path
+    if isinstance(stack, ParticleStackCSV):
+        return stack.df_path
+    return None
+
+
+def _same_file(path_a: str, path_b: str) -> bool:
+    if os.path.realpath(path_a) == os.path.realpath(path_b):
+        return True
+    try:
+        return os.path.samefile(path_a, path_b)
+    except OSError:  # either path does not exist (yet)
+        return False
+
+
+def check_output_not_input(
+    output_paths: Iterable[str], *input_stacks: _ParticleStackBase | None
+) -> None:
+    """Refuse to write a program's output over the file of an input particle stack.
+
+    Parameters
+    ----------
+    output_paths : Iterable[str]
+        Paths the program is about to write.
+    *input_stacks : _ParticleStackBase | None
+        The program's input particle stacks (None entries are skipped).
+
+    Raises
+    ------
+    ValueError
+        If any output path refers to an input stack's file.
+    """
+    for output_path in output_paths:
+        for stack in input_stacks:
+            input_path = _backing_path(stack) if stack is not None else None
+            if input_path and _same_file(output_path, input_path):
+                raise ValueError(
+                    f"Output path '{output_path}' is the input particle stack's file "
+                    f"'{input_path}'; writing it would replace the input. Choose a "
+                    "different output path."
+                )
 
 
 # pylint: disable=too-many-arguments
@@ -134,8 +191,9 @@ def export_particle_stack(
         `original_template_size` are given.
     output_format : Literal["csv", "hdf5"] | None
         Explicit output back-end. If None (default), inferred from the extension of
-        `output_path` (``.csv`` -> "csv"; ``.h5``/``.hdf5``/``.hdf``/``.he5`` ->
-        "hdf5"), otherwise from ``type(source_particle_stack)``.
+        `output_path` (``.csv`` or a compression suffix such as ``.csv.gz`` -> "csv";
+        ``.h5``/``.hdf5``/``.hdf``/``.he5`` -> "hdf5"), otherwise from
+        ``type(source_particle_stack)``.
     allow_file_overwrite : bool | None
         Deprecated and ignored; files are always overwritten.
     extracted_box_size : tuple[int, int] | None
@@ -156,11 +214,13 @@ def export_particle_stack(
     ------
     ValueError
         If the box sizes are unavailable, the output format cannot be inferred or
-        conflicts with the file extension, or `output_format` is not "csv" or "hdf5".
+        conflicts with the file extension, `output_format` is not "csv" or "hdf5", or
+        `output_path` is the file of `source_particle_stack`.
     """
     if allow_file_overwrite is not None:
         _warn_allow_file_overwrite_deprecated()
 
+    check_output_not_input([output_path], source_particle_stack)
     output_format = _resolve_output_format(
         output_path, output_format, source_particle_stack
     )

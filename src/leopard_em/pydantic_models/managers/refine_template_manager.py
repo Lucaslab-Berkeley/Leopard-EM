@@ -28,6 +28,9 @@ from leopard_em.pydantic_models.data_structures import (
 from leopard_em.pydantic_models.data_structures.particle_stack import (
     _warn_allow_file_overwrite_deprecated,
 )
+from leopard_em.pydantic_models.data_structures.particle_stack.export import (
+    check_output_not_input,
+)
 from leopard_em.pydantic_models.formats import (
     REFINED_DF_COLUMN_ORDER,
     result_column_order,
@@ -292,11 +295,14 @@ class RefineTemplateManager(BaseModel2DTM):
             otherwise matches the back-end of ``self.particle_stack``.
         allow_file_overwrite : bool | None
             Deprecated and ignored; an existing file at ``output_dataframe_path`` is
-            always overwritten (atomically).
+            always overwritten (atomically), unless it is the input particle stack's
+            file, which raises ``ValueError``.
         """
         if allow_file_overwrite is not None:
             _warn_allow_file_overwrite_deprecated()
-        # Fail before the run if the output directory is not writable
+        # Fail before the run if the output would replace the input stack or the
+        # output directory is not writable
+        check_output_not_input([output_dataframe_path], self.particle_stack)
         check_file_path_and_permissions(output_dataframe_path, allow_overwrite=True)
 
         backend_kwargs = self.make_backend_core_function_kwargs()
@@ -350,12 +356,15 @@ class RefineTemplateManager(BaseModel2DTM):
             otherwise matches the back-end of ``self.particle_stack``.
         allow_file_overwrite : bool | None
             Deprecated and ignored; an existing file at ``output_dataframe_path`` is
-            always overwritten (atomically).
+            always overwritten (atomically), unless it is the input particle stack's
+            file, which raises ``ValueError``.
 
         """
         if allow_file_overwrite is not None:
             _warn_allow_file_overwrite_deprecated()
-        # Fail before the run if the output directory is not writable
+        # Fail before the run if the output would replace the input stack or the
+        # output directory is not writable
+        check_output_not_input([output_dataframe_path], self.particle_stack)
         check_file_path_and_permissions(output_dataframe_path, allow_overwrite=True)
 
         backend_kwargs = self.make_differentiable_backend_kwargs(
@@ -566,7 +575,8 @@ class RefineTemplateManager(BaseModel2DTM):
             otherwise matches the back-end of ``self.particle_stack``.
         allow_file_overwrite : bool | None
             Deprecated and ignored; an existing file at ``output_dataframe_path`` is
-            always overwritten (atomically).
+            always overwritten (atomically), unless it is the input particle stack's
+            file, which raises ``ValueError``.
 
         Returns
         -------

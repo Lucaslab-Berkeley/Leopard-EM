@@ -126,8 +126,7 @@ def to_pixel_positions(values: np.ndarray) -> np.ndarray:
 
 
 def position_columns(df: pd.DataFrame) -> tuple[str, str]:
-    """Return the y/x position column names to use.
-    """
+    """Return the y/x position column names to use."""
     y_col, x_col = choose_refined_columns(
         df,
         ["pos_y", "pos_x"],

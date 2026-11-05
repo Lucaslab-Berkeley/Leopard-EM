@@ -28,9 +28,13 @@ from leopard_em.pydantic_models.data_structures import (
 from leopard_em.pydantic_models.data_structures.particle_stack import (
     _warn_allow_file_overwrite_deprecated,
 )
+from leopard_em.pydantic_models.data_structures.particle_stack.export import (
+    check_output_not_input,
+)
 from leopard_em.pydantic_models.formats import (
     CONSTRAINED_DF_COLUMN_ORDER,
     result_column_order,
+    split_compression_suffix,
 )
 from leopard_em.pydantic_models.results.match_template_result import (
     check_file_path_and_permissions,
@@ -43,6 +47,13 @@ from leopard_em.utils.backend_setup import (
 )
 from leopard_em.utils.ctf_utils import _setup_ctf_kwargs_from_particle_stack
 from leopard_em.utils.data_io import load_mrc_volume, load_template_tensor
+
+
+def _sibling_output_paths(output_dataframe_path: str) -> tuple[str, str]:
+    """The "_parameters" and "_above_threshold" CSV paths next to the main output."""
+    uncompressed_path, _ = split_compression_suffix(output_dataframe_path)
+    output_base, _ = os.path.splitext(uncompressed_path)
+    return f"{output_base}_parameters.csv", f"{output_base}_above_threshold.csv"
 
 
 class ConstrainedSearchManager(BaseModel2DTM):
@@ -278,17 +289,22 @@ class ConstrainedSearchManager(BaseModel2DTM):
             "_above_threshold" sibling tables are always written as CSV regardless of
             this setting.
         allow_file_overwrite : bool | None
-            Deprecated and ignored; an existing file at ``output_dataframe_path`` is
-            always overwritten (atomically).
+            Deprecated and ignored; existing output files are always overwritten
+            (atomically), unless one is the input particle stack's file, which raises
+            ``ValueError``.
         """
         if allow_file_overwrite is not None:
             _warn_allow_file_overwrite_deprecated()
-        output_base, _ = os.path.splitext(output_dataframe_path)
-        for path in (
+        output_paths = (
             output_dataframe_path,
-            f"{output_base}_parameters.csv",
-            f"{output_base}_above_threshold.csv",
-        ):
+            *_sibling_output_paths(output_dataframe_path),
+        )
+        # Fail before the run if an output would replace the input stack or an output
+        # directory is not writable
+        check_output_not_input(
+            output_paths, self.particle_stack_reference, self.particle_stack_constrained
+        )
+        for path in output_paths:
             check_file_path_and_permissions(path, allow_overwrite=True)
 
         backend_kwargs = self.make_backend_core_function_kwargs()
@@ -437,8 +453,9 @@ class ConstrainedSearchManager(BaseModel2DTM):
             it from the extension of ``output_dataframe_path`` and otherwise matches
             the back-end of ``self.particle_stack_reference``.
         allow_file_overwrite : bool | None
-            Deprecated and ignored; an existing file at ``output_dataframe_path`` is
-            always overwritten (atomically).
+            Deprecated and ignored; existing output files are always overwritten
+            (atomically), unless one is the input particle stack's file, which raises
+            ``ValueError``.
 
         Returns
         -------
@@ -449,6 +466,14 @@ class ConstrainedSearchManager(BaseModel2DTM):
         if allow_file_overwrite is not None:
             _warn_allow_file_overwrite_deprecated()
 
+        parameters_path, above_threshold_path = _sibling_output_paths(
+            output_dataframe_path
+        )
+        check_output_not_input(
+            [output_dataframe_path, parameters_path, above_threshold_path],
+            self.particle_stack_reference,
+            self.particle_stack_constrained,
+        )
         df_refined = self.refine_result_to_dataframe(result=result)
 
         # Save the main refined DataFrame, matching the input back-end by default
@@ -479,11 +504,6 @@ class ConstrainedSearchManager(BaseModel2DTM):
         threshold = gaussian_noise_zscore_cutoff(
             num_correlations, float(false_positives)
         )
-
-        # "_parameters" and "_above_threshold" outputs are always written as CSV.
-        output_base, _ = os.path.splitext(output_dataframe_path)
-        parameters_path = f"{output_base}_parameters.csv"
-        above_threshold_path = f"{output_base}_above_threshold.csv"
 
         # Save all parameters to CSV including false-positives
         params_df = pd.DataFrame(

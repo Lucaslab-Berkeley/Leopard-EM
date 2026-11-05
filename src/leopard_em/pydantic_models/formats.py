@@ -61,6 +61,24 @@ def local_stat_padding(column: str, padding_value: float | None = None) -> float
     return _DEFAULT_LOCAL_STAT_PADDING.get(column, 0.0)
 
 
+# Compressed-CSV file suffixes and the pandas compression method each one selects
+CSV_COMPRESSION_SUFFIXES = {
+    ".gz": "gzip",
+    ".bz2": "bz2",
+    ".zip": "zip",
+    ".xz": "xz",
+    ".zst": "zstd",
+}
+
+
+def split_compression_suffix(path: str) -> tuple[str, str | None]:
+    """Split a trailing compression suffix (e.g. ``.gz``) off a file path."""
+    for suffix, method in CSV_COMPRESSION_SUFFIXES.items():
+        if path.lower().endswith(suffix):
+            return path[: -len(suffix)], method
+    return path, None
+
+
 # Scalar CTF parameter columns which must hold one value shared by all particles
 SHARED_CTF_PARAMETER_COLUMNS = (
     "voltage",

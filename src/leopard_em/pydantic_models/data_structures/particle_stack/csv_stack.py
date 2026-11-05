@@ -1,6 +1,7 @@
 """CSV-backed particle stack (the original ``ParticleStack`` behavior)."""
 
 from collections.abc import Callable
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 
 import pandas as pd
@@ -12,6 +13,7 @@ from leopard_em.pydantic_models.data_structures.particle_stack.base import (
     _ParticleStackBase,
     _warn_allow_file_overwrite_deprecated,
 )
+from leopard_em.pydantic_models.formats import split_compression_suffix
 from leopard_em.utils.data_io import atomic_write_path
 
 if TYPE_CHECKING:
@@ -67,6 +69,11 @@ class ParticleStackCSV(_ParticleStackBase):
     def export_results(self, allow_file_overwrite: bool | None = None) -> None:
         """Write the particle table to ``df_path`` as CSV.
 
+        Notes
+        -----
+        A compression suffix on ``df_path`` (``.gz``, ``.bz2``, ``.zip``, ``.xz``, or
+        ``.zst``) compresses the output accordingly.
+
         Parameters
         ----------
         allow_file_overwrite : bool | None
@@ -79,8 +86,15 @@ class ParticleStackCSV(_ParticleStackBase):
         """
         if allow_file_overwrite is not None:
             _warn_allow_file_overwrite_deprecated()
+        # The temporary path hides the suffix from pandas, so pass the compression
+        uncompressed_path, method = split_compression_suffix(self.df_path)
+        compression: dict[str, str] | None = None
+        if method is not None:
+            compression = {"method": method}
+            if method == "zip":
+                compression["archive_name"] = Path(uncompressed_path).name
         with atomic_write_path(self.df_path) as tmp_path:
-            self._df.to_csv(tmp_path)
+            self._df.to_csv(tmp_path, compression=compression)
 
     def to_hdf5(
         self,

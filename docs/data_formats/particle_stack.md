@@ -23,7 +23,7 @@ As with match template results, particle stacks support two storage back-ends.
 
     `RefineTemplateManager.particle_stack`, `OptimizeTemplateManager.particle_stack`, and `ConstrainedSearchManager.particle_stack_reference`/`particle_stack_constrained` accept either back-end (`AnyParticleStack`), so a `ParticleStackHDF5` can be passed in directly wherever a particle stack input is required. In a YAML config the back-end is chosen by the key used: `df_path` for CSV, `hdf5_path` for HDF5.
 
-    The output format is inferred from the extension of the output path (`.csv`, or `.h5`/`.hdf5`), and otherwise matches the input back-end. An explicit `output_format` that contradicts the extension raises an error.
+    The output format is inferred from the extension of the output path (`.csv`, or `.h5`/`.hdf5`), and otherwise matches the input back-end. An explicit `output_format` that contradicts the extension raises an error. A compression suffix (`.csv.gz`, `.bz2`, `.zip`, `.xz`, `.zst`) writes a compressed CSV; HDF5 output cannot be compressed this way. An existing output file is replaced, but an output path that is the input particle stack's own file is rejected before the program runs.
 
     `ConstrainedSearchManager.export_results(...)` additionally writes two small CSV sibling tables — `<base>_parameters.csv` (search parameters and the false-positive threshold) and `<base>_above_threshold.csv` (rows above that threshold) — derived from the base of `output_dataframe_path` regardless of the main table's `output_format`.
 

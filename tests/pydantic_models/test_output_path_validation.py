@@ -104,7 +104,8 @@ class TestManagersCheckOutputPathBeforeCompute:
     """The run_* methods validate the output directory before any backend work.
 
     Existing outputs are not rejected: ``allow_file_overwrite`` is deprecated and
-    particle stack outputs are always overwritten atomically.
+    particle stack outputs are always overwritten atomically (except an input stack's
+    own file, see ``test_particle_stack_hdf5``).
     """
 
     class ComputeStarted(Exception):
@@ -116,7 +117,15 @@ class TestManagersCheckOutputPathBeforeCompute:
             raise cls.ComputeStarted
 
         monkeypatch.setattr(manager_cls, "make_backend_core_function_kwargs", _started)
-        return getattr(manager_cls.model_construct(), method_name)
+        # No input stacks (the output-vs-input check skips None)
+        input_stacks = {
+            RefineTemplateManager: {"particle_stack": None},
+            ConstrainedSearchManager: {
+                "particle_stack_reference": None,
+                "particle_stack_constrained": None,
+            },
+        }[manager_cls]
+        return getattr(manager_cls.model_construct(**input_stacks), method_name)
 
     @pytest.fixture(
         params=[

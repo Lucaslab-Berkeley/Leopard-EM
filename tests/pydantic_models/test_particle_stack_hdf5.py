@@ -268,10 +268,24 @@ def test_set_column_invalidates_stored_tensors(workspace):
     stack.set_column("mip_path", str(workspace.result_paths[0]))
     assert set(stack.local_stats) == {"psi_path"}
     assert stack.get_stored_image_stack() is not None
+    assert stack.image_stack is not None
 
     stack.set_column("pos_x", stack["pos_x"] + 1)
     assert stack.local_stats == {}
     assert stack.get_stored_image_stack() is None
+    # The in-memory crops were cut at the old positions, so they are dropped too
+    # rather than written out labelled with the new positions
+    assert stack.image_stack is None
+    with pytest.raises(ValueError, match="image_stack is None"):
+        stack.to_hdf5(include_image_stack=True)
+
+
+def test_set_micrograph_path_drops_image_stack(workspace):
+    stack = _export(workspace)
+    images, indices = stack.load_images_grouped_by_column("micrograph_path")
+    stack.construct_image_stack(images, indices, stack.extracted_box_size)
+    stack.set_column("micrograph_path", stack["micrograph_path"])
+    assert stack.image_stack is None
 
 
 def test_set_column_series_is_assigned_by_position(workspace):
@@ -345,6 +359,45 @@ def test_export_particle_stack_format_inference(workspace):
         export_particle_stack(
             workspace.df, str(workspace.root / "b.csv"), source, output_format="hdf5"
         )
+
+
+@pytest.mark.parametrize("suffix", [".gz", ".bz2", ".zip", ".xz"])
+def test_csv_export_compresses_by_suffix(workspace, suffix):
+    """``.csv.gz`` etc. are really compressed (not plain text under that name)."""
+    source = _export(workspace)  # HDF5 source: the suffix must still select CSV
+    out = export_particle_stack(
+        source.get_dataframe_copy(), str(workspace.root / f"out.csv{suffix}"), source
+    )
+    assert isinstance(out, ParticleStackCSV)
+    assert not (workspace.root / f"out.csv{suffix}").read_bytes().startswith(b",")
+    loaded = ParticleStackCSV(
+        df_path=out.df_path,
+        extracted_box_size=workspace.extracted_box_size,
+        original_template_size=workspace.original_template_size,
+    )
+    assert loaded["particle_id"].tolist() == source["particle_id"].tolist()
+
+
+def test_compressed_suffix_rejects_hdf5(workspace):
+    source = _export(workspace)
+    df = source.get_dataframe_copy()
+    with pytest.raises(ValueError, match="compression suffix"):
+        export_particle_stack(df, str(workspace.root / "out.h5.gz"), source)
+    with pytest.raises(ValueError, match="compression suffix"):
+        export_particle_stack(
+            df, str(workspace.root / "out.gz"), source, output_format="hdf5"
+        )
+
+
+def test_export_refuses_to_overwrite_source(workspace):
+    """Writing over the input stack's own file would discard its stored tensors."""
+    source = _export(workspace)
+    with pytest.raises(ValueError, match="input particle stack's file"):
+        export_particle_stack(source.get_dataframe_copy(), source.hdf5_path, source)
+    # Same file reached through a different spelling of the path
+    other_spelling = str(workspace.root / "." / "stack.h5")
+    with pytest.raises(ValueError, match="input particle stack's file"):
+        export_particle_stack(source.get_dataframe_copy(), other_spelling, source)
 
 
 def test_export_particle_stack_without_source_roundtrips(workspace):
@@ -425,6 +478,50 @@ def test_refined_results_keep_particle_ids(workspace):
         df_refined, str(workspace.root / "refined.h5"), stack
     )
     assert refined["particle_id"].tolist() == stack["particle_id"].tolist()
+
+
+def test_refine_refuses_output_over_input_before_running(workspace, monkeypatch):
+    stack = _export(workspace)
+    manager = RefineTemplateManager.model_construct(particle_stack=stack)
+
+    def _must_not_run(*_args, **_kwargs):
+        raise AssertionError("refinement started")
+
+    monkeypatch.setattr(
+        RefineTemplateManager, "make_backend_core_function_kwargs", _must_not_run
+    )
+    with pytest.raises(ValueError, match="input particle stack's file"):
+        manager.run_refine_template(stack.hdf5_path)
+
+
+def test_constrained_search_refuses_output_over_inputs(workspace, monkeypatch):
+    from leopard_em.pydantic_models.managers import ConstrainedSearchManager
+    from leopard_em.pydantic_models.managers.constrained_search_manager import (
+        _sibling_output_paths,
+    )
+
+    assert _sibling_output_paths("d/out.csv.gz") == (
+        "d/out_parameters.csv",
+        "d/out_above_threshold.csv",
+    )
+
+    reference = _export(workspace)
+    constrained = _export(workspace, name="out_parameters.csv")
+    manager = ConstrainedSearchManager.model_construct(
+        particle_stack_reference=reference, particle_stack_constrained=constrained
+    )
+
+    def _must_not_run(*_args, **_kwargs):
+        raise AssertionError("search started")
+
+    monkeypatch.setattr(
+        ConstrainedSearchManager, "make_backend_core_function_kwargs", _must_not_run
+    )
+    with pytest.raises(ValueError, match="input particle stack's file"):
+        manager.run_constrained_search(reference.hdf5_path)
+    # The "_parameters" sibling of out.h5 is the constrained stack's file
+    with pytest.raises(ValueError, match="input particle stack's file"):
+        manager.run_constrained_search(str(workspace.root / "out.h5"))
 
 
 def test_constrained_search_requires_single_correlation_maps(workspace):
