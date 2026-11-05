@@ -28,6 +28,9 @@ from leopard_em.pydantic_models.data_structures import (
 from leopard_em.pydantic_models.data_structures.particle_stack import (
     _warn_allow_file_overwrite_deprecated,
 )
+from leopard_em.pydantic_models.data_structures.particle_stack._table import (
+    apply_position_offsets,
+)
 from leopard_em.pydantic_models.data_structures.particle_stack.export import (
     check_output_not_input,
 )
@@ -373,21 +376,12 @@ class ConstrainedSearchManager(BaseModel2DTM):
         """
         df_refined = self.particle_stack_reference.get_dataframe_copy()
 
-        # x and y positions
-        pos_offset_y = result["refined_pos_y"]
-        pos_offset_x = result["refined_pos_x"]
-        pos_offset_y_ang = pos_offset_y * df_refined["pixel_size"]
-        pos_offset_x_ang = pos_offset_x * df_refined["pixel_size"]
-
-        df_refined["refined_pos_y"] = pos_offset_y + df_refined["pos_y"]
-        df_refined["refined_pos_x"] = pos_offset_x + df_refined["pos_x"]
-        df_refined["refined_pos_y_img"] = pos_offset_y + df_refined["pos_y_img"]
-        df_refined["refined_pos_x_img"] = pos_offset_x + df_refined["pos_x_img"]
-        df_refined["refined_pos_y_img_angstrom"] = (
-            pos_offset_y_ang + df_refined["pos_y_img_angstrom"]
-        )
-        df_refined["refined_pos_x_img_angstrom"] = (
-            pos_offset_x_ang + df_refined["pos_x_img_angstrom"]
+        # x and y positions, offset from where the particles were cropped
+        apply_position_offsets(
+            df_refined,
+            result["refined_pos_y"],
+            result["refined_pos_x"],
+            cropped_at=self.particle_stack_reference.position_columns,
         )
 
         # Euler angles

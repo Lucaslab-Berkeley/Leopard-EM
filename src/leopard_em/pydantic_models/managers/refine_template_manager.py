@@ -28,6 +28,9 @@ from leopard_em.pydantic_models.data_structures import (
 from leopard_em.pydantic_models.data_structures.particle_stack import (
     _warn_allow_file_overwrite_deprecated,
 )
+from leopard_em.pydantic_models.data_structures.particle_stack._table import (
+    apply_position_offsets,
+)
 from leopard_em.pydantic_models.data_structures.particle_stack.export import (
     check_output_not_input,
 )
@@ -441,7 +444,9 @@ class RefineTemplateManager(BaseModel2DTM):
             The result of the refine template program. Can contain either
             np.ndarray (regular refine) or torch.Tensor (differentiable refine).
         prefer_refined_angles : bool
-            Whether to use the refined angles or not. Defaults to True.
+            Kept for backward compatibility and has no effect: position offsets are
+            always added to the positions the particles were cropped at. Defaults to
+            True.
 
         Returns
         -------
@@ -449,6 +454,7 @@ class RefineTemplateManager(BaseModel2DTM):
             The refined particle data. Not written to disk; use ``export_results`` to do
             both in one call.
         """
+        del prefer_refined_angles  # no longer used, see docstring
         # pylint: disable=duplicate-code
         df_refined = self.particle_stack.get_dataframe_copy()
 
@@ -460,39 +466,12 @@ class RefineTemplateManager(BaseModel2DTM):
             else:
                 result_dict[k] = v
 
-        # x and y positions
-        pos_offset_y = result_dict["refined_pos_y"]
-        pos_offset_x = result_dict["refined_pos_x"]
-        pos_offset_y_ang = pos_offset_y * df_refined["pixel_size"]
-        pos_offset_x_ang = pos_offset_x * df_refined["pixel_size"]
-
-        if prefer_refined_angles and self.particle_stack.position_columns == (
-            "refined_pos_y",
-            "refined_pos_x",
-        ):
-            pos_y_col = "refined_pos_y"
-            pos_x_col = "refined_pos_x"
-            pos_y_col_img = "refined_pos_y_img"
-            pos_x_col_img = "refined_pos_x_img"
-            pos_y_col_img_angstrom = "refined_pos_y_img_angstrom"
-            pos_x_col_img_angstrom = "refined_pos_x_img_angstrom"
-        else:
-            pos_y_col = "pos_y"
-            pos_x_col = "pos_x"
-            pos_y_col_img = "pos_y_img"
-            pos_x_col_img = "pos_x_img"
-            pos_y_col_img_angstrom = "pos_y_img_angstrom"
-            pos_x_col_img_angstrom = "pos_x_img_angstrom"
-
-        df_refined["refined_pos_y"] = pos_offset_y + df_refined[pos_y_col]
-        df_refined["refined_pos_x"] = pos_offset_x + df_refined[pos_x_col]
-        df_refined["refined_pos_y_img"] = pos_offset_y + df_refined[pos_y_col_img]
-        df_refined["refined_pos_x_img"] = pos_offset_x + df_refined[pos_x_col_img]
-        df_refined["refined_pos_y_img_angstrom"] = (
-            pos_offset_y_ang + df_refined[pos_y_col_img_angstrom]
-        )
-        df_refined["refined_pos_x_img_angstrom"] = (
-            pos_offset_x_ang + df_refined[pos_x_col_img_angstrom]
+        # x and y positions, offset from where the particles were cropped
+        apply_position_offsets(
+            df_refined,
+            result_dict["refined_pos_y"],
+            result_dict["refined_pos_x"],
+            cropped_at=self.particle_stack.position_columns,
         )
 
         # Euler angles
@@ -568,7 +547,9 @@ class RefineTemplateManager(BaseModel2DTM):
             The result of the refine template program. Can contain either np.ndarray
             (regular refine) or torch.Tensor (differentiable refine).
         prefer_refined_angles : bool
-            Whether to use the refined angles or not. Defaults to True.
+            Kept for backward compatibility and has no effect: position offsets are
+            always added to the positions the particles were cropped at. Defaults to
+            True.
         output_format : Literal["csv", "hdf5"] | None
             Output back-end to write. Defaults to None, which infers it from the
             extension of ``output_dataframe_path`` (``.csv`` / ``.h5``, ``.hdf5``) and

@@ -533,6 +533,76 @@ def test_refined_results_keep_particle_ids(workspace):
     assert refined["particle_id"].tolist() == stack["particle_id"].tolist()
 
 
+def _position_result(num, dy, dx):
+    return {
+        "refined_pos_y": np.full(num, dy, dtype=np.int64),
+        "refined_pos_x": np.full(num, dx, dtype=np.int64),
+        "refined_euler_angles": np.zeros((num, 3)),
+        "refined_defocus_offset": np.zeros(num),
+        "refined_pixel_size_offset": np.zeros(num),
+        "refined_cross_correlation": np.ones(num),
+        "refined_z_score": np.ones(num),
+        "angle_idx": np.zeros(num, dtype=np.int64),
+    }
+
+
+def _assert_total_shift(df_in, df_out, shift_y, shift_x):
+    """All three refined coordinate systems are the original shifted by the total."""
+    for axis, shift in (("y", shift_y), ("x", shift_x)):
+        np.testing.assert_allclose(
+            df_out[f"refined_pos_{axis}"], df_in[f"pos_{axis}"] + shift
+        )
+        np.testing.assert_allclose(
+            df_out[f"refined_pos_{axis}_img"], df_in[f"pos_{axis}_img"] + shift
+        )
+        np.testing.assert_allclose(
+            df_out[f"refined_pos_{axis}_img_angstrom"],
+            df_in[f"pos_{axis}_img_angstrom"] + shift * df_in["pixel_size"],
+        )
+
+
+@pytest.mark.parametrize("has_refined_positions", [True, False])
+@pytest.mark.parametrize("prefer_refined_angles", [True, False])
+def test_refine_offsets_are_added_to_cropping_position(
+    workspace, has_refined_positions, prefer_refined_angles
+):
+    """Offsets are relative to the crop position (refined_pos_* when usable)."""
+    workspace.df["refined_relative_defocus"] = 0.0
+    if has_refined_positions:  # a previous refinement moved every particle by (3, -2)
+        workspace.df["refined_pos_y"] = workspace.df["pos_y"] + 3
+        workspace.df["refined_pos_x"] = workspace.df["pos_x"] - 2
+    stack = _export(workspace)
+    manager = RefineTemplateManager.model_construct(particle_stack=stack)
+
+    df_out = manager.refine_result_to_dataframe(
+        _position_result(stack.num_particles, 1, 1),
+        prefer_refined_angles=prefer_refined_angles,
+    )
+    prior_y, prior_x = (3, -2) if has_refined_positions else (0, 0)
+    _assert_total_shift(stack.get_dataframe_copy(), df_out, prior_y + 1, prior_x + 1)
+
+
+def test_constrained_search_offsets_keep_previous_refinement(workspace):
+    from types import SimpleNamespace
+
+    from leopard_em.pydantic_models.managers import ConstrainedSearchManager
+
+    workspace.df["refined_relative_defocus"] = 0.0
+    workspace.df["refined_pos_y"] = workspace.df["pos_y"] + 3
+    workspace.df["refined_pos_x"] = workspace.df["pos_x"] - 2
+    reference = _export(workspace)
+    num = reference.num_particles
+    manager = ConstrainedSearchManager.model_construct(
+        particle_stack_reference=reference,
+        orientation_refinement_config=SimpleNamespace(
+            euler_angles_offsets=(None, torch.zeros(1, 3))
+        ),
+        zdiffs=torch.zeros(num),
+    )
+    df_out = manager.refine_result_to_dataframe(_position_result(num, 1, 1))
+    _assert_total_shift(reference.get_dataframe_copy(), df_out, 4, -1)
+
+
 def test_refine_refuses_output_over_input_before_running(workspace, monkeypatch):
     stack = _export(workspace)
     manager = RefineTemplateManager.model_construct(particle_stack=stack)

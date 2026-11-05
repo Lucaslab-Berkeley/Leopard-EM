@@ -174,6 +174,44 @@ def position_columns(df: pd.DataFrame) -> tuple[str, str]:
     return y_col, x_col
 
 
+def apply_position_offsets(
+    df: pd.DataFrame,
+    offset_y: np.ndarray,
+    offset_x: np.ndarray,
+    cropped_at: tuple[str, str],
+) -> None:
+    """Set the ``refined_pos_*`` columns from a program's per-particle position offsets.
+
+    Note
+    ----
+    Programs report offsets relative to the positions the particles were cropped at,
+    which are the ``refined_pos_*`` columns when a previous refinement provides usable
+    ones (see :func:`position_columns`). The total shift from the original ``pos_*``
+    is applied to all three coordinate systems, so they stay consistent.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        The particle table, modified in place.
+    offset_y : np.ndarray
+        Per-particle y offsets in pixels.
+    offset_x : np.ndarray
+        Per-particle x offsets in pixels.
+    cropped_at : tuple[str, str]
+        The ``(y, x)`` position columns the particles were cropped at.
+    """
+    for axis, offset, column in (
+        ("y", offset_y, cropped_at[0]),
+        ("x", offset_x, cropped_at[1]),
+    ):
+        shift = np.asarray(offset) + (df[column] - df[f"pos_{axis}"]).to_numpy()
+        df[f"refined_pos_{axis}"] = df[f"pos_{axis}"] + shift
+        df[f"refined_pos_{axis}_img"] = df[f"pos_{axis}_img"] + shift
+        df[f"refined_pos_{axis}_img_angstrom"] = (
+            df[f"pos_{axis}_img_angstrom"] + shift * df["pixel_size"]
+        )
+
+
 def pixel_positions(df: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
     """Return the int64 ``(y, x)`` pixel positions of every particle.
 
