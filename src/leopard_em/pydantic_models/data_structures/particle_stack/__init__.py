@@ -10,12 +10,14 @@ Two public classes are provided for different storage back-ends:
 
 Package layout (modules only import from modules listed below them)::
 
-    export        AnyParticleStack field type, export_particle_stack
+    export        AnyParticleStack field type, export_particle_stack and
+                  particle_stack_to_hdf5 (conversion between back-ends)
     csv_stack     ParticleStackCSV (and the ParticleStack alias)
     hdf5_stack    ParticleStackHDF5, on top of the _hdf5_io file codec
     base          _ParticleStackBase: shared state and methods, delegating to
     _movie        per-particle extraction from (motion-corrected) movies
-    _extraction   cropping and loading per group of particles sharing an image
+    _extraction   loading, cropping and scattering per group of particles sharing
+                  an image
     _table        particle-table helpers (IDs, refined columns, row positions)
     geometry      ParticleBoxGeometry: crop origins and valid sizes
 """

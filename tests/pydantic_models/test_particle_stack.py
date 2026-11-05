@@ -6,6 +6,7 @@ import pandas as pd
 import pytest
 import torch
 
+from leopard_em.pydantic_models.config import PreprocessingFilters
 from leopard_em.pydantic_models.data_structures.particle_stack import (
     ParticleStack,
     ParticleStackHDF5,
@@ -720,8 +721,8 @@ def test_construct_projective_filters_assigns_rows_by_position(tmp_path):
     )
     ps._set_dataframe(df)
 
-    class _ConstantFilter:
-        def get_combined_filter(self, ref_img_rfft, output_shape):
+    class _ConstantFilter(PreprocessingFilters):
+        def get_combined_filter(self, ref_img_rfft, output_shape, **kwargs):
             return torch.full(output_shape, float(ref_img_rfft.real.mean()))
 
     images_dft = torch.stack([torch.full((4, 3), 1.0), torch.full((4, 3), 2.0)])

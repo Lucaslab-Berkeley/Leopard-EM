@@ -1,5 +1,8 @@
 """CSV-backed particle stack (the original ``ParticleStack`` behavior)."""
 
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any, ClassVar
+
 import pandas as pd
 
 from leopard_em.pydantic_models.data_structures.particle_stack._table import (
@@ -9,10 +12,20 @@ from leopard_em.pydantic_models.data_structures.particle_stack.base import (
     _ParticleStackBase,
     _warn_allow_file_overwrite_deprecated,
 )
-from leopard_em.pydantic_models.data_structures.particle_stack.hdf5_stack import (
-    ParticleStackHDF5,
-)
 from leopard_em.utils.data_io import atomic_write_path
+
+if TYPE_CHECKING:
+    from leopard_em.pydantic_models.data_structures.particle_stack.hdf5_stack import (
+        ParticleStackHDF5,
+    )
+
+
+def _hdf5_converter_unregistered(*_args: Any, **_kwargs: Any) -> "ParticleStackHDF5":
+    """Placeholder until ``export`` registers ``particle_stack_to_hdf5``."""
+    raise RuntimeError(
+        "No CSV-to-HDF5 converter registered; import "
+        "leopard_em.pydantic_models.data_structures.particle_stack."
+    )
 
 
 class ParticleStackCSV(_ParticleStackBase):
@@ -28,6 +41,12 @@ class ParticleStackCSV(_ParticleStackBase):
     """
 
     df_path: str
+
+    # Back-end conversion lives in ``export`` (which imports this module), so it is
+    # registered here by ``export`` rather than imported.
+    _hdf5_converter: ClassVar[Callable[..., "ParticleStackHDF5"]] = (
+        _hdf5_converter_unregistered
+    )
 
     def load_df(self) -> None:
         """Load and validate the particle DataFrame from ``df_path``.
@@ -93,26 +112,12 @@ class ParticleStackCSV(_ParticleStackBase):
         if allow_file_overwrite is not None:
             _warn_allow_file_overwrite_deprecated()
 
-        hdf5_stack = ParticleStackHDF5(
-            hdf5_path=hdf5_path,
-            extracted_box_size=self.extracted_box_size,
-            original_template_size=self.original_template_size,
-            leopard_em_version=self.leopard_em_version,
-            global_whitening_applied=self.global_whitening_applied,
-            local_whitening_applied=self.local_whitening_applied,
-            global_normalization_applied=self.global_normalization_applied,
-            local_normalization_applied=self.local_normalization_applied,
-            image_stack=self.image_stack if include_image_stack else None,
-            local_stats=dict(self.local_stats) if include_local_stats else {},
-            skip_df_load=True,
-        )
-        # Particle IDs are generated on write if the table doesn't have any yet
-        hdf5_stack._set_dataframe(self._df)  # pylint: disable=protected-access
-        hdf5_stack.to_hdf5(
+        return ParticleStackCSV._hdf5_converter(
+            self,
+            hdf5_path,
             include_image_stack=include_image_stack,
             include_local_stats=include_local_stats,
         )
-        return hdf5_stack
 
 
 # ---------------------------------------------------------------------------

@@ -375,6 +375,28 @@ def test_csv_hdf5_csv_conversion_keeps_particle_ids(workspace):
     assert back["particle_id"].tolist() == hdf5_stack["particle_id"].tolist()
 
 
+def test_csv_to_hdf5_carries_tensors(workspace):
+    """``ParticleStackCSV.to_hdf5`` writes the image stack and local stats it holds."""
+    csv_stack = _export(workspace, name="tensors.csv")
+    n = csv_stack.num_particles
+    images = torch.randn(n, *csv_stack.extracted_box_size)
+    mips = torch.randn(n, *csv_stack.geometry.valid_size)
+    csv_stack.image_stack = images
+    csv_stack.local_stats = {"mip_path": mips}
+
+    converted = csv_stack.to_hdf5(
+        str(workspace.root / "tensors.h5"),
+        include_image_stack=True,
+        include_local_stats=True,
+    )
+    assert isinstance(converted, ParticleStackHDF5)
+    loaded = ParticleStackHDF5(hdf5_path=converted.hdf5_path)
+    torch.testing.assert_close(loaded.image_stack, images)
+    torch.testing.assert_close(loaded.local_stats["mip_path"], mips)
+    # The source stack is left untouched
+    assert csv_stack.image_stack is images
+
+
 ###########################
 ### Manager integration ###
 ###########################

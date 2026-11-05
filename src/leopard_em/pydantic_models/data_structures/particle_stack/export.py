@@ -1,4 +1,4 @@
-"""Back-end selection: the ``AnyParticleStack`` field type and result export."""
+"""Back-end selection: ``AnyParticleStack``, result export and conversion."""
 
 from pathlib import Path
 from typing import Annotated, Any, Literal
@@ -44,6 +44,20 @@ AnyParticleStack = Annotated[
 # ---------------------------------------------------------------------------
 # Shared result-export helper
 # ---------------------------------------------------------------------------
+
+
+def _shared_stack_kwargs(source: _ParticleStackBase) -> dict[str, Any]:
+    """Box-size, version and pre-processing fields to carry over from ``source``."""
+    return {
+        "extracted_box_size": source.extracted_box_size,
+        "original_template_size": source.original_template_size,
+        "leopard_em_version": source.leopard_em_version,
+        "global_whitening_applied": source.global_whitening_applied,
+        "local_whitening_applied": source.local_whitening_applied,
+        "global_normalization_applied": source.global_normalization_applied,
+        "local_normalization_applied": source.local_normalization_applied,
+    }
+
 
 _SUFFIX_TO_FORMAT: dict[str, Literal["csv", "hdf5"]] = {
     ".csv": "csv",
@@ -153,18 +167,7 @@ def export_particle_stack(
 
     shared_kwargs: dict[str, Any] = {"skip_df_load": True}
     if source_particle_stack is not None:
-        spc = source_particle_stack
-        shared_kwargs.update(
-            {
-                "extracted_box_size": spc.extracted_box_size,
-                "original_template_size": spc.original_template_size,
-                "leopard_em_version": spc.leopard_em_version,
-                "global_whitening_applied": spc.global_whitening_applied,
-                "local_whitening_applied": spc.local_whitening_applied,
-                "global_normalization_applied": spc.global_normalization_applied,
-                "local_normalization_applied": spc.local_normalization_applied,
-            }
-        )
+        shared_kwargs.update(_shared_stack_kwargs(source_particle_stack))
     if extracted_box_size is not None:
         shared_kwargs["extracted_box_size"] = extracted_box_size
     if original_template_size is not None:
@@ -187,3 +190,53 @@ def export_particle_stack(
     hdf5_stack._set_dataframe(df)  # pylint: disable=protected-access
     hdf5_stack.to_hdf5()
     return hdf5_stack
+
+
+def particle_stack_to_hdf5(
+    stack: _ParticleStackBase,
+    hdf5_path: str,
+    *,
+    include_image_stack: bool = False,
+    include_local_stats: bool = False,
+) -> ParticleStackHDF5:
+    """Copy a particle stack (table and optional tensors) into a new HDF5 stack.
+
+    Parameters
+    ----------
+    stack : _ParticleStackBase
+        The particle stack to convert, of either back-end.
+    hdf5_path : str
+        Destination path for the HDF5 file. An existing file is replaced atomically.
+    include_image_stack : bool, optional
+        Write ``stack.image_stack`` to the HDF5 file, by default False. Raises
+        ``ValueError`` if the image stack has not been loaded.
+    include_local_stats : bool, optional
+        Write every entry currently in ``stack.local_stats`` to the HDF5 file, by
+        default False. Raises ``ValueError`` if ``local_stats`` is empty.
+
+    Returns
+    -------
+    ParticleStackHDF5
+        The new HDF5-backed stack instance pointing at ``hdf5_path``.
+    """
+    hdf5_stack = ParticleStackHDF5(
+        hdf5_path=hdf5_path, skip_df_load=True, **_shared_stack_kwargs(stack)
+    )
+    # Particle IDs are generated on write if the table doesn't have any yet. Tensors
+    # are assigned after the table, since replacing the table discards them.
+    hdf5_stack._set_dataframe(stack.get_dataframe_copy())  # pylint: disable=protected-access
+    if include_image_stack:
+        hdf5_stack.image_stack = stack.image_stack
+    if include_local_stats:
+        hdf5_stack.local_stats = dict(stack.local_stats)
+    hdf5_stack.to_hdf5(
+        include_image_stack=include_image_stack,
+        include_local_stats=include_local_stats,
+    )
+    return hdf5_stack
+
+
+# Backs ``ParticleStackCSV.to_hdf5`` (public since v1.3) without csv_stack importing
+# the HDF5 back-end.
+# pylint: disable-next=protected-access
+ParticleStackCSV._hdf5_converter = particle_stack_to_hdf5

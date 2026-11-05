@@ -1,4 +1,4 @@
-"""Per-particle extraction from full-size images grouped by source file.
+"""Per-particle loading, cropping and scattering, grouped by source image.
 
 Private module: the particle stack classes are the public interface. Particles are
 handled in groups, one group per source image (micrograph or statistic map), where a
@@ -7,7 +7,7 @@ take images, groups and crop origins explicitly (origins come from
 ``ParticleBoxGeometry.box_origins``) and never touch a particle stack.
 """
 
-from typing import TYPE_CHECKING, Any, Literal
+from typing import Any, Literal
 
 import numpy as np
 import pandas as pd
@@ -16,46 +16,9 @@ import torch
 from leopard_em.pydantic_models.data_structures.particle_stack._table import (
     as_row_positions,
 )
-from leopard_em.pydantic_models.formats import (
-    STATISTIC_MAP_PATH_COLUMNS,
-    STATISTIC_MAP_PATH_TO_HDF5_DATASET,
-)
+from leopard_em.pydantic_models.formats import STATISTIC_MAP_PATH_TO_HDF5_DATASET
 from leopard_em.utils.cropping import get_cropped_image_regions
 from leopard_em.utils.data_io import load_result_map_image
-
-if TYPE_CHECKING:
-    from leopard_em.pydantic_models.config import PreprocessingFilters
-
-# Full-micrograph 2DTM result maps extracted per-particle by ``get_local_stat_maps``
-# when no explicit columns are requested.
-DEFAULT_LOCAL_STAT_COLUMNS = tuple(STATISTIC_MAP_PATH_COLUMNS)
-
-# Constant used to pad out-of-bounds regions of per-particle local statistic maps. The
-# correlation standard deviation map padded with large values so out-of-bounds regions
-# produce ~0 z-scores as opposed to NaN or inf values.
-LARGE_STD_PADDING = 1e10
-_DEFAULT_LOCAL_STAT_PADDING = {"correlation_variance_path": LARGE_STD_PADDING}
-
-
-def local_stat_padding(column: str, padding_value: float | None = None) -> float:
-    """Constant used to pad out-of-bounds regions of a statistic map column.
-
-    Parameters
-    ----------
-    column : str
-        The ``*_path`` column of the statistic map.
-    padding_value : float | None, optional
-        Explicit padding value, returned as-is when given. Defaults to None, which pads
-        the standard deviation map with :data:`LARGE_STD_PADDING` and every other map
-        with ``0.0``.
-
-    Returns
-    -------
-    float
-    """
-    if padding_value is not None:
-        return padding_value
-    return _DEFAULT_LOCAL_STAT_PADDING.get(column, 0.0)
 
 
 def load_grouped_images(
@@ -196,35 +159,3 @@ def scatter_by_group(
         )
         out[positions] = values[i]
     return out
-
-
-def combined_filter_stack(
-    preprocess_filters: "PreprocessingFilters",
-    images_dft: torch.Tensor,
-    output_shape: tuple[int, int],
-) -> torch.Tensor:
-    """Combined Fourier filter of each image, using that image as the reference.
-
-    Parameters
-    ----------
-    preprocess_filters : PreprocessingFilters
-        Configuration object of filters to apply.
-    images_dft : torch.Tensor
-        Reference images (micrographs or particles) in Fourier space, shape
-        ``(N, H, W)``.
-    output_shape : tuple[int, int]
-        Shape of each filter along the last two dimensions.
-
-    Returns
-    -------
-    torch.Tensor
-        The ``(N, *output_shape)`` filter stack on the images' device.
-    """
-    num_images = images_dft.shape[0]
-    filter_stack = torch.zeros((num_images, *output_shape), device=images_dft.device)
-    for i in range(num_images):
-        filter_stack[i] = preprocess_filters.get_combined_filter(
-            ref_img_rfft=images_dft[i],
-            output_shape=output_shape,
-        )
-    return filter_stack

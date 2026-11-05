@@ -7,10 +7,7 @@ import pandas as pd
 import torch
 from torch_motion_correction.deformation_field import DeformationField
 
-from leopard_em.pydantic_models.data_structures.particle_stack._extraction import (
-    LARGE_STD_PADDING,
-    local_stat_padding,
-)
+from leopard_em.pydantic_models.formats import LARGE_STD_PADDING, local_stat_padding
 from leopard_em.utils.ctf_utils import _setup_ctf_kwargs_from_particle_stack
 from leopard_em.utils.fourier_slice import volume_to_rfft_fourier_slice
 from leopard_em.utils.image_processing import apply_image_filtering

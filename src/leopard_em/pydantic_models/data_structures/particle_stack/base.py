@@ -25,11 +25,8 @@ from leopard_em.pydantic_models.custom_types import (
     ExcludedTensorDict,
 )
 from leopard_em.pydantic_models.data_structures.particle_stack._extraction import (
-    DEFAULT_LOCAL_STAT_COLUMNS,
-    combined_filter_stack,
     crop_by_group,
     load_grouped_images,
-    local_stat_padding,
     scatter_by_group,
 )
 from leopard_em.pydantic_models.data_structures.particle_stack._movie import (
@@ -50,6 +47,10 @@ from leopard_em.pydantic_models.data_structures.particle_stack._table import (
 )
 from leopard_em.pydantic_models.data_structures.particle_stack.geometry import (
     ParticleBoxGeometry,
+)
+from leopard_em.pydantic_models.formats import (
+    DEFAULT_LOCAL_STAT_COLUMNS,
+    local_stat_padding,
 )
 
 # Frames skipped when attributing deprecation warnings, so they point at user code
@@ -644,7 +645,7 @@ class _ParticleStackBase(BaseModel2DTM):
             The stack of filters with shape (N, h, w) where N is the number of images
             and (h, w) is the output shape.
         """
-        return combined_filter_stack(preprocess_filters, images_dft, output_shape)
+        return preprocess_filters.get_combined_filter_stack(images_dft, output_shape)
 
     def construct_projective_filters(
         self,
@@ -675,8 +676,8 @@ class _ParticleStackBase(BaseModel2DTM):
         torch.Tensor
             Filter stack of shape ``(M, h, w)`` where M is the number of particles.
         """
-        image_filters = combined_filter_stack(
-            preprocess_filters, images_dft, output_shape
+        image_filters = preprocess_filters.get_combined_filter_stack(
+            images_dft, output_shape
         )
         return scatter_by_group(image_filters, indices, self.num_particles)
 

@@ -8,12 +8,10 @@ import torch
 from leopard_em.pydantic_models.data_structures.particle_stack import ParticleStack
 from leopard_em.pydantic_models.data_structures.particle_stack import _movie as movie
 from leopard_em.pydantic_models.data_structures.particle_stack._extraction import (
-    LARGE_STD_PADDING,
-    combined_filter_stack,
     crop_by_group,
-    local_stat_padding,
     scatter_by_group,
 )
+from leopard_em.pydantic_models.formats import LARGE_STD_PADDING, local_stat_padding
 
 
 def test_local_stat_padding():
@@ -60,17 +58,6 @@ def test_scatter_by_group():
     assert out[:, 0].tolist() == [1.0, 2.0, 0.0, 1.0]
     with pytest.raises(TypeError, match="integer row positions"):
         scatter_by_group(values[:1], [pd.Index(["p_00000"])], num_particles=4)
-
-
-def test_combined_filter_stack_uses_each_image_as_reference():
-    class _MeanFilter:
-        def get_combined_filter(self, ref_img_rfft, output_shape):
-            return torch.full(output_shape, float(ref_img_rfft.real.mean()))
-
-    images_dft = torch.stack([torch.full((4, 3), 1.0), torch.full((4, 3), 3.0)])
-    filters = combined_filter_stack(_MeanFilter(), images_dft, (2, 2))
-    assert filters.shape == (2, 2, 2)
-    assert filters[:, 0, 0].tolist() == [1.0, 3.0]
 
 
 def test_crop_particle_regions_leaves_image_stack_alone():

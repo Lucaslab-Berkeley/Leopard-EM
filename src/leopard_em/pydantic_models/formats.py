@@ -3,7 +3,7 @@
 from collections.abc import Iterable
 
 # Full-micrograph 2DTM result map paths, shared across the column-order
-# lists below and by ``_DEFAULT_LOCAL_STAT_COLUMNS`` in particle_stack.py.
+# lists below and by ``DEFAULT_LOCAL_STAT_COLUMNS``.
 STATISTIC_MAP_PATH_COLUMNS = [
     "mip_path",
     "scaled_mip_path",
@@ -31,6 +31,35 @@ STATISTIC_MAP_PATH_TO_HDF5_DATASET = {
     "correlation_average_path": "correlation_average",
     "correlation_variance_path": "correlation_variance",
 }
+
+# ``ParticleStack.get_local_stat_maps`` when no explicit columns are requested.
+DEFAULT_LOCAL_STAT_COLUMNS = tuple(STATISTIC_MAP_PATH_COLUMNS)
+
+# Pad so  out-of-bounds regions produce ~0 z-scores as opposed to NaN or inf values.
+LARGE_STD_PADDING = 1e10
+_DEFAULT_LOCAL_STAT_PADDING = {"correlation_variance_path": LARGE_STD_PADDING}
+
+
+def local_stat_padding(column: str, padding_value: float | None = None) -> float:
+    """Constant used to pad out-of-bounds regions of a statistic map column.
+
+    Parameters
+    ----------
+    column : str
+        The ``*_path`` column of the statistic map.
+    padding_value : float | None, optional
+        Explicit padding value, returned as-is when given. Defaults to None, which pads
+        the standard deviation map with :data:`LARGE_STD_PADDING` and every other map
+        with ``0.0``.
+
+    Returns
+    -------
+    float
+    """
+    if padding_value is not None:
+        return padding_value
+    return _DEFAULT_LOCAL_STAT_PADDING.get(column, 0.0)
+
 
 # Scalar CTF parameter columns which must hold one value shared by all particles
 SHARED_CTF_PARAMETER_COLUMNS = (
