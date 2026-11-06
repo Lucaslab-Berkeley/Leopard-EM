@@ -1,6 +1,7 @@
 """Stateless helpers for the DataFrame backing each particle stack."""
 
 import hashlib
+import re
 import warnings
 from collections import Counter
 from collections.abc import Sequence
@@ -93,6 +94,16 @@ def normalize_particle_dataframe(
         df = df.reset_index()
     else:
         df = df.reset_index(drop=True)
+
+    # Untracked/unnamed index column written by older CSV exports
+    pattern = r"Unnamed: \d+(\.\d+)?"
+    stray_index = [
+        col
+        for col in df.columns
+        if re.fullmatch(pattern, str(col))
+        and np.array_equal(df[col], np.arange(len(df)))
+    ]
+    df = df.drop(columns=stray_index)
 
     if PARTICLE_ID_COLUMN not in df.columns:
         return df

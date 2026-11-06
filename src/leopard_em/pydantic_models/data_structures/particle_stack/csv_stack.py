@@ -94,7 +94,7 @@ class ParticleStackCSV(_ParticleStackBase):
             if method == "zip":
                 compression["archive_name"] = Path(uncompressed_path).name
         with atomic_write_path(self.df_path) as tmp_path:
-            self._df.to_csv(tmp_path, compression=compression)
+            self._df.to_csv(tmp_path, index=False, compression=compression)
 
     def to_hdf5(
         self,

@@ -184,6 +184,41 @@ def test_particle_stack_init_and_load_df(tmp_path):
     assert ps.original_template_size == (16, 16)
 
 
+def test_particle_stack_csv_roundtrip_has_no_index_column(tmp_path):
+    """Exported CSVs reload with exactly the original columns."""
+    ps = ParticleStack(
+        df_path=str(tmp_path / "particles.csv"),
+        extracted_box_size=(32, 32),
+        original_template_size=(16, 16),
+        skip_df_load=True,
+    )
+    ps._set_dataframe(make_minimal_df())
+    ps.export_results()
+
+    reloaded = ParticleStack(
+        df_path=ps.df_path, extracted_box_size=(32, 32), original_template_size=(16, 16)
+    )
+    assert list(reloaded._df.columns) == list(ps._df.columns)
+
+
+def test_particle_stack_csv_drops_legacy_index_column(tmp_path):
+    """The index column written by older exports is dropped, user columns are kept."""
+    df_path = tmp_path / "legacy.csv"
+    make_minimal_df(3).to_csv(df_path)
+    ps = ParticleStack(
+        df_path=str(df_path),
+        extracted_box_size=(32, 32),
+        original_template_size=(16, 16),
+    )
+    assert "Unnamed: 0" not in ps._df.columns
+
+    df = make_minimal_df(3)
+    df.insert(0, "Unnamed: 0", [5, 6, 7])
+    df.to_csv(df_path, index=False)
+    ps.load_df()
+    assert ps._df["Unnamed: 0"].tolist() == [5, 6, 7]
+
+
 def test_particle_stack_missing_columns(tmp_path):
     """Test initializing ParticleStack with missing required columns."""
     df = make_minimal_df()
