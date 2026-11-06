@@ -396,8 +396,10 @@ class PreprocessingFilters(BaseModel2DTM):
 
     Methods
     -------
-    combined_filter(ref_img_rfft, output_shape)
+    get_combined_filter(ref_img_rfft, output_shape, apply_random_dropout)
         Calculate and combine all Fourier filters into a single filter.
+    get_combined_filter_stack(images_dft, output_shape)
+        Combined filter for each image of a batch, each image as its own reference.
     """
 
     whitening_filter: WhiteningFilterConfig = WhiteningFilterConfig()
@@ -468,3 +470,34 @@ class PreprocessingFilters(BaseModel2DTM):
             combined_filter = combined_filter * random_dropout_mask
 
         return combined_filter
+
+    def get_combined_filter_stack(
+        self,
+        images_dft: torch.Tensor,
+        output_shape: tuple[int, ...],
+    ) -> torch.Tensor:
+        """Combined filter for each image in a batch, using that image as reference.
+
+        Parameters
+        ----------
+        images_dft : torch.Tensor
+            Reference images (e.g. micrographs or particles) in Fourier space, with
+            shape ``(N, H, W)``.
+        output_shape : tuple[int, ...]
+            Desired Fourier-space shape of each filter (see ``get_combined_filter``).
+
+        Returns
+        -------
+        torch.Tensor
+            The ``(N, *output_shape)`` stack of combined filters, on the same device as
+            ``images_dft``.
+        """
+        num_images = images_dft.shape[0]
+        filter_stack = torch.zeros(
+            (num_images, *output_shape), device=images_dft.device
+        )
+        for i in range(num_images):
+            filter_stack[i] = self.get_combined_filter(
+                ref_img_rfft=images_dft[i], output_shape=output_shape
+            )
+        return filter_stack
