@@ -987,7 +987,6 @@ def cross_correlate_particle_stack(
             )
         fourier_slice = torch.fft.ifftshift(fourier_slice, dim=(-2,))
         fourier_slice[..., 0, 0] = 0 + 0j  # zero out the DC component (mean zero)
-        fourier_slice *= -1  # flip contrast
         fourier_slice *= batch_projective_filters
 
         # Inverse Fourier transform and normalize the projection
