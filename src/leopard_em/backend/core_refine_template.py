@@ -11,7 +11,6 @@ from typing import Literal, NamedTuple, cast
 import roma
 import torch
 import tqdm
-from torch_fourier_slice import extract_central_slices_rfft_3d, transform_slice_2d
 
 from leopard_em.backend.cross_correlation import (
     do_batched_orientation_cross_correlate,
@@ -27,6 +26,10 @@ from leopard_em.utils.cross_correlation import handle_correlation_mode
 from leopard_em.utils.ctf_utils import (
     calculate_ctf_filter_stack_full_args,
     move_ctf_kwargs_tensors_to_device,
+)
+from leopard_em.utils.fourier_slice import (
+    extract_template_fourier_slices,
+    projection_shape_from_filters,
 )
 
 
@@ -237,10 +240,9 @@ def core_refine_template(
 
     # Shape information for offset calculations
     _, img_h, img_w = particle_stack_dft.shape
-    _, template_h, template_w = template_dft.shape
-    # account for RFFT
+    # account for RFFT ('template_dft' may be padded, so use the filter shape)
     img_w = 2 * (img_w - 1)
-    template_w = 2 * (template_w - 1)
+    template_h, template_w = projection_shape_from_filters(projective_filters)
 
     ordered_results = [results[k] for k in sorted(results.keys(), key=int)]
 
@@ -665,9 +667,9 @@ def _iter_refine_particle_correlation_batches(
     this function.
     """
     img_h, img_w = particle_image_dft.shape
-    _, template_h, template_w = template_dft.shape
     img_w = 2 * (img_w - 1)
-    template_w = 2 * (template_w - 1)
+    # 'template_dft' may be zero-padded, so take the template size from the filter
+    template_h, template_w = projection_shape_from_filters(projective_filter)
     crop_h = img_h - template_h + 1
     crop_w = img_w - template_w + 1
 
@@ -942,10 +944,9 @@ def cross_correlate_particle_stack(
     # Helpful constants for later use
     device = particle_stack_dft.device
     num_particles, image_h, image_w = particle_stack_dft.shape
-    _, template_h, template_w = template_dft.shape
-    # account for RFFT
+    # account for RFFT ('template_dft' may be padded, so use the filter shape)
     image_w = 2 * (image_w - 1)
-    template_w = 2 * (template_w - 1)
+    template_h, template_w = projection_shape_from_filters(projective_filters)
 
     if batch_size == -1:
         batch_size = num_particles
@@ -969,22 +970,14 @@ def cross_correlate_particle_stack(
         batch_rotation_matrices = rotation_matrices[i : i + batch_size]
         batch_projective_filters = projective_filters[i : i + batch_size]
 
-        # Extract the Fourier slice and apply the projective filters
-        fourier_slice = extract_central_slices_rfft_3d(
-            volume_rfft=template_dft,
+        # Extract template-size Fourier slices (cropping a padded volume and applying
+        # the anisotropic magnification transform when provided)
+        fourier_slice = extract_template_fourier_slices(
+            template_dft=template_dft,
             rotation_matrices=batch_rotation_matrices,
+            projection_shape=(template_h, template_w),
+            mag_matrix=mag_matrix,
         )
-        # Apply anisotropic magnification transform if provided
-        # pylint: disable=duplicate-code
-        if mag_matrix is not None:
-            rfft_shape = (template_h, template_w)
-            stack_shape = (batch_rotation_matrices.shape[0],)
-            fourier_slice = transform_slice_2d(
-                projection_image_dfts=fourier_slice,
-                rfft_shape=rfft_shape,
-                stack_shape=stack_shape,
-                transform_matrix=mag_matrix,
-            )
         fourier_slice = torch.fft.ifftshift(fourier_slice, dim=(-2,))
         fourier_slice[..., 0, 0] = 0 + 0j  # zero out the DC component (mean zero)
         fourier_slice *= -1  # flip contrast

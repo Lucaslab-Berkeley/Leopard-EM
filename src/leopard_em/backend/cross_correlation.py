@@ -2,11 +2,14 @@
 
 import torch
 from torch_fourier_shell_correlation import fsc
-from torch_fourier_slice import extract_central_slices_rfft_3d, transform_slice_2d
 
 from leopard_em.backend.utils import (
     normalize_template_projection,
     normalize_template_projection_compiled,
+)
+from leopard_em.utils.fourier_slice import (
+    extract_template_fourier_slices,
+    projection_shape_from_filters,
 )
 from leopard_em.utils.zipfft_support import (
     zipfft,
@@ -52,8 +55,10 @@ def do_streamed_orientation_cross_correlate(
         already applied. Has shape (H, W // 2 + 1).
     template_dft : torch.Tensor
         Real-fourier transform (RFFT) of the template volume to take Fourier
-        slices from. Has shape (l, h, w // 2 + 1) where (l, h, w) is the original
-        real-space shape of the template volume.
+        slices from, as prepared by 'volume_to_rfft_fourier_slice'. Has shape
+        (L, H, W // 2 + 1) where (L, H, W) is the (possibly zero-padded) real-space
+        shape of the template volume. Slices are cropped back to the template size
+        (h, w), which is taken from 'projective_filters'.
     rotation_matrices : torch.Tensor
         Rotation matrices to apply to the template volume. Has shape
         (num_orientations, 3, 3).
@@ -84,7 +89,7 @@ def do_streamed_orientation_cross_correlate(
         image_shape_real = _image_shape_from_rfft(image_dft)
 
     # Accounting for RFFT shape
-    projection_shape_real = (template_dft.shape[1], template_dft.shape[2] * 2 - 2)
+    projection_shape_real = projection_shape_from_filters(projective_filters)
 
     num_orientations = rotation_matrices.shape[0]
     num_Cs = projective_filters.shape[0]  # pylint: disable=invalid-name
@@ -96,21 +101,14 @@ def do_streamed_orientation_cross_correlate(
         device=image_dft.device,
     )
 
-    # Do a batched Fourier slice extraction for all the orientations at once.
-    fourier_slices = extract_central_slices_rfft_3d(
-        volume_rfft=template_dft,
+    # Extract template-size central slices (cropping a padded volume and
+    # applying the anisotropic magnification transform when provided)
+    fourier_slices = extract_template_fourier_slices(
+        template_dft=template_dft,
         rotation_matrices=rotation_matrices,
+        projection_shape=projection_shape_real,
+        mag_matrix=mag_matrix,
     )
-    # Apply anisotropic magnification transform if provided
-    if mag_matrix is not None:
-        rfft_shape = (template_dft.shape[1], template_dft.shape[2])
-        stack_shape = (num_orientations,)
-        fourier_slices = transform_slice_2d(
-            projection_image_dfts=fourier_slices,
-            rfft_shape=rfft_shape,
-            stack_shape=stack_shape,
-            transform_matrix=mag_matrix,
-        )
     fourier_slices = torch.fft.ifftshift(fourier_slices, dim=(-2,))
     fourier_slices[..., 0, 0] = 0 + 0j  # zero out the DC component (mean zero)
     fourier_slices *= -1  # flip contrast
@@ -208,8 +206,10 @@ def do_batched_orientation_cross_correlate(
         already applied. Has shape (H, W // 2 + 1).
     template_dft : torch.Tensor
         Real-fourier transform (RFFT) of the template volume to take Fourier
-        slices from. Has shape (l, h, w // 2 + 1) where (l, h, w) is the original
-        real-space shape of the template volume.
+        slices from, as prepared by 'volume_to_rfft_fourier_slice'. Has shape
+        (L, H, W // 2 + 1) where (L, H, W) is the (possibly zero-padded) real-space
+        shape of the template volume. Slices are cropped back to the template size
+        (h, w), which is taken from 'projective_filters'.
     rotation_matrices : torch.Tensor
         Rotation matrices to apply to the template volume. Has shape
         (num_orientations, 3, 3).
@@ -241,7 +241,7 @@ def do_batched_orientation_cross_correlate(
     if image_shape_real is None:
         image_shape_real = _image_shape_from_rfft(image_dft)
 
-    projection_shape_real = (template_dft.shape[1], template_dft.shape[2] * 2 - 2)
+    projection_shape_real = projection_shape_from_filters(projective_filters)
 
     num_Cs = projective_filters.shape[0]  # pylint: disable=invalid-name
     num_defocus = projective_filters.shape[1]
@@ -257,22 +257,14 @@ def do_batched_orientation_cross_correlate(
         device=image_dft.device,
     )
 
-    # Extract central slice(s) from the template volume
-    fourier_slice = extract_central_slices_rfft_3d(
-        volume_rfft=template_dft,
+    # Extract template-size central slices (cropping a padded volume and
+    # applying the anisotropic magnification transform when provided)
+    fourier_slice = extract_template_fourier_slices(
+        template_dft=template_dft,
         rotation_matrices=rotation_matrices,
+        projection_shape=projection_shape_real,
+        mag_matrix=mag_matrix,
     )
-    # Apply anisotropic magnification transform if provided
-    # pylint: disable=duplicate-code
-    if mag_matrix is not None:
-        rfft_shape = (template_dft.shape[1], template_dft.shape[2])
-        stack_shape = (rotation_matrices.shape[0],)
-        fourier_slice = transform_slice_2d(
-            projection_image_dfts=fourier_slice,
-            rfft_shape=rfft_shape,
-            stack_shape=stack_shape,
-            transform_matrix=mag_matrix,
-        )
     fourier_slice = torch.fft.ifftshift(fourier_slice, dim=(-2,))
     # Zero out the DC component (mean zero) - avoid in-place when requires_grad
     if requires_grad:
@@ -346,7 +338,8 @@ def do_batched_orientation_cross_correlate_cpu(
         already applied. Has shape (H, W // 2 + 1).
     template_dft : torch.Tensor
         Real-fourier transform (RFFT) of the template volume to take Fourier
-        slices from. Has shape (l, h, w // 2 + 1).
+        slices from, as prepared by 'volume_to_rfft_fourier_slice'. Has shape
+        (L, H, W // 2 + 1); may be zero-padded relative to the template size.
     rotation_matrices : torch.Tensor
         Rotation matrices to apply to the template volume. Has shape
         (orientations, 3, 3).
@@ -372,24 +365,16 @@ def do_batched_orientation_cross_correlate_cpu(
     if image_shape_real is None:
         image_shape_real = _image_shape_from_rfft(image_dft)
 
-    projection_shape_real = (template_dft.shape[1], template_dft.shape[2] * 2 - 2)
+    projection_shape_real = projection_shape_from_filters(projective_filters)
 
-    # Extract central slice(s) from the template volume
-    fourier_slice = extract_central_slices_rfft_3d(
-        volume_rfft=template_dft,
+    # Extract template-size central slices (cropping a padded volume and
+    # applying the anisotropic magnification transform when provided)
+    fourier_slice = extract_template_fourier_slices(
+        template_dft=template_dft,
         rotation_matrices=rotation_matrices,
+        projection_shape=projection_shape_real,
+        mag_matrix=mag_matrix,
     )
-    # Apply anisotropic magnification transform if provided
-    # pylint: disable=duplicate-code
-    if mag_matrix is not None:
-        rfft_shape = (template_dft.shape[1], template_dft.shape[2])
-        stack_shape = (rotation_matrices.shape[0],)
-        fourier_slice = transform_slice_2d(
-            projection_image_dfts=fourier_slice,
-            rfft_shape=rfft_shape,
-            stack_shape=stack_shape,
-            transform_matrix=mag_matrix,
-        )
     fourier_slice = torch.fft.ifftshift(fourier_slice, dim=(-2,))
     fourier_slice[..., 0, 0] = 0 + 0j  # zero out the DC component (mean zero)
     fourier_slice *= -1  # flip contrast
@@ -459,25 +444,20 @@ def do_batched_orientation_frc(
     if image_shape_real is None:
         image_shape_real = _image_shape_from_rfft(image_dft)
 
-    projection_shape_real = (template_dft.shape[1], template_dft.shape[2] * 2 - 2)
+    projection_shape_real = projection_shape_from_filters(projective_filters)
 
     num_orientations = rotation_matrices.shape[0]
     num_cs = projective_filters.shape[0]
     num_defocus = projective_filters.shape[1]
 
-    fourier_slice = extract_central_slices_rfft_3d(
-        volume_rfft=template_dft,
+    # Extract template-size central slices (cropping a padded volume and
+    # applying the anisotropic magnification transform when provided)
+    fourier_slice = extract_template_fourier_slices(
+        template_dft=template_dft,
         rotation_matrices=rotation_matrices,
+        projection_shape=projection_shape_real,
+        mag_matrix=mag_matrix,
     )
-    if mag_matrix is not None:
-        rfft_shape = (template_dft.shape[1], template_dft.shape[2])
-        stack_shape = (num_orientations,)
-        fourier_slice = transform_slice_2d(
-            projection_image_dfts=fourier_slice,
-            rfft_shape=rfft_shape,
-            stack_shape=stack_shape,
-            transform_matrix=mag_matrix,
-        )
     fourier_slice = torch.fft.ifftshift(fourier_slice, dim=(-2,))
     fourier_slice[..., 0, 0] = 0 + 0j
     fourier_slice *= -1
@@ -547,8 +527,10 @@ def do_batched_orientation_cross_correlate_zipfft(
         ``leopard_em.backend.core_match_template``).
     template_dft : torch.Tensor
         Real-fourier transform (RFFT) of the template volume to take Fourier
-        slices from. Has shape (l, h, w // 2 + 1) where (l, h, w) is the original
-        real-space shape of the template volume.
+        slices from, as prepared by 'volume_to_rfft_fourier_slice'. Has shape
+        (L, H, W // 2 + 1) where (L, H, W) is the (possibly zero-padded) real-space
+        shape of the template volume. Slices are cropped back to the template size
+        (h, w), which is taken from 'projective_filters'.
     rotation_matrices : torch.Tensor
         Rotation matrices to apply to the template volume. Has shape
         (num_orientations, 3, 3).
@@ -584,7 +566,7 @@ def do_batched_orientation_cross_correlate_zipfft(
         )
 
     # Accounting for RFFT shape
-    projection_shape_real = (template_dft.shape[1], template_dft.shape[2] * 2 - 2)
+    projection_shape_real = projection_shape_from_filters(projective_filters)
 
     # 'image_shape_real' is the true (H, W)
     # 'transposed_dft_shape' is the layout the zipFFT reads
@@ -620,10 +602,12 @@ def do_batched_orientation_cross_correlate_zipfft(
         device=image_dft.device,
     )
 
-    # Extract central slice(s) from the template volume
-    fourier_slice = extract_central_slices_rfft_3d(
-        volume_rfft=template_dft,
+    # Extract template-size central slices (cropping a padded volume and
+    # applying the anisotropic magnification transform when provided)
+    fourier_slice = extract_template_fourier_slices(
+        template_dft=template_dft,
         rotation_matrices=rotation_matrices,
+        projection_shape=projection_shape_real,
     )
     fourier_slice = torch.fft.ifftshift(fourier_slice, dim=(-2,))
     fourier_slice[..., 0, 0] = 0 + 0j  # zero out the DC component (mean zero)
