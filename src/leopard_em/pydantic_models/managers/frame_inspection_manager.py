@@ -359,6 +359,7 @@ class FrameInspectionManager(PeakInspectionManager):
                 fixed_normalization_factor=fixed_filters.normalization_factor,
                 full_image_shape=fixed_filters.full_image_shape,
                 extracted_box_shape=fixed_filters.extracted_box_shape,
+                pad_factor=self.computational_config.template_pad_factor,
             )
         )
         return {
