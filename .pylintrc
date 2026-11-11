@@ -7,3 +7,15 @@ generated-members=numpy.*,torch.*  # See https://github.com/pytorch/pytorch/issu
 #       data is not packed/unpacked as objects and rather passed as data arrays/options.
 max-args=10
 max-positional-arguments=10
+
+[DESIGN]
+# Result/manager Pydantic models and the batched inspection/correlation backends
+# legitimately carry more fields and locals than pylint's defaults allow; raise the
+# ceilings rather than sprinkling per-class/per-function disables.
+max-attributes=12
+max-locals=20
+max-statements=60
+
+[MESSAGES CONTROL]
+# TODOs are tracked intentionally in-code; don't fail CI on them.
+disable=fixme

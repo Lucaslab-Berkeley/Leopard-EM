@@ -1,7 +1,8 @@
 # pylint: disable=duplicate-code
 """Pydantic model for running the constrained search program."""
 
-from typing import Any, ClassVar
+import os
+from typing import Any, ClassVar, Literal
 
 import numpy as np
 import pandas as pd
@@ -18,14 +19,44 @@ from leopard_em.pydantic_models.config import (
     PreprocessingFilters,
 )
 from leopard_em.pydantic_models.custom_types import BaseModel2DTM, ExcludedTensor
-from leopard_em.pydantic_models.data_structures import ParticleStack
-from leopard_em.pydantic_models.formats import CONSTRAINED_DF_COLUMN_ORDER
+from leopard_em.pydantic_models.data_structures import (
+    AnyParticleStack,
+    ParticleStackCSV,
+    ParticleStackHDF5,
+    export_particle_stack,
+)
+from leopard_em.pydantic_models.data_structures.particle_stack import (
+    _warn_allow_file_overwrite_deprecated,
+)
+from leopard_em.pydantic_models.data_structures.particle_stack._table import (
+    apply_position_offsets,
+)
+from leopard_em.pydantic_models.data_structures.particle_stack.export import (
+    check_output_not_input,
+)
+from leopard_em.pydantic_models.formats import (
+    CONSTRAINED_DF_COLUMN_ORDER,
+    result_column_order,
+    split_compression_suffix,
+)
+from leopard_em.pydantic_models.results.match_template_result import (
+    check_file_path_and_permissions,
+)
 from leopard_em.utils.backend_setup import (
     _setup_correlation_stacks_from_micrographs,
+    astigmatism_angle_tensor,
+    resolve_particle_image_source,
     setup_images_filters_particle_stack,
 )
 from leopard_em.utils.ctf_utils import _setup_ctf_kwargs_from_particle_stack
 from leopard_em.utils.data_io import load_mrc_volume, load_template_tensor
+
+
+def _sibling_output_paths(output_dataframe_path: str) -> tuple[str, str]:
+    """The "_parameters" and "_above_threshold" CSV paths next to the main output."""
+    uncompressed_path, _ = split_compression_suffix(output_dataframe_path)
+    output_base, _ = os.path.splitext(uncompressed_path)
+    return f"{output_base}_parameters.csv", f"{output_base}_above_threshold.csv"
 
 
 class ConstrainedSearchManager(BaseModel2DTM):
@@ -42,9 +73,12 @@ class ConstrainedSearchManager(BaseModel2DTM):
         Path to the template volume MRC file.
     center_vector : list[float]
         The centre vector of the template volume.
-    particle_stack_reference : ParticleStack
-        Particle stack object containing particle data reference particles.
-    particle_stack_constrained : ParticleStack
+    particle_stack_reference : ParticleStackCSV | ParticleStackHDF5
+        Particle stack object containing particle data reference particles. Use
+        ``ParticleStackCSV`` for a CSV-backed particle table or
+        ``ParticleStackHDF5`` for an HDF5-backed one. Both expose the same in-memory
+        API.
+    particle_stack_constrained : ParticleStackCSV | ParticleStackHDF5
         Particle stack object containing particle data constrained particles.
     defocus_refinement_config : DefocusSearchConfig
         Configuration for defocus refinement.
@@ -68,6 +102,13 @@ class ConstrainedSearchManager(BaseModel2DTM):
         Create the kwargs for the backend refine_template core function.
     run_constrained_search(self, orientation_batch_size: int = 64) -> None
         Run the constrained search program.
+    refine_result_to_dataframe(self, result) -> pd.DataFrame
+        Build the refined particle DataFrame from a backend result (no I/O).
+    export_results(self, output_dataframe_path: str, result, ...) -> None
+        Build the refined DataFrame and write it (plus CSV parameter/
+        above-threshold siblings) to disk, matching the input
+        particle_stack_reference's back-end by default (override with
+        `output_format`).
     """
 
     model_config: ClassVar = ConfigDict(arbitrary_types_allowed=True)
@@ -75,8 +116,8 @@ class ConstrainedSearchManager(BaseModel2DTM):
     template_volume_path: str  # In df per-particle, but ensure only one reference
     center_vector: list[float] = Field(default=[0.0, 0.0, 0.0])
 
-    particle_stack_reference: ParticleStack
-    particle_stack_constrained: ParticleStack
+    particle_stack_reference: AnyParticleStack
+    particle_stack_constrained: AnyParticleStack
     defocus_refinement_config: DefocusSearchConfig
     orientation_refinement_config: ConstrainedOrientationConfig
     preprocessing_filters: PreprocessingFilters
@@ -101,8 +142,7 @@ class ConstrainedSearchManager(BaseModel2DTM):
         part_stk = self.particle_stack_reference
 
         # Checks to make sure manager is properly configured
-        # pylint: disable=protected-access
-        assert part_stk._df["micrograph_path"].nunique() == 1, (
+        assert part_stk["micrograph_path"].nunique() == 1, (
             "Constrained search can only be run on data from a single micrograph. "
             "Please ensure that the particle stack contains particles from only one "
             "micrograph."
@@ -124,12 +164,22 @@ class ConstrainedSearchManager(BaseModel2DTM):
         pixel_size_offsets = torch.tensor([0.0])
 
         # Extract and preprocess images and filters
+        stored_images, apply_global_filtering = resolve_particle_image_source(
+            particle_stack=part_stk,
+            apply_global_filtering=True,
+            warn_on_filter_switch=False,
+        )
         (
             particle_images_dft,
             template_dft,
             projective_filters,
         ) = setup_images_filters_particle_stack(
-            part_stk, self.preprocessing_filters, template
+            part_stk,
+            self.preprocessing_filters,
+            template,
+            apply_global_filtering=apply_global_filtering,
+            image_stack=stored_images,
+            images_are_particles=stored_images is not None,
         )
 
         # get z diff for each particle
@@ -149,7 +199,7 @@ class ConstrainedSearchManager(BaseModel2DTM):
         defocus_v = defocus_v - new_z_diffs
         # Store defocus values as instance attributes for later access
         self.zdiffs = new_z_diffs
-        defocus_angle = torch.tensor(part_stk["astigmatism_angle"])
+        defocus_angle = astigmatism_angle_tensor(part_stk, template.device)
 
         # The relative defocus values to search over
         defocus_offsets = self.defocus_refinement_config.defocus_values
@@ -161,23 +211,12 @@ class ConstrainedSearchManager(BaseModel2DTM):
         # Ger corr mean and variance
         # The position of the extracted areas needs to be from the larger particle, but
         # the mean and variance must come from the initial match template on the
-        # smaller constrained particle.
-        # Currently, we just set the searched file (as in paths below) to the first
-        # element in the constrained particle stack.
-        # NOTE: This will *not* work if the constrained particle stack contains
-        # particles from multiple reference images.
-        part_stk.set_column(
-            "correlation_average_path",
-            self.particle_stack_constrained["correlation_average_path"][0],
-        )
-        part_stk.set_column(
-            "correlation_variance_path",
-            self.particle_stack_constrained["correlation_variance_path"][0],
-        )
+        # smaller constrained particle, so point the reference stack at the constrained
+        # stack's (single) correlation statistic maps.
+        for column, path in self._constrained_correlation_map_paths().items():
+            part_stk.set_column(column, path)
         # Get correlation statistics
-        h, w = part_stk.original_template_size
-        box_h, box_w = part_stk.extracted_box_size
-        extracted_box_size = (box_h - h + 1, box_w - w + 1)
+        extracted_box_size = part_stk.geometry.valid_size
         corr_mean_stack, corr_std_stack = _setup_correlation_stacks_from_micrographs(
             particle_stack=part_stk,
             mean_stack=None,
@@ -185,6 +224,9 @@ class ConstrainedSearchManager(BaseModel2DTM):
             particle_indices=None,
             extracted_box_size=extracted_box_size,
             device=template.device,
+            # The constrained stack's maps, cropped at the reference positions, can
+            # never come from the reference stack's stored local stats.
+            use_stored_local_stats=False,
         )
 
         return {
@@ -204,13 +246,35 @@ class ConstrainedSearchManager(BaseModel2DTM):
             "device": device_list,  # Pass all devices to core_refine_template
         }
 
+    def _constrained_correlation_map_paths(self) -> dict[str, str]:
+        """Return the constrained stack's correlation average/variance map paths.
+
+        Raises
+        ------
+        ValueError
+            If the constrained particle stack does not reference exactly one
+            correlation average and one correlation variance map.
+        """
+        paths = {}
+        for column in ("correlation_average_path", "correlation_variance_path"):
+            unique_paths = self.particle_stack_constrained[column].dropna().unique()
+            if len(unique_paths) != 1:
+                raise ValueError(
+                    f"Constrained search requires the constrained particle stack to "
+                    f"reference exactly one '{column}' file, found {len(unique_paths)}."
+                )
+            paths[column] = str(unique_paths[0])
+        return paths
+
     def run_constrained_search(
         self,
         output_dataframe_path: str,
         false_positives: float = 0.005,
         orientation_batch_size: int = 64,
+        output_format: Literal["csv", "hdf5"] | None = None,
+        allow_file_overwrite: bool | None = None,
     ) -> None:
-        """Run the constrained search program and saves the resultant DataFrame to csv.
+        """Run the constrained search program and export the resultant DataFrame.
 
         Parameters
         ----------
@@ -220,15 +284,41 @@ class ConstrainedSearchManager(BaseModel2DTM):
             The number of false positives to allow per particle.
         orientation_batch_size : int
             Number of orientations to process at once. Defaults to 64.
+        output_format : Literal["csv", "hdf5"] | None
+            Output back-end for the main refined table. Defaults to None, which infers
+            it from the extension of ``output_dataframe_path`` (``.csv`` / ``.h5``,
+            ``.hdf5``) and otherwise matches the back-end of
+            ``self.particle_stack_reference``. The accompanying "_parameters" and
+            "_above_threshold" sibling tables are always written as CSV regardless of
+            this setting.
+        allow_file_overwrite : bool | None
+            Deprecated and ignored; existing output files are always overwritten
+            (atomically), unless one is the input particle stack's file, which raises
+            ``ValueError``.
         """
+        if allow_file_overwrite is not None:
+            _warn_allow_file_overwrite_deprecated()
+        output_paths = (
+            output_dataframe_path,
+            *_sibling_output_paths(output_dataframe_path),
+        )
+        # Fail before the run if an output would replace the input stack or an output
+        # directory is not writable
+        check_output_not_input(
+            output_paths, self.particle_stack_reference, self.particle_stack_constrained
+        )
+        for path in output_paths:
+            check_file_path_and_permissions(path, allow_overwrite=True)
+
         backend_kwargs = self.make_backend_core_function_kwargs()
 
         result = self.get_refine_result(backend_kwargs, orientation_batch_size)
 
-        self.refine_result_to_dataframe(
+        self.export_results(
             output_dataframe_path=output_dataframe_path,
             result=result,
             false_positives=false_positives,
+            output_format=output_format,
         )
 
     def get_refine_result(
@@ -269,38 +359,29 @@ class ConstrainedSearchManager(BaseModel2DTM):
     # pylint: disable=too-many-locals
     def refine_result_to_dataframe(
         self,
-        output_dataframe_path: str,
         result: dict[str, np.ndarray],
-        false_positives: float = 0.005,
-    ) -> None:
-        """Convert refine template result to dataframe.
+    ) -> pd.DataFrame:
+        """Convert constrained search result to a DataFrame.
 
         Parameters
         ----------
-        output_dataframe_path : str
-            Path to save the refined particle data.
         result : dict[str, np.ndarray]
-            The result of the refine template program.
-        false_positives : float
-            The number of false positives to allow per particle.
+            The result of the constrained search program.
+
+        Returns
+        -------
+        pd.DataFrame
+            The refined particle data. Not written to disk; use ``export_results`` to do
+            both in one call.
         """
         df_refined = self.particle_stack_reference.get_dataframe_copy()
 
-        # x and y positions
-        pos_offset_y = result["refined_pos_y"]
-        pos_offset_x = result["refined_pos_x"]
-        pos_offset_y_ang = pos_offset_y * df_refined["pixel_size"]
-        pos_offset_x_ang = pos_offset_x * df_refined["pixel_size"]
-
-        df_refined["refined_pos_y"] = pos_offset_y + df_refined["pos_y"]
-        df_refined["refined_pos_x"] = pos_offset_x + df_refined["pos_x"]
-        df_refined["refined_pos_y_img"] = pos_offset_y + df_refined["pos_y_img"]
-        df_refined["refined_pos_x_img"] = pos_offset_x + df_refined["pos_x_img"]
-        df_refined["refined_pos_y_img_angstrom"] = (
-            pos_offset_y_ang + df_refined["pos_y_img_angstrom"]
-        )
-        df_refined["refined_pos_x_img_angstrom"] = (
-            pos_offset_x_ang + df_refined["pos_x_img_angstrom"]
+        # x and y positions, offset from where the particles were cropped
+        apply_position_offsets(
+            df_refined,
+            result["refined_pos_y"],
+            result["refined_pos_x"],
+            cropped_at=self.particle_stack_reference.position_columns,
         )
 
         # Euler angles
@@ -336,10 +417,66 @@ class ConstrainedSearchManager(BaseModel2DTM):
         df_refined["refined_scaled_mip"] = refined_scaled_mip
 
         # Reorder the columns
-        df_refined = df_refined.reindex(columns=CONSTRAINED_DF_COLUMN_ORDER)
+        df_refined = df_refined.reindex(
+            columns=result_column_order(CONSTRAINED_DF_COLUMN_ORDER, df_refined.columns)
+        )
 
-        # Save the refined DataFrame to disk
-        df_refined.to_csv(output_dataframe_path)
+        return df_refined
+
+    # pylint: disable=too-many-locals
+    def export_results(
+        self,
+        output_dataframe_path: str,
+        result: dict[str, np.ndarray],
+        false_positives: float = 0.005,
+        output_format: Literal["csv", "hdf5"] | None = None,
+        allow_file_overwrite: bool | None = None,
+    ) -> ParticleStackCSV | ParticleStackHDF5:
+        """Build the refined DataFrame and write it, plus two CSV siblings, to disk.
+
+        Parameters
+        ----------
+        output_dataframe_path : str
+            Path to save the refined particle data.
+        result : dict[str, np.ndarray]
+            The result of the constrained search program.
+        false_positives : float
+            The number of false positives to allow per particle.
+        output_format : Literal["csv", "hdf5"] | None
+            Output back-end for the main refined table. Defaults to None, which infers
+            it from the extension of ``output_dataframe_path`` and otherwise matches
+            the back-end of ``self.particle_stack_reference``.
+        allow_file_overwrite : bool | None
+            Deprecated and ignored; existing output files are always overwritten
+            (atomically), unless one is the input particle stack's file, which raises
+            ``ValueError``.
+
+        Returns
+        -------
+        ParticleStackCSV | ParticleStackHDF5
+            The refined particle stack (main table only), already written to
+            ``output_dataframe_path``.
+        """
+        if allow_file_overwrite is not None:
+            _warn_allow_file_overwrite_deprecated()
+
+        parameters_path, above_threshold_path = _sibling_output_paths(
+            output_dataframe_path
+        )
+        check_output_not_input(
+            [output_dataframe_path, parameters_path, above_threshold_path],
+            self.particle_stack_reference,
+            self.particle_stack_constrained,
+        )
+        df_refined = self.refine_result_to_dataframe(result=result)
+
+        # Save the main refined DataFrame, matching the input back-end by default
+        result_stack = export_particle_stack(
+            df=df_refined,
+            output_path=output_dataframe_path,
+            source_particle_stack=self.particle_stack_reference,
+            output_format=output_format,
+        )
 
         # Save a second dataframe
         # I also want the original user input offsets back somewhere
@@ -372,7 +509,7 @@ class ConstrainedSearchManager(BaseModel2DTM):
                 "threshold": [threshold],
             }
         )
-        params_df.to_csv(output_dataframe_path.replace(".csv", "_parameters.csv"))
+        params_df.to_csv(parameters_path)
 
         print(
             f"Threshold: {threshold} which gives {false_positives} "
@@ -386,13 +523,9 @@ class ConstrainedSearchManager(BaseModel2DTM):
             df_refined_above_threshold["refined_scaled_mip"] != np.inf
         ]
         df_refined_above_threshold = df_refined_above_threshold[
-            df_refined_above_threshold["refined_scaled_mip"] != np.nan
+            df_refined_above_threshold["refined_scaled_mip"].notna()
         ]
         # Save the above threshold dataframe
-        print(
-            f"Saving above threshold dataframe to "
-            f"{output_dataframe_path.replace('.csv', '_above_threshold.csv')}"
-        )
-        df_refined_above_threshold.to_csv(
-            output_dataframe_path.replace(".csv", "_above_threshold.csv")
-        )
+        df_refined_above_threshold.to_csv(above_threshold_path)
+
+        return result_stack

@@ -1,29 +1,32 @@
 """Backend setup and orchestration utility functions."""
 
+import warnings
 from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 import torch
 from torch_motion_correction.deformation_field import DeformationField
 
+from leopard_em.pydantic_models.formats import LARGE_STD_PADDING, local_stat_padding
 from leopard_em.utils.ctf_utils import _setup_ctf_kwargs_from_particle_stack
-from leopard_em.utils.image_processing import (
-    apply_image_filtering,
-    volume_to_rfft_fourier_slice,
-)
+from leopard_em.utils.fourier_slice import volume_to_rfft_fourier_slice
+from leopard_em.utils.image_processing import apply_image_filtering
 
 # Using the TYPE_CHECKING statement to avoid circular imports
 if TYPE_CHECKING:
     from leopard_em.pydantic_models.config.correlation_filters import (
         PreprocessingFilters,
     )
-    from leopard_em.pydantic_models.data_structures.particle_stack import ParticleStack
+    from leopard_em.pydantic_models.data_structures.particle_stack import (
+        ParticleStackCSV,
+        ParticleStackHDF5,
+    )
 
 
 # pylint: disable=too-many-locals
 # pylint: disable=too-many-arguments
 def _process_particle_images_for_filters(
-    particle_stack: "ParticleStack",
+    particle_stack: "ParticleStackCSV | ParticleStackHDF5",
     preprocessing_filters: "PreprocessingFilters",
     template: torch.Tensor,
     particle_images: torch.Tensor,
@@ -40,7 +43,7 @@ def _process_particle_images_for_filters(
 
     Parameters
     ----------
-    particle_stack : ParticleStack
+    particle_stack : ParticleStackCSV | ParticleStackHDF5
         The particle stack containing images to process.
     preprocessing_filters : PreprocessingFilters
         Filters to apply to the particle images.
@@ -146,7 +149,7 @@ def _process_particle_images_for_filters(
 
 # pylint: disable=too-many-arguments
 def setup_frame_filters_particle_stack(
-    particle_stack: "ParticleStack",
+    particle_stack: "ParticleStackCSV | ParticleStackHDF5",
     preprocessing_filters: "PreprocessingFilters",
     template: torch.Tensor,
     particle_images: torch.Tensor,
@@ -180,7 +183,7 @@ def setup_frame_filters_particle_stack(
 # pylint: disable=too-many-arguments
 # pylint: disable=too-many-positional-arguments
 def _setup_images_filters_from_micrographs(
-    particle_stack: "ParticleStack",
+    particle_stack: "ParticleStackCSV | ParticleStackHDF5",
     preprocessing_filters: "PreprocessingFilters",
     template: torch.Tensor,
     apply_global_filtering: bool,
@@ -198,7 +201,7 @@ def _setup_images_filters_from_micrographs(
 
     Parameters
     ----------
-    particle_stack : ParticleStack
+    particle_stack : ParticleStackCSV | ParticleStackHDF5
         The particle stack containing images to process.
     preprocessing_filters : PreprocessingFilters
         Filters to apply to the particle images.
@@ -291,7 +294,10 @@ def _setup_images_filters_from_micrographs(
             fluence_per_frame=fluence_per_frame,
         )
     else:
-        particle_images = particle_stack.construct_image_stack(
+        # Not construct_image_stack: the micrographs may be globally filtered here, and
+        # filtered crops must not end up in particle_stack.image_stack (to_hdf5 would
+        # store them as unfiltered images).
+        particle_images = particle_stack.crop_particle_regions(
             images=micrograph_images,
             indices=micrograph_indexes,
             extraction_size=particle_stack.extracted_box_size,
@@ -317,7 +323,7 @@ def _setup_images_filters_from_micrographs(
 
 # pylint: disable=too-many-arguments
 def _setup_images_filters_from_particles(
-    particle_stack: "ParticleStack",
+    particle_stack: "ParticleStackCSV | ParticleStackHDF5",
     preprocessing_filters: "PreprocessingFilters",
     template: torch.Tensor,
     apply_global_filtering: bool,
@@ -329,7 +335,7 @@ def _setup_images_filters_from_particles(
 
     Parameters
     ----------
-    particle_stack : ParticleStack
+    particle_stack : ParticleStackCSV | ParticleStackHDF5
         The particle stack containing images to process.
     preprocessing_filters : PreprocessingFilters
         Filters to apply to the particle images.
@@ -348,8 +354,7 @@ def _setup_images_filters_from_particles(
         - template_dft: The Fourier transformed template
         - projective_filters: Filters applied to the template
     """
-    particle_images = image_stack
-    particle_stack.image_stack = particle_images
+    particle_images = image_stack.to(template.device)
 
     return _process_particle_images_for_filters(
         particle_stack=particle_stack,
@@ -365,7 +370,7 @@ def _setup_images_filters_from_particles(
 # pylint: disable=too-many-arguments
 # pylint: disable=too-many-positional-arguments
 def setup_images_filters_particle_stack(
-    particle_stack: "ParticleStack",
+    particle_stack: "ParticleStackCSV | ParticleStackHDF5",
     preprocessing_filters: "PreprocessingFilters",
     template: torch.Tensor,
     apply_global_filtering: bool = True,
@@ -385,7 +390,7 @@ def setup_images_filters_particle_stack(
 
     Parameters
     ----------
-    particle_stack : ParticleStack
+    particle_stack : ParticleStackCSV | ParticleStackHDF5
         The particle stack containing images to process.
     preprocessing_filters : PreprocessingFilters
         Filters to apply to the particle images.
@@ -448,31 +453,51 @@ def setup_images_filters_particle_stack(
     )
 
 
+_CORR_AVERAGE_COLUMN = "correlation_average_path"
+_CORR_STD_COLUMN = "correlation_variance_path"  # NOTE: actually per-pixel std
+
+
+def _sanitize_corr_std(corr_std_stack: torch.Tensor) -> torch.Tensor:
+    """Replace non-finite or non-positive standard deviations with a large value."""
+    valid = torch.isfinite(corr_std_stack) & (corr_std_stack > 0)
+    return torch.where(
+        valid, corr_std_stack, torch.full_like(corr_std_stack, LARGE_STD_PADDING)
+    )
+
+
 # pylint: disable=too-many-arguments
 def _setup_correlation_stacks_from_micrographs(
-    particle_stack: "ParticleStack",
+    particle_stack: "ParticleStackCSV | ParticleStackHDF5",
     mean_stack: torch.Tensor | None,
     std_stack: torch.Tensor | None,
     particle_indices: list[pd.Index] | None,
     extracted_box_size: tuple[int, int],
     device: torch.device,
+    use_stored_local_stats: bool = True,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """Setup correlation mean and std stacks from micrographs.
+    """Setup per-particle correlation mean and std stacks from full-size maps.
 
     Parameters
     ----------
-    particle_stack : ParticleStack
+    particle_stack : ParticleStackCSV | ParticleStackHDF5
         The particle stack containing images to process.
     mean_stack : torch.Tensor | None
-        Pre-loaded mean stack tensor.
+        Pre-loaded full-size correlation mean maps. If None, the particle stack's
+        (stored or referenced) ``correlation_average_path`` maps are used.
     std_stack : torch.Tensor | None
-        Pre-loaded std stack tensor.
+        Pre-loaded full-size correlation standard deviation maps. If None, the
+        particle stack's (stored or referenced) ``correlation_variance_path`` maps are
+        used (the "correlation_variance" map holds the standard deviation).
     particle_indices : list[pd.Index] | None
-        The particle indices to process.
+        Row positions of the particles belonging to each pre-loaded map. Required when
+        ``mean_stack`` or ``std_stack`` is provided.
     extracted_box_size : tuple[int, int]
-        The size of the extracted box.
+        The size of the extracted (valid cross-correlation) box.
     device : torch.device
         The device to use.
+    use_stored_local_stats : bool
+        Use per-particle maps already held in ``particle_stack.local_stats`` (e.g.
+        loaded from an HDF5 stack) when available. Defaults to True.
 
     Returns
     -------
@@ -481,57 +506,35 @@ def _setup_correlation_stacks_from_micrographs(
         - corr_mean_stack: The mean correlation stack
         - corr_std_stack: The standard deviation correlation stack
     """
-    # Setup mean stack
-    if mean_stack is None:
-        correlation_avg_images, correlation_avg_indexes = (
-            particle_stack.load_images_grouped_by_column(
-                column_name="correlation_average_path"
-            )
-        )
-    else:
-        correlation_avg_images = mean_stack
+    provided = {_CORR_AVERAGE_COLUMN: mean_stack, _CORR_STD_COLUMN: std_stack}
+    stacks: dict[str, torch.Tensor] = {}
+    for column, full_maps in provided.items():
+        if full_maps is None:
+            stacks[column] = particle_stack.get_local_stat_maps(
+                columns=[column],
+                device=device,
+                valid_size=extracted_box_size,
+                use_stored=use_stored_local_stats,
+            )[column]
+            continue
+
         if particle_indices is None:
             raise ValueError(
-                "particle_indices must be provided when mean_stack is provided."
+                "particle_indices must be provided when mean_stack or std_stack is "
+                "provided."
             )
-        correlation_avg_indexes = particle_indices
+        stacks[column] = particle_stack.crop_particle_regions(
+            images=full_maps,
+            indices=particle_indices,
+            extraction_size=extracted_box_size,
+            pos_reference="top-left",
+            handle_bounds="pad",
+            padding_mode="constant",
+            padding_value=local_stat_padding(column),
+        ).to(device)
 
-    corr_mean_stack = particle_stack.construct_image_stack(
-        images=correlation_avg_images,
-        indices=correlation_avg_indexes,
-        extraction_size=extracted_box_size,
-        pos_reference="top-left",
-        handle_bounds="pad",
-        padding_mode="constant",
-        padding_value=0.0,
-    ).to(device)
-
-    # Setup std stack
-    if std_stack is None:
-        correlation_var_images, correlation_var_indexes = (
-            particle_stack.load_images_grouped_by_column(
-                column_name="correlation_variance_path"
-            )
-        )
-    else:
-        correlation_var_images = std_stack
-        if particle_indices is None:
-            raise ValueError(
-                "particle_indices must be provided when std_stack is provided."
-            )
-        correlation_var_indexes = particle_indices
-
-    corr_std_stack = particle_stack.construct_image_stack(
-        images=correlation_var_images,
-        indices=correlation_var_indexes,
-        extraction_size=extracted_box_size,
-        pos_reference="top-left",
-        handle_bounds="pad",
-        padding_mode="constant",
-        padding_value=1e10,  # large to avoid out of bound pixels having inf z-score
-    ).to(device)
-
-    corr_std_stack = corr_std_stack**0.5  # Convert variance to standard deviation
+    corr_mean_stack = stacks[_CORR_AVERAGE_COLUMN]
+    corr_std_stack = _sanitize_corr_std(stacks[_CORR_STD_COLUMN])
 
     return corr_mean_stack, corr_std_stack
 
@@ -539,18 +542,15 @@ def _setup_correlation_stacks_from_micrographs(
 def _setup_correlation_stacks_from_particles(
     mean_stack: torch.Tensor | None,
     std_stack: torch.Tensor | None,
-    particle_indices: list[pd.Index] | None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """Setup correlation mean and std stacks from pre-loaded particles.
+    """Setup correlation mean and std stacks from pre-loaded per-particle maps.
 
     Parameters
     ----------
     mean_stack : torch.Tensor | None
-        Pre-loaded mean stack tensor.
+        Pre-loaded per-particle correlation mean stack.
     std_stack : torch.Tensor | None
-        Pre-loaded std stack tensor.
-    particle_indices : list[pd.Index] | None
-        The particle indices to process.
+        Pre-loaded per-particle correlation standard deviation stack.
 
     Returns
     -------
@@ -562,36 +562,94 @@ def _setup_correlation_stacks_from_particles(
     Raises
     ------
     ValueError
-        If particle_indices, mean_stack, or std_stack are None.
+        If mean_stack or std_stack are None, or their shapes differ.
     """
-    if particle_indices is None:
-        raise ValueError(
-            "particle_indices must be provided when images_are_particles is True."
-        )
     if mean_stack is None or std_stack is None:
         raise ValueError(
             "mean_stack and std_stack must be provided when "
             "images_are_particles is True."
         )
+    if mean_stack.shape != std_stack.shape:
+        raise ValueError(
+            f"mean_stack shape {tuple(mean_stack.shape)} does not match std_stack "
+            f"shape {tuple(std_stack.shape)}."
+        )
 
-    corr_std_stack = std_stack**0.5  # Convert variance to standard deviation
+    return mean_stack, _sanitize_corr_std(std_stack)
 
-    return mean_stack, corr_std_stack
+
+def resolve_particle_image_source(
+    particle_stack: "ParticleStackCSV | ParticleStackHDF5",
+    apply_global_filtering: bool,
+    movie_in_use: bool = False,
+    warn_on_filter_switch: bool = True,
+) -> tuple[torch.Tensor | None, bool]:
+    """Decide whether to use the particle stack's stored image stack.
+
+    Notes
+    -----
+    Whole-micrograph (global) filtering is impossible for pre-extracted particles, so
+    filters are then computed per particle.
+
+    Parameters
+    ----------
+    particle_stack : ParticleStackCSV | ParticleStackHDF5
+        The particle stack.
+    apply_global_filtering : bool
+        The requested filtering mode.
+    movie_in_use : bool
+        True when particles will be extracted from a movie (motion-corrected); the
+        movie takes precedence over a stored image stack.
+    warn_on_filter_switch : bool
+        Warn when a stored image stack forces per-particle filtering although global
+        filtering was requested. Defaults to True.
+
+    Returns
+    -------
+    tuple[torch.Tensor | None, bool]
+        The stored image stack to use (or None to extract particles from the
+        micrographs/movie as usual) and the effective ``apply_global_filtering``.
+    """
+    stored = particle_stack.get_stored_image_stack()
+    if stored is None:
+        return None, apply_global_filtering
+
+    if movie_in_use:
+        warnings.warn(
+            "Ignoring the particle stack's stored image stack because particles are "
+            "being extracted from a movie.",
+            UserWarning,
+            stacklevel=2,
+        )
+        return None, apply_global_filtering
+
+    if apply_global_filtering and warn_on_filter_switch:
+        warnings.warn(
+            "Using the particle stack's stored image stack: global (whole-micrograph) "
+            "filtering is not possible for pre-extracted particles, so filters are "
+            "computed per particle instead. Set 'use_stored_image_stack: false' on the "
+            "particle stack to re-extract particles from the micrographs.",
+            UserWarning,
+            stacklevel=2,
+        )
+    return stored, False
 
 
 def astigmatism_angle_tensor(
-    particle_stack: "ParticleStack",
+    particle_stack: "ParticleStackCSV | ParticleStackHDF5",
     device: torch.device,
 ) -> torch.Tensor:
     """Return the per-particle astigmatism angle as a tensor on ``device``."""
-    return torch.tensor(particle_stack["astigmatism_angle"], device=device)
+    return torch.tensor(
+        particle_stack["astigmatism_angle"].to_numpy().copy(), device=device
+    )
 
 
 # pylint: disable=too-many-locals
 # pylint: disable=too-many-arguments
 # pylint: disable=too-many-positional-arguments
 def setup_static_particle_kwargs(
-    particle_stack: "ParticleStack",
+    particle_stack: "ParticleStackCSV | ParticleStackHDF5",
     template: torch.Tensor,
     euler_angles: torch.Tensor,
     euler_angle_offsets: torch.Tensor,
@@ -613,7 +671,7 @@ def setup_static_particle_kwargs(
 
     Parameters
     ----------
-    particle_stack : ParticleStack
+    particle_stack : ParticleStackCSV | ParticleStackHDF5
         The particle stack containing images to process.
     template : torch.Tensor
         The 3D template volume (used for device and CTF output shape).
@@ -628,11 +686,12 @@ def setup_static_particle_kwargs(
     device_list : list
         List of computational devices to use.
     mean_stack : torch.Tensor | None
-        The mean stack tensor.
+        The correlation mean stack tensor.
     std_stack : torch.Tensor | None
-        The std stack tensor.
+        The correlation standard deviation stack tensor (the "correlation_variance"
+        result map holds the standard deviation).
     particle_indices : list[pd.Index] | None
-        The particle indices to process.
+        Row positions of the particles belonging to each pre-loaded full-size map.
     images_are_particles : bool
         Whether the images are particles or not. Defaults to False.
 
@@ -642,16 +701,13 @@ def setup_static_particle_kwargs(
         Dictionary of the image-independent backend keyword arguments.
     """
     device = template.device
-    h, w = particle_stack.original_template_size
-    box_h, box_w = particle_stack.extracted_box_size
-    extracted_box_size = (box_h - h + 1, box_w - w + 1)
+    extracted_box_size = particle_stack.geometry.valid_size
 
     # Setup correlation stacks
-    if images_are_particles:
+    if images_are_particles and (mean_stack is not None or std_stack is not None):
         corr_mean_stack, corr_std_stack = _setup_correlation_stacks_from_particles(
             mean_stack=mean_stack,
             std_stack=std_stack,
-            particle_indices=particle_indices,
         )
     else:
         corr_mean_stack, corr_std_stack = _setup_correlation_stacks_from_micrographs(
@@ -697,7 +753,7 @@ def setup_static_particle_kwargs(
 # pylint: disable=too-many-arguments
 # pylint: disable=too-many-positional-arguments
 def setup_particle_backend_kwargs(
-    particle_stack: "ParticleStack",
+    particle_stack: "ParticleStackCSV | ParticleStackHDF5",
     template: torch.Tensor,
     preprocessing_filters: "PreprocessingFilters",
     euler_angles: torch.Tensor,
@@ -724,7 +780,7 @@ def setup_particle_backend_kwargs(
 
     Parameters
     ----------
-    particle_stack : ParticleStack
+    particle_stack : ParticleStackCSV | ParticleStackHDF5
         The particle stack containing images to process.
     template : torch.Tensor
         The 3D template volume.
@@ -769,7 +825,31 @@ def setup_particle_backend_kwargs(
     -------
     dict[str, Any]
         Dictionary of keyword arguments for backend functions.
+
+    Notes
+    -----
+    When no ``image_stack`` is passed and the particle stack holds a stored image stack
+    (see :func:`resolve_particle_image_source`), the stored particle images are used
+    with per-particle filtering instead of extracting from the micrographs. This only
+    happens when ``mean_stack``, ``std_stack`` and ``particle_indices`` are not given
+    either: those describe full-size micrograph maps, so the micrographs are used.
     """
+    caller_gave_micrograph_inputs = (
+        mean_stack is not None or std_stack is not None or particle_indices is not None
+    )
+    if image_stack is None and not caller_gave_micrograph_inputs:
+        movie_in_use = movie is not None and (
+            deformation_field is not None or particle_shifts is not None
+        )
+        stored_images, apply_global_filtering = resolve_particle_image_source(
+            particle_stack=particle_stack,
+            apply_global_filtering=apply_global_filtering,
+            movie_in_use=movie_in_use,
+        )
+        if stored_images is not None:
+            image_stack = stored_images
+            images_are_particles = True
+
     static_kwargs = setup_static_particle_kwargs(
         particle_stack=particle_stack,
         template=template,

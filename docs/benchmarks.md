@@ -13,11 +13,16 @@ This script runs the `match_template` program using the following parameters:
 
 - Micrograph size: 4096 x 4096 pixels (Falcon 4i) or 5760 x 4092 pixels (K3)
 - Template size: 512 x 512 x 512 pixels
-- Number of defocus planes: 11
 - Variable orientation batch size configurable using `--orientation-batch-size`
 
 Note that we empirically observe that template size has negligible effect on performance.
 Total search times are extrapolated from throughput to a full orientation search of ~1.58 million orientations with 13 defocus planes (~20.5 million total cross-correlations).
+
+## Version 1.3.1 benchmarks
+
+This version includes support for zipFFT and fast-padded PyTorch backends. This should improve performance for non-square (i.e. K3) images. Using zipFFT also decreases the total memory footprint on the GPU.
+
+![Backend Throughput Comparison](static/backend_throughput_comparison_v131.png)
 
 ## Version 1.1 benchmarks
 

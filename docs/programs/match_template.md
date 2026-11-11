@@ -180,6 +180,77 @@ computational_config:
     If you encounter the error `RuntimeError: CUDA error: invalid device ordinal`, then you've probably listed more GPU devices than are on your machine!
     Check how many GPUs you have (for example with `nvidia-smi`) and update the `gpu_ids` field accordingly.
 
+### Padding to a fast FFT size
+
+Cross-correlation runtime is dominated by FFTs of the micrograph, and FFT cost depends strongly on the prime factorization of the image dimensions.
+Images may be padded to a "fast" size, and this is controlled by the `fast_fft_padding` block in the configuration file.
+
+```yaml
+fast_fft_padding:
+  enabled: true
+  allowed_factors: [2, 3]  # Prime factors allowed in the padded size; must include 2
+  target_shape:            # e.g. [4096, 4096] to force an exact size (null = automatic)
+  noise_seed: 0            # Seed for the noise filling the padded region
+```
+
+Padding is added only to the **bottom and right** of the image and is filled with Gaussian noise whose mean and standard deviation match the micrograph's.
+Results are automatically un-padded upon return from the backend; padding is invisible to the end-user and should not affect the results of the match template search.
+
+### Choosing a cross-correlation backend
+
+The `computational_config.backend` field selects which implementation computes the 2D cross-correlations for each orientation/defocus combination.
+Three options are available:
+
+- `"streamed"` (default) — individual 2D cross-correlations are computed across multiple CUDA streams using PyTorch.
+- `"batched"` — all 2D cross-correlations for a batch of orientations are computed in a single batched PyTorch call.
+- `"zipfft"` — cross-correlations are computed using the optional [zipFFT](https://github.com/mgiammar/zipFFT) library, which can substantially speed up the FFT-based cross-correlation step over the two PyTorch-based backends. Development of `zipFFT` was initially motivated by Ben Himes's work on [FastFFT](https://github.com/StochasticAnalytics/FastFFT).
+
+```yaml
+computational_config:
+  gpu_ids: [0, 1]
+  num_cpus: 4
+  backend: zipfft
+```
+
+!!! warning "zipFFT supports limited image/template sizes"
+
+    The `zipfft` backend requires the reference template volume to be cubic.
+    By default, `zipfft` supports 512x512x512 templates and 4096x4096 images, but other sizes can be compiled from source (see the [zipFFT GitHub page](www.github.com/mgiammar/zipFFT) for details on compiling an expanded set of shapes/sizes).
+
+    When `backend: zipfft` is selected, [fast FFT padding](#padding-to-a-fast-fft-size) automatically snaps the image up to a compiled zipFFT size where one fits, which is usually what makes this backend usable on real micrographs.
+    If no compiled shape fits — or if you disable padding, or pin an explicit `target_shape` that zipFFT was not compiled for — a warning is emitted and the search transparently falls back to the `streamed` backend. The run still completes; it just does not get the zipFFT speedup. To keep using zipFFT, compile the required shape (see above).
+
+    zipFFT also only supports a fixed set of batch sizes internally. For best performance, set `orientation_batch_size` (passed to `run_match_template`) to one of zipFFT's compiled supported batch sizes; any other value still runs correctly via an automatic per-orientation (batch=1) fallback, just without the full performance benefit.
+
+!!! note "zipFFT and the correlation-mode shapes"
+
+    Correlation maps produced by the `zipfft` backend are already cropped to "valid" mode internally (rather than "same" mode, like the other two backends).
+    Leopard-EM detects this automatically, so the output statistics maps have the same shapes regardless of backend — see the [note on correlation modes](../data_formats.md#a-note-on-correlation-modes-and-output-shapes) for details.
+
+#### Installing zipFFT
+
+zipFFT is an **optional** dependency and is distributed as a source-only package with a compiled CUDA/C-extension. It must be built locally against a matching CUDA toolkit.
+
+**Requirements:**
+
+- A CUDA-capable GPU with compute capability 8.0 or above.
+- CUDA toolkit >=13.0, plus a working C/C++ compile toolchain (`nvcc` and a compatible host compiler) available on your `PATH`.
+
+**Installation:**
+
+```bash
+git clone https://github.com/mgiammar/zipFFT.git
+cd zipFFT
+pip install .
+```
+
+Once installed, `zipfft` is importable from the same Python environment as Leopard-EM, and `backend: zipfft` becomes available in your `computational_config`. See the [zipFFT GitHub page](https://github.com/mgiammar/zipFFT) for additional details on configuring compiled shapes/sizes for your system.
+
+!!! note "Backend availability is checked at first use, not at config load"
+
+    Leopard-EM does not validate that `zipfft` is importable when the `computational_config` is loaded.
+    If `backend: zipfft` is configured but the package isn't installed, the run raises a clear `ImportError` ("backend='zipfft' requires the optional 'zipfft' package...") as soon as the first cross-correlation batch is computed.
+
 ## Running the match template program
 
 Once you've configured a YAML file, running the match template program is fairly simple.
@@ -195,7 +266,6 @@ For example,
 # Select peaks bases on a number of false positives
 df = mt_manager.results_to_dataframe(locate_peaks_kwargs={"false_positives": 1.0})
 
-
 # Uses a pre-defined z-score cutoff for peak calling
 df = mt_manager.results_to_dataframe(locate_peaks_kwargs={"z_score_cutoff": 7.8})
 ```
@@ -207,7 +277,6 @@ Currently, Leopard-EM uses a false-positive rate of 1 per micrograph by default 
 The provided program script will output the statistics maps over the image for the search as well as a Pandas DataFrame with compacted information on found particles.
 These data can be passed onto downstream analysis, for example the refine template program.
 More detail about these data and their formats is on the [Leopard-EM data formats page](../data_formats.md).
-
 
 ## Mathematical description
 

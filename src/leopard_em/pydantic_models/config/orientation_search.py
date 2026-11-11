@@ -1,7 +1,7 @@
 """Serialization and validation of orientation search parameters for 2DTM."""
 
 import re
-from typing import Annotated, Literal, Optional
+from typing import Annotated, Literal, Self
 
 import roma
 import torch
@@ -12,7 +12,6 @@ from torch_so3 import (
     get_symmetry_ranges,
     get_uniform_euler_angles,
 )
-from typing_extensions import Self
 
 from leopard_em.pydantic_models.custom_types import BaseModel2DTM
 
@@ -64,15 +63,15 @@ class OrientationSearchConfig(BaseModel2DTM):
 
     psi_step: Annotated[float, Field(ge=0.0)] = 1.5
     theta_step: Annotated[float, Field(ge=0.0)] = 2.5
-    phi_min: Optional[float] = None
-    phi_max: Optional[float] = None
-    theta_min: Optional[float] = None
-    theta_max: Optional[float] = None
-    psi_min: Optional[float] = None
-    psi_max: Optional[float] = None
+    phi_min: float | None = None
+    phi_max: float | None = None
+    theta_min: float | None = None
+    theta_max: float | None = None
+    psi_min: float | None = None
+    psi_max: float | None = None
 
     base_grid_method: Literal["uniform", "healpix", "cartesian"] = "uniform"
-    symmetry: Optional[str] = "C1"
+    symmetry: str | None = "C1"
 
     @model_validator(mode="after")  # type: ignore
     def validate_angle_ranges_and_symmetry(self) -> Self:
@@ -311,7 +310,7 @@ class ConstrainedOrientationConfig(BaseModel2DTM):
     """
 
     enabled: bool = True
-    phi_step: Optional[float] = None
+    phi_step: float | None = None
     theta_step: float = 2.5
     psi_step: float = 1.5
     rotation_axis_euler_angles: tuple[float, float, float] = Field(
@@ -326,7 +325,7 @@ class ConstrainedOrientationConfig(BaseModel2DTM):
     base_grid_method: Literal["uniform", "healpix", "basic", "roll"] = "uniform"
 
     search_roll_axis: bool = True
-    roll_axis: Optional[tuple[float, float]] = Field(default=[0, 1])
+    roll_axis: tuple[float, float] | None = Field(default=[0, 1])
     roll_step: float = 2.0
 
     @property

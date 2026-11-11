@@ -39,15 +39,6 @@ def _make_device_streams(
     return [None]
 
 
-def _device_stream_context(
-    stream: torch.cuda.Stream | None,
-) -> AbstractContextManager[None]:
-    """Return the appropriate stream context for CUDA or CPU execution."""
-    if stream is None:
-        return nullcontext()
-    return cast(AbstractContextManager[None], torch.cuda.stream(stream))
-
-
 def _synchronize_device_streams(streams: list[torch.cuda.Stream | None]) -> None:
     """Synchronize CUDA streams and no-op for CPU placeholders."""
     for stream in streams:
@@ -405,10 +396,11 @@ def construct_multi_gpu_refine_template_kwargs(
 
         # Split tensors for this device. All these tensors are per-particle, that is
         # the i-th element in each tensor corresponds to the i-th particle in the stack.
+        #
         # Move to CPU before passing to child processes: Python multiprocessing uses
         # fork on Linux, and CUDA tensors shared across forked processes via CUDA IPC
         # are unreliable (they silently read as zeros for non-primary GPUs). Sending CPU
-        # tensors avoids CUDA IPC entirely; each worker does a clean CPU→GPU transfer
+        # tensors avoids CUDA IPC entirely; each worker does a clean CPU-->GPU transfer
         # via _move_refine_template_stack_to_device.
         device_particle_stack_dft = particle_stack_dft[start_idx:end_idx].cpu()
         device_euler_angles = euler_angles[start_idx:end_idx].cpu()
@@ -553,7 +545,12 @@ def _core_refine_template_single_gpu(
 
         # Distribute different particles across streams
         stream = streams[i % len(streams)]
-        with _device_stream_context(stream):
+        stream_context: AbstractContextManager[None] = (
+            nullcontext()
+            if stream is None
+            else cast(AbstractContextManager[None], torch.cuda.stream(stream))
+        )
+        with stream_context:
             refined_stats = _core_refine_template_single_thread(
                 particle_image_dft=particle_image_dft,
                 template_dft=refine_stack.template_dft,

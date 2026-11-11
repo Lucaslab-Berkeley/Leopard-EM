@@ -142,3 +142,25 @@ def test_preprocessing_filters_combined_filter():
     output_shape = (10, 10)
     combined_filter = config.get_combined_filter(ref_img_rfft, output_shape)
     assert combined_filter.shape == output_shape
+
+
+def test_preprocessing_filters_combined_filter_stack_uses_each_image():
+    """Each image of the batch is the reference for its own combined filter."""
+
+    class _MeanFilters(PreprocessingFilters):
+        def get_combined_filter(self, ref_img_rfft, output_shape, **kwargs):
+            return torch.full(output_shape, float(ref_img_rfft.real.mean()))
+
+    images_dft = torch.stack([torch.full((4, 3), 1.0), torch.full((4, 3), 3.0)])
+    filters = _MeanFilters().get_combined_filter_stack(images_dft, (2, 2))
+    assert filters.shape == (2, 2, 2)
+    assert filters[:, 0, 0].tolist() == [1.0, 3.0]
+
+    # The real filters give the same result per image as the single-image method
+    real = PreprocessingFilters()
+    images_dft = torch.fft.rfft2(torch.randn(2, 16, 16))
+    stack = real.get_combined_filter_stack(images_dft, (16, 9))
+    for i in range(2):
+        torch.testing.assert_close(
+            stack[i], real.get_combined_filter(images_dft[i], (16, 9))
+        )

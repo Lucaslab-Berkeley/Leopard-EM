@@ -15,8 +15,14 @@ from leopard_em.pydantic_models.config import (
     PreprocessingFilters,
 )
 from leopard_em.pydantic_models.custom_types import BaseModel2DTM, ExcludedTensor
-from leopard_em.pydantic_models.data_structures import ParticleStack
-from leopard_em.pydantic_models.formats import REFINED_DF_COLUMN_ORDER
+from leopard_em.pydantic_models.data_structures import AnyParticleStack
+from leopard_em.pydantic_models.data_structures.particle_stack._table import (
+    apply_position_offsets,
+)
+from leopard_em.pydantic_models.formats import (
+    REFINED_DF_COLUMN_ORDER,
+    result_column_order,
+)
 from leopard_em.utils.backend_setup import setup_particle_backend_kwargs
 
 
@@ -25,8 +31,10 @@ class OptimizeTemplateManager(BaseModel2DTM):
 
     Attributes
     ----------
-    particle_stack : ParticleStack
-        Particle stack object containing particle data.
+    particle_stack : ParticleStackCSV | ParticleStackHDF5
+        Particle stack object containing particle data. Use ``ParticleStackCSV``
+        for a CSV-backed particle table or ``ParticleStackHDF5`` for an HDF5-backed one.
+        Both expose the same in-memory API.
     pixel_size_coarse_search : PixelSizeSearchConfig
         Configuration for pixel size coarse search.
     pixel_size_fine_search : PixelSizeSearchConfig
@@ -55,7 +63,7 @@ class OptimizeTemplateManager(BaseModel2DTM):
 
     model_config: ClassVar = ConfigDict(arbitrary_types_allowed=True)
 
-    particle_stack: ParticleStack
+    particle_stack: AnyParticleStack
     pixel_size_coarse_search: PixelSizeSearchConfig
     pixel_size_fine_search: PixelSizeSearchConfig
     preprocessing_filters: PreprocessingFilters
@@ -446,7 +454,11 @@ class OptimizeTemplateManager(BaseModel2DTM):
         result: dict[str, np.ndarray],
         prefer_refined_angles: bool = True,
     ) -> None:
-        """Convert refine template result to dataframe.
+        """Convert refine template result to a dataframe and write it to CSV.
+
+        NOTE: This always writes CSV, regardless of the input particle_stack's
+        back-end. It is only used to dump intermediate, per-pixel-size
+        diagnostic results during the pixel size search.
 
         Parameters
         ----------
@@ -455,45 +467,20 @@ class OptimizeTemplateManager(BaseModel2DTM):
         result : dict[str, np.ndarray]
             The result of the refine template program.
         prefer_refined_angles : bool
-            Whether to use the refined angles or not. Defaults to True.
+            Kept for backward compatibility and has no effect: position offsets are
+            always added to the positions the particles were cropped at. Defaults to
+            True.
         """
+        del prefer_refined_angles  # no longer used, see docstring
         # pylint: disable=duplicate-code
-        df_refined = self.particle_stack._df.copy()  # pylint: disable=protected-access
+        df_refined = self.particle_stack.get_dataframe_copy()
 
-        # x and y positions
-        pos_offset_y = result["refined_pos_y"]
-        pos_offset_x = result["refined_pos_x"]
-        pos_offset_y_ang = pos_offset_y * df_refined["pixel_size"]
-        pos_offset_x_ang = pos_offset_x * df_refined["pixel_size"]
-
-        if (
-            prefer_refined_angles
-            and self.particle_stack._get_position_reference_columns()  # pylint: disable=protected-access
-            == ("refined_pos_y", "refined_pos_x")
-        ):
-            pos_y_col = "refined_pos_y"
-            pos_x_col = "refined_pos_x"
-            pos_y_col_img = "refined_pos_y_img"
-            pos_x_col_img = "refined_pos_x_img"
-            pos_y_col_img_angstrom = "refined_pos_y_img_angstrom"
-            pos_x_col_img_angstrom = "refined_pos_x_img_angstrom"
-        else:
-            pos_y_col = "pos_y"
-            pos_x_col = "pos_x"
-            pos_y_col_img = "pos_y_img"
-            pos_x_col_img = "pos_x_img"
-            pos_y_col_img_angstrom = "pos_y_img_angstrom"
-            pos_x_col_img_angstrom = "pos_x_img_angstrom"
-
-        df_refined["refined_pos_y"] = pos_offset_y + df_refined[pos_y_col]
-        df_refined["refined_pos_x"] = pos_offset_x + df_refined[pos_x_col]
-        df_refined["refined_pos_y_img"] = pos_offset_y + df_refined[pos_y_col_img]
-        df_refined["refined_pos_x_img"] = pos_offset_x + df_refined[pos_x_col_img]
-        df_refined["refined_pos_y_img_angstrom"] = (
-            pos_offset_y_ang + df_refined[pos_y_col_img_angstrom]
-        )
-        df_refined["refined_pos_x_img_angstrom"] = (
-            pos_offset_x_ang + df_refined[pos_x_col_img_angstrom]
+        # x and y positions, offset from where the particles were cropped
+        apply_position_offsets(
+            df_refined,
+            result["refined_pos_y"],
+            result["refined_pos_x"],
+            cropped_at=self.particle_stack.position_columns,
         )
 
         # Euler angles
@@ -519,7 +506,9 @@ class OptimizeTemplateManager(BaseModel2DTM):
         df_refined["refined_scaled_mip"] = refined_scaled_mip
 
         # Reorder the columns
-        df_refined = df_refined.reindex(columns=REFINED_DF_COLUMN_ORDER)
+        df_refined = df_refined.reindex(
+            columns=result_column_order(REFINED_DF_COLUMN_ORDER, df_refined.columns)
+        )
 
         # Save the refined DataFrame to disk
         df_refined.to_csv(output_dataframe_path)

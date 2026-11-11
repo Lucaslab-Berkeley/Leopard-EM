@@ -4,8 +4,9 @@ import os
 import random
 import socket
 from datetime import timedelta
-from typing import Optional
+from typing import Any
 
+import tensordict
 import torch
 import torch.distributed as dist
 
@@ -19,6 +20,7 @@ from leopard_em.backend.distributed import (
 from leopard_em.backend.process_results import (
     aggregate_distributed_results,
     decode_global_search_index,
+    process_correlation_table,
     scale_mip,
 )
 
@@ -124,7 +126,7 @@ def _extract_and_broadcast_tensors(
 
     # Rank zero has all the data. No other ranks "know" the size/shape of data, so
     # first must extract the shapes before a tensor broadcast can occur.
-    broadcast_list: list[Optional[TensorShapeDataclass]] = [None]
+    broadcast_list: list[TensorShapeDataclass | None] = [None]
     if rank == 0:
         # Create a dataclass with the expected tensor shapes
         expected_shapes = TensorShapeDataclass(
@@ -350,6 +352,41 @@ def _gather_tensors_to_rank_zero(
     )
 
 
+def _gather_correlation_table_to_rank_zero(
+    world_size: int,
+    rank: int,
+    correlation_table: tensordict.TensorDict,
+) -> list[dict[str, Any]] | None:
+    """Gather the (variable-length) per-rank correlation tables onto rank zero.
+
+    Parameters
+    ----------
+    world_size : int
+        Total number of processes in the distributed job.
+    rank : int
+        Global rank of this process.
+    correlation_table : tensordict.TensorDict
+        This rank's correlation table.
+
+    Returns
+    -------
+    Optional[list[dict[str, Any]]]
+        List of per-rank correlation table dictionaries on rank zero, or None on
+        other ranks.
+    """
+    correlation_table_cpu = correlation_table.cpu().to_dict()
+
+    gather_list: list[dict[str, Any]] | None = (
+        [None] * world_size if rank == 0 else None  # type: ignore[list-item]
+    )
+
+    dist.barrier()
+    dist.gather_object(correlation_table_cpu, gather_list, dst=0)
+    dist.barrier()
+
+    return gather_list
+
+
 # pylint: disable=too-many-locals
 def core_match_template_distributed(
     world_size: int,
@@ -359,6 +396,8 @@ def core_match_template_distributed(
     orientation_batch_size: int = 1,
     num_cuda_streams: int = 1,
     backend: str = "streamed",
+    compute_correlation_table: bool = True,
+    unpadded_valid_shape: tuple[int, int] | None = None,
     **kwargs: dict,
 ) -> dict[str, torch.Tensor]:
     """Distributed multi-node core function for the match template program.
@@ -381,6 +420,15 @@ def core_match_template_distributed(
     backend : str, optional
         The backend to use for computation. Defaults to 'streamed'.
         Must be 'streamed' or 'batched'.
+    compute_correlation_table : bool, optional
+        Whether to track cross-correlation values which surpass the correlation table
+        threshold. If False, this (comparatively expensive) computation is skipped.
+        Default is True.
+    unpadded_valid_shape : tuple[int, int], optional
+        Shape of the valid correlation region to accumulate, overriding the shape
+        implied by the image and template. Used when the image was padded up to a
+        fast FFT size. Only read on rank zero; broadcast to all other ranks.
+        Default is None.
     **kwargs : dict[str, torch.Tensor]
         Additional keyword arguments passed to the single-GPU core function. For the
         zeroth rank this should be a dictionary of Tensor objects with the following
@@ -429,6 +477,18 @@ def core_match_template_distributed(
         pixel_values,
     ) = _extract_and_broadcast_tensors(device, rank, kwargs)
 
+    # Broadcast the (optional) unpadded valid shape from rank zero.
+    valid_shape_list: list[tuple[int, int] | None] = [
+        unpadded_valid_shape if rank == 0 else None
+    ]
+    dist.broadcast_object_list(valid_shape_list, src=0)
+    unpadded_valid_shape = valid_shape_list[0]
+
+    # Broadcast backend from rank zero; only rank zero does fallback checking for zipfft
+    backend_list: list[str] = [backend]
+    dist.broadcast_object_list(backend_list, src=0)
+    backend = backend_list[0]
+
     ##############################################################
     ### Pre-multiply the whitening filter with the CTF filters ###
     ##############################################################
@@ -454,21 +514,28 @@ def core_match_template_distributed(
     ###########################################################
 
     dist.barrier()
-    (mip, best_global_index, correlation_sum, correlation_squared_sum) = (
-        _core_match_template_single_gpu(
-            rank=rank,
-            index_queue=distributed_queue,  # type: ignore
-            image_dft=image_dft,
-            template_dft=template_dft,
-            euler_angles=euler_angles,
-            projective_filters=projective_filters,
-            defocus_values=defocus_values,
-            pixel_values=pixel_values,
-            orientation_batch_size=orientation_batch_size,
-            num_cuda_streams=num_cuda_streams,
-            backend=backend,
-            device=device,
-        )
+    # pylint: disable=duplicate-code
+    (
+        mip,
+        best_global_index,
+        correlation_sum,
+        correlation_squared_sum,
+        correlation_table,
+    ) = _core_match_template_single_gpu(
+        rank=rank,
+        index_queue=distributed_queue,  # type: ignore
+        image_dft=image_dft,
+        template_dft=template_dft,
+        euler_angles=euler_angles,
+        projective_filters=projective_filters,
+        defocus_values=defocus_values,
+        pixel_values=pixel_values,
+        orientation_batch_size=orientation_batch_size,
+        num_cuda_streams=num_cuda_streams,
+        backend=backend,
+        device=device,
+        compute_correlation_table=compute_correlation_table,
+        unpadded_valid_shape=unpadded_valid_shape,
     )
     dist.barrier()
 
@@ -487,6 +554,13 @@ def core_match_template_distributed(
         correlation_squared_sum=correlation_squared_sum,
     )
 
+    # Gather the variable-length correlation tables to rank zero
+    gather_correlation_table = _gather_correlation_table_to_rank_zero(
+        world_size=world_size,
+        rank=rank,
+        correlation_table=correlation_table,
+    )
+
     ##################################################
     ### Final aggregation step on the main process ###
     ##################################################
@@ -499,6 +573,7 @@ def core_match_template_distributed(
     assert gather_best_global_index is not None
     assert gather_correlation_sum is not None
     assert gather_correlation_squared_sum is not None
+    assert gather_correlation_table is not None
 
     aggregated_results = aggregate_distributed_results(
         results=[
@@ -507,12 +582,15 @@ def core_match_template_distributed(
                 "best_global_index": gidx,
                 "correlation_sum": corr_sum,
                 "correlation_squared_sum": corr_sq_sum,
+                "correlation_table": corr_table,
             }
-            for mip, gidx, corr_sum, corr_sq_sum in zip(
+            for mip, gidx, corr_sum, corr_sq_sum, corr_table in zip(
                 gather_mip,
                 gather_best_global_index,
                 gather_correlation_sum,
                 gather_correlation_squared_sum,
+                gather_correlation_table,
+                strict=False,
             )
         ]
     )
@@ -534,8 +612,16 @@ def core_match_template_distributed(
 
     # Map from global search index to the best defocus & angles
     # pylint: disable=duplicate-code
-    best_phi, best_theta, best_psi, best_defocus = decode_global_search_index(
+    best_phi, best_theta, best_psi, best_defocus, _ = decode_global_search_index(
         best_global_index, pixel_values, defocus_values, euler_angles
+    )
+
+    # Process the correlation table into a more interpretable format
+    correlation_table = process_correlation_table(
+        aggregated_results["correlation_table"],
+        pixel_values,
+        defocus_values,
+        euler_angles,
     )
 
     mip_scaled = torch.empty_like(mip)
@@ -556,6 +642,7 @@ def core_match_template_distributed(
         "best_defocus": best_defocus.cpu(),
         "correlation_mean": correlation_mean.cpu(),
         "correlation_variance": correlation_variance.cpu(),
+        "correlation_table": correlation_table,
         "total_projections": total_projections,
         "total_orientations": euler_angles.shape[0],
         "total_defocus": defocus_values.shape[0],

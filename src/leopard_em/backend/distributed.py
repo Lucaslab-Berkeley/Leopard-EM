@@ -1,9 +1,10 @@
 """Utilities related to distributed computing for the backend functions."""
 
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from dataclasses import dataclass
 from multiprocessing import Manager, Process
-from typing import Any, Callable, Optional
+from typing import Any
 
 import torch.distributed as dist
 import torch.multiprocessing as mp
@@ -41,9 +42,7 @@ class WorkIndexQueue(ABC):
         self.prefetch_size = prefetch_size
 
     @abstractmethod
-    def get_next_indices(
-        self, process_id: Optional[int] = None
-    ) -> Optional[tuple[int, int]]:
+    def get_next_indices(self, process_id: int | None = None) -> tuple[int, int] | None:
         """Get the next set of indices to process, returning None if all work is done.
 
         Parameters
@@ -111,9 +110,7 @@ class MultiprocessWorkIndexQueue(WorkIndexQueue):
         self.error_flag = mp.Value("i", 0)  # 0 = no error, 1 = error occurred
         self.lock = mp.Lock()
 
-    def get_next_indices(
-        self, process_id: Optional[int] = None
-    ) -> Optional[tuple[int, int]]:
+    def get_next_indices(self, process_id: int | None = None) -> tuple[int, int] | None:
         """Get the next set of indices to process returning None if all work is done.
 
         Parameters
@@ -239,9 +236,7 @@ class DistributedTCPIndexQueue(WorkIndexQueue):
         # synchronize so other ranks can safely call store.get()/add()
         dist.barrier()
 
-    def get_next_indices(
-        self, process_id: Optional[int] = None
-    ) -> Optional[tuple[int, int]]:
+    def get_next_indices(self, process_id: int | None = None) -> tuple[int, int] | None:
         """Atomically claim the next chunk of indices for a process."""
         delta = self.batch_size * self.prefetch_size
 
@@ -303,9 +298,9 @@ def run_multiprocess_jobs(
     target: Callable,
     kwargs_list: list[dict[str, Any]],
     extra_args: tuple[Any, ...] = (),
-    extra_kwargs: Optional[dict[str, Any]] = None,
-    post_start_callback: Optional[Callable] = None,
-    ranks: Optional[list[int]] = None,
+    extra_kwargs: dict[str, Any] | None = None,
+    post_start_callback: Callable | None = None,
+    ranks: list[int] | None = None,
 ) -> dict[Any, Any]:
     """Helper function for running multiple processes on the same target function.
 
@@ -373,7 +368,7 @@ def run_multiprocess_jobs(
     result_dict = manager.dict()
     processes: list[Process] = []
 
-    for rank, kwargs in zip(ranks, kwargs_list):
+    for rank, kwargs in zip(ranks, kwargs_list, strict=False):
         args = (*extra_args, result_dict, rank)
 
         # Merge per-process kwargs with common kwargs.

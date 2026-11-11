@@ -143,9 +143,10 @@ class PeakInspectionManager(RefineTemplateManager):
 
         # Pull the particle ordering from the source dataframe when available so
         # tensor rows can be mapped back to the original particle stack.
-        df = self.particle_stack._df  # pylint: disable=protected-access
         particle_index = (
-            df["particle_index"].to_numpy() if "particle_index" in df.columns else None
+            self.particle_stack["particle_index"].to_numpy()
+            if "particle_index" in self.particle_stack.df_columns
+            else None
         )
 
         # Per-particle base astigmatic defocus (defocus_u, defocus_v, defocus_angle) so

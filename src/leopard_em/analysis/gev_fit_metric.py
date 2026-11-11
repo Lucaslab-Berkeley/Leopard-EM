@@ -1,7 +1,6 @@
 """Fit a General Extreme Value (GEV) distribution to calculate cutoff value."""
 
 import warnings
-from typing import Optional
 
 import numpy as np
 import torch
@@ -16,9 +15,9 @@ LARGE_PEAK_WARNING_VALUE = 1000
 
 def fit_gev_to_zscore(
     zscore_map: torch.Tensor,
-    min_zscore_value: Optional[float] = None,
-    max_zscore_value: Optional[float] = 8.5,
-    num_samples: Optional[int] = 1_000_000,
+    min_zscore_value: float | None = None,
+    max_zscore_value: float | None = 8.5,
+    num_samples: int | None = 1_000_000,
 ) -> tuple[rv_frozen, tuple[float, float, float]]:
     """Helper function to fit a GEV distribution to the z-score map.
 
@@ -49,10 +48,10 @@ def fit_gev_to_zscore(
 
 def gev_zscore_cutoff(
     zscore_map: torch.Tensor,
-    false_positives: Optional[float] = 1.0,
-    min_zscore_value: Optional[float] = None,
-    max_zscore_value: Optional[float] = 8.5,
-    num_samples: Optional[int] = 1_000_000,
+    false_positives: float | None = 1.0,
+    min_zscore_value: float | None = None,
+    max_zscore_value: float | None = 8.5,
+    num_samples: int | None = 1_000_000,
 ) -> float:
     """Calculate the z-score cutoff value by fitting a GEV distn to the z-score map.
 
@@ -124,7 +123,7 @@ def extract_peaks_and_statistics_gev(
     correlation_variance: torch.Tensor,
     total_correlation_positions: int,
     false_positives: float = 1.0,
-    mask_radius: float = 5.0,
+    mask_radius: float = 10.0,
 ) -> MatchTemplatePeaks:
     """Returns peak locations, heights, and pose stats from match template results.
 
@@ -153,7 +152,8 @@ def extract_peaks_and_statistics_gev(
         Number of false positives to allow in the image (over all pixels). Default is
         1.0 which corresponds to a single false-positive.
     mask_radius : float, optional
-        Radius of the mask to apply around the peak, in units of pixels. Default is 5.0.
+        Radius of the mask to apply around the peak, in units of pixels.
+        Default is 10.0.
 
     Returns
     -------

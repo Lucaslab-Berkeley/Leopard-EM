@@ -1,7 +1,7 @@
 """Microscope optics group model for micrograph parameters."""
 
 from os import PathLike
-from typing import Annotated, Optional, Union
+from typing import Annotated
 
 import torch
 from pydantic import Field
@@ -83,19 +83,17 @@ class OpticsGroup(BaseModel2DTM):
     astigmatism_angle: float
     ctf_B_factor: Annotated[float, Field(ge=0.0, default=0.0)] = 0.0
 
-    chromatic_aberration: Optional[Annotated[float, Field(ge=0.0)]] = 0.0
-    mtf_reference: Optional[Union[str, PathLike]] = None
-    mtf_values: Optional[list[float]] = None
-    beam_tilt_x: Optional[float] = None
-    beam_tilt_y: Optional[float] = None
-    odd_zernikes: Optional[dict[str, float]] = None
-    even_zernikes: Optional[dict[str, float]] = None
-    mag_matrix: Optional[Annotated[list[float], Field(min_length=4, max_length=4)]] = (
-        None
-    )
+    chromatic_aberration: Annotated[float, Field(ge=0.0)] | None = 0.0
+    mtf_reference: str | PathLike | None = None
+    mtf_values: list[float] | None = None
+    beam_tilt_x: float | None = None
+    beam_tilt_y: float | None = None
+    odd_zernikes: dict[str, float] | None = None
+    even_zernikes: dict[str, float] | None = None
+    mag_matrix: Annotated[list[float], Field(min_length=4, max_length=4)] | None = None
 
     @property
-    def mag_matrix_tensor(self) -> Optional[torch.Tensor]:
+    def mag_matrix_tensor(self) -> torch.Tensor | None:
         """Convert mag_matrix list to a 2x2 tensor.
 
         Returns

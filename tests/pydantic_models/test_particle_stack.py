@@ -6,7 +6,16 @@ import pandas as pd
 import pytest
 import torch
 
-from leopard_em.pydantic_models.data_structures.particle_stack import ParticleStack
+from leopard_em.pydantic_models.config import PreprocessingFilters
+from leopard_em.pydantic_models.data_structures.particle_stack import (
+    ParticleStack,
+    ParticleStackHDF5,
+    export_particle_stack,
+)
+from leopard_em.pydantic_models.results.match_template_result import (
+    MatchTemplateResultHDF5,
+)
+from leopard_em.utils.backend_setup import _setup_correlation_stacks_from_micrographs
 
 # Tests construct minimal ParticleStack instances by assigning their backing frames.
 # pylint: disable=protected-access
@@ -173,6 +182,41 @@ def test_particle_stack_init_and_load_df(tmp_path):
     assert set(REQUIRED_COLUMNS).issubset(ps._df.columns)
     assert ps.extracted_box_size == (32, 32)
     assert ps.original_template_size == (16, 16)
+
+
+def test_particle_stack_csv_roundtrip_has_no_index_column(tmp_path):
+    """Exported CSVs reload with exactly the original columns."""
+    ps = ParticleStack(
+        df_path=str(tmp_path / "particles.csv"),
+        extracted_box_size=(32, 32),
+        original_template_size=(16, 16),
+        skip_df_load=True,
+    )
+    ps._set_dataframe(make_minimal_df())
+    ps.export_results()
+
+    reloaded = ParticleStack(
+        df_path=ps.df_path, extracted_box_size=(32, 32), original_template_size=(16, 16)
+    )
+    assert list(reloaded._df.columns) == list(ps._df.columns)
+
+
+def test_particle_stack_csv_drops_legacy_index_column(tmp_path):
+    """The index column written by older exports is dropped, user columns are kept."""
+    df_path = tmp_path / "legacy.csv"
+    make_minimal_df(3).to_csv(df_path)
+    ps = ParticleStack(
+        df_path=str(df_path),
+        extracted_box_size=(32, 32),
+        original_template_size=(16, 16),
+    )
+    assert "Unnamed: 0" not in ps._df.columns
+
+    df = make_minimal_df(3)
+    df.insert(0, "Unnamed: 0", [5, 6, 7])
+    df.to_csv(df_path, index=False)
+    ps.load_df()
+    assert ps._df["Unnamed: 0"].tolist() == [5, 6, 7]
 
 
 def test_particle_stack_missing_columns(tmp_path):
@@ -436,7 +480,7 @@ def test_construct_image_stack_from_movie_preserves_summed_output_shape(monkeypa
         ).sum(dim=0)
 
     monkeypatch.setattr(
-        "leopard_em.pydantic_models.data_structures.particle_stack."
+        "leopard_em.pydantic_models.data_structures.particle_stack._movie."
         "dose_weight_movie_to_micrograph",
         fake_dose_weight_movie_to_micrograph,
     )
@@ -450,3 +494,340 @@ def test_construct_image_stack_from_movie_preserves_summed_output_shape(monkeypa
     assert image_stack.shape == (1, 2, 2)
     assert particle_stack.image_stack.shape == (1, 2, 2)
     assert len(dose_weight_calls) == 1
+
+
+def test_get_local_stat_maps_does_not_mutate_image_stack():
+    """Ensure get_local_stat_maps doesn't clobber image_stack like construct does."""
+    df, _r1, _r2, mip1, mip2 = make_reference_example_df()
+    h, w = (32, 32)
+    box_h, box_w = (34, 34)
+
+    ps = ParticleStack(
+        df_path="",
+        extracted_box_size=(box_h, box_w),
+        original_template_size=(h, w),
+        skip_df_load=True,
+    )
+    ps._df = df
+
+    sentinel = torch.full((2, box_h, box_w), -1.0)
+    ps.image_stack = sentinel
+
+    stat_maps = ps.get_local_stat_maps(columns=["mip_path"])
+
+    # image_stack must be untouched
+    assert ps.image_stack is sentinel
+    assert torch.equal(ps.image_stack, sentinel)
+
+    mip1_ground_truth = np.array([[0, 0, 0], [0, mip1, 0], [0, 0, 0]], dtype=np.float32)
+    mip2_ground_truth = np.array([[0, 0, 0], [0, mip2, 0], [0, 0, 0]], dtype=np.float32)
+
+    assert stat_maps["mip_path"].shape == (2, 3, 3)
+    assert np.allclose(stat_maps["mip_path"][0].numpy(), mip1_ground_truth)
+    assert np.allclose(stat_maps["mip_path"][1].numpy(), mip2_ground_truth)
+
+
+def test_hdf5_get_local_stat_maps_returns_stored_values(tmp_path):
+    """When present in local_stats, stored tensors are returned as-is, not re-derived.
+
+    The referenced path columns point at files that do not exist; if
+    ``get_local_stat_maps`` fell back to loading from disk this would raise.
+    Also covers a non-correlation column (``mip_path``) to show storage isn't
+    limited to correlation average/variance.
+    """
+    df = make_minimal_df(num_rows=2)
+    df["correlation_average_path"] = "/nonexistent/does_not_exist.mrc"
+    df["correlation_variance_path"] = "/nonexistent/does_not_exist.mrc"
+    df["mip_path"] = "/nonexistent/does_not_exist.mrc"
+    df.index = pd.Index(["particle_00000", "particle_00001"], name="particle_id")
+
+    stored_avg = torch.arange(2 * 3 * 3, dtype=torch.float32).reshape(2, 3, 3)
+    stored_var = torch.ones(2, 3, 3)
+    stored_mip = torch.full((2, 3, 3), 7.0)
+
+    ps = ParticleStackHDF5(
+        hdf5_path=str(tmp_path / "particles.h5"),
+        extracted_box_size=(34, 34),
+        original_template_size=(32, 32),
+        local_stats_stored=True,
+        local_stats={
+            "correlation_average_path": stored_avg,
+            "correlation_variance_path": stored_var,
+            "mip_path": stored_mip,
+        },
+        skip_df_load=True,
+    )
+    ps._df = df
+
+    stat_maps = ps.get_local_stat_maps(
+        columns=["correlation_average_path", "correlation_variance_path", "mip_path"]
+    )
+
+    assert torch.equal(stat_maps["correlation_average_path"], stored_avg)
+    assert torch.equal(stat_maps["correlation_variance_path"], stored_var)
+    assert torch.equal(stat_maps["mip_path"], stored_mip)
+
+
+def test_hdf5_to_hdf5_local_stats_requires_non_empty(tmp_path):
+    """to_hdf5(include_local_stats=True) raises when local_stats is empty."""
+    df = make_minimal_df(num_rows=2)
+    df.index = pd.Index(["particle_00000", "particle_00001"], name="particle_id")
+
+    ps = ParticleStackHDF5(
+        hdf5_path=str(tmp_path / "particles.h5"),
+        extracted_box_size=(34, 34),
+        original_template_size=(32, 32),
+        skip_df_load=True,
+    )
+    ps._df = df
+
+    with pytest.raises(ValueError, match="local_stats is empty"):
+        ps.to_hdf5(include_local_stats=True)
+
+
+def test_hdf5_local_stats_roundtrip_stores_all_columns(tmp_path):
+    """to_hdf5/from_hdf5 round-trips every entry in local_stats, not just avg/var."""
+    df = make_minimal_df(num_rows=2)
+    df.index = pd.Index(["particle_00000", "particle_00001"], name="particle_id")
+
+    local_stats = {
+        "correlation_average_path": torch.zeros(2, 3, 3),
+        "correlation_variance_path": torch.ones(2, 3, 3),
+        "mip_path": torch.full((2, 3, 3), 2.0),
+        "psi_path": torch.full((2, 3, 3), 3.0),
+        "theta_path": torch.full((2, 3, 3), 4.0),
+        "phi_path": torch.full((2, 3, 3), 5.0),
+    }
+
+    hdf5_path = str(tmp_path / "particles.h5")
+    ps = ParticleStackHDF5(
+        hdf5_path=hdf5_path,
+        extracted_box_size=(34, 34),
+        original_template_size=(32, 32),
+        local_stats=dict(local_stats),
+        skip_df_load=True,
+    )
+    ps._df = df
+    ps.to_hdf5(include_local_stats=True)
+
+    loaded = ParticleStackHDF5.from_hdf5(hdf5_path)
+
+    assert loaded.local_stats_stored is True
+    assert set(loaded.local_stats.keys()) == set(local_stats.keys())
+    for column, tensor in local_stats.items():
+        assert torch.equal(loaded.local_stats[column], tensor)
+
+
+def test_hdf5_get_local_stat_maps_falls_back_when_not_stored(tmp_path):
+    """Without local_stats_stored, columns are still loaded/cropped from disk."""
+    df, _r1, _r2, mip1, mip2 = make_reference_example_df()
+    df.index = pd.Index(["particle_00000", "particle_00001"], name="particle_id")
+
+    ps = ParticleStackHDF5(
+        hdf5_path=str(tmp_path / "particles.h5"),
+        extracted_box_size=(34, 34),
+        original_template_size=(32, 32),
+        skip_df_load=True,
+    )
+    ps._df = df
+
+    stat_maps = ps.get_local_stat_maps(columns=["mip_path"])
+
+    mip1_ground_truth = np.array([[0, 0, 0], [0, mip1, 0], [0, 0, 0]], dtype=np.float32)
+    mip2_ground_truth = np.array([[0, 0, 0], [0, mip2, 0], [0, 0, 0]], dtype=np.float32)
+
+    assert np.allclose(stat_maps["mip_path"][0].numpy(), mip1_ground_truth)
+    assert np.allclose(stat_maps["mip_path"][1].numpy(), mip2_ground_truth)
+
+
+def _write_bundled_result(path, shape, seed):
+    """Write a MatchTemplateResultHDF5 file with spatially varying random maps."""
+    gen = torch.Generator().manual_seed(seed)
+    tensor_names = (
+        "mip",
+        "scaled_mip",
+        "correlation_average",
+        "correlation_variance",
+        "orientation_psi",
+        "orientation_theta",
+        "orientation_phi",
+        "relative_defocus",
+    )
+    tensors = {
+        name: torch.rand(shape, generator=gen, dtype=torch.float32) + 0.5
+        for name in tensor_names
+    }
+    MatchTemplateResultHDF5(
+        hdf5_path=str(path),
+        allow_file_overwrite=True,
+        total_projections=1,
+        total_orientations=1,
+        total_defocus=1,
+        **tensors,
+    ).to_hdf5()
+    return tensors
+
+
+STATISTIC_COLUMN_TO_TENSOR_NAME = {
+    "mip_path": "mip",
+    "scaled_mip_path": "scaled_mip",
+    "psi_path": "orientation_psi",
+    "theta_path": "orientation_theta",
+    "phi_path": "orientation_phi",
+    "defocus_path": "relative_defocus",
+    "correlation_average_path": "correlation_average",
+    "correlation_variance_path": "correlation_variance",
+}
+
+
+def test_load_images_grouped_by_column_disambiguates_bundled_hdf5_result(tmp_path):
+    """All eight statistic columns may point at the same MatchTemplateResultHDF5 file.
+
+    This mirrors ``MatchTemplateManager.results_to_dataframe``'s HDF5 branch, where
+    every ``*_path`` column is set to the same ``hdf5_path`` because all eight result
+    maps are bundled as distinct datasets in one file. Loading must disambiguate by
+    dataset name rather than assume "one path == one map".
+
+    Two result files (micrographs) are interleaved in the particle table, which is
+    indexed by string ``particle_id`` labels, so crops must land on the right rows.
+    """
+    shape = (16, 16)
+    maps = {
+        0: _write_bundled_result(tmp_path / "result_0.h5", shape, seed=0),
+        1: _write_bundled_result(tmp_path / "result_1.h5", shape, seed=1),
+    }
+
+    df = make_minimal_df(num_rows=4)
+    source = [0, 1, 0, 1]  # which result file each particle comes from
+    df["pos_x"] = [1, 5, 9, 3]
+    df["pos_y"] = [2, 7, 4, 8]
+    for column in STATISTIC_COLUMN_TO_TENSOR_NAME:
+        df[column] = [str(tmp_path / f"result_{i}.h5") for i in source]
+    df.index = pd.Index([f"p_{i:05d}" for i in range(4)], name="particle_id")
+
+    ps = ParticleStackHDF5(
+        hdf5_path=str(tmp_path / "particles.h5"),
+        extracted_box_size=(6, 6),
+        original_template_size=(4, 4),
+        skip_df_load=True,
+    )
+    ps._set_dataframe(df)
+    assert list(ps["particle_id"]) == [f"p_{i:05d}" for i in range(4)]
+
+    for column, tensor_name in STATISTIC_COLUMN_TO_TENSOR_NAME.items():
+        images, _indices = ps.load_images_grouped_by_column(column_name=column)
+        assert images.shape == (2, *shape)
+        torch.testing.assert_close(images[0], maps[0][tensor_name])
+        torch.testing.assert_close(images[1], maps[1][tensor_name])
+
+    # End-to-end: the correlation mean/std setup used by every standard
+    # refine_template run must also work against bundled HDF5 results. The valid
+    # region for box 6 / template 4 is 3x3 and starts at (pos - (6 - 4) // 2).
+    corr_mean_stack, corr_std_stack = _setup_correlation_stacks_from_micrographs(
+        particle_stack=ps,
+        mean_stack=None,
+        std_stack=None,
+        particle_indices=None,
+        extracted_box_size=(3, 3),
+        device=torch.device("cpu"),
+    )
+    assert corr_mean_stack.shape == (4, 3, 3)
+    for row, (i, x, y) in enumerate(zip(source, df["pos_x"], df["pos_y"], strict=True)):
+        y0, x0 = y - 1, x - 1
+        region = (slice(y0, y0 + 3), slice(x0, x0 + 3))
+        torch.testing.assert_close(
+            corr_mean_stack[row], maps[i]["correlation_average"][region]
+        )
+        # The stored "correlation_variance" map already is the standard deviation
+        torch.testing.assert_close(
+            corr_std_stack[row], maps[i]["correlation_variance"][region]
+        )
+
+
+def test_construct_projective_filters_assigns_rows_by_position(tmp_path):
+    """Filters computed per micrograph land on that micrograph's particle rows."""
+    df = make_minimal_df(num_rows=4)
+    df.index = pd.Index([f"p_{i:05d}" for i in range(4)], name="particle_id")
+    ps = ParticleStackHDF5(
+        hdf5_path=str(tmp_path / "particles.h5"),
+        extracted_box_size=(6, 6),
+        original_template_size=(4, 4),
+        skip_df_load=True,
+    )
+    ps._set_dataframe(df)
+
+    class _ConstantFilter(PreprocessingFilters):
+        def get_combined_filter(self, ref_img_rfft, output_shape, **kwargs):
+            return torch.full(output_shape, float(ref_img_rfft.real.mean()))
+
+    images_dft = torch.stack([torch.full((4, 3), 1.0), torch.full((4, 3), 2.0)])
+    filters = ps.construct_projective_filters(
+        preprocess_filters=_ConstantFilter(),
+        output_shape=(2, 2),
+        images_dft=images_dft.to(torch.complex64),
+        indices=[pd.Index([0, 2]), pd.Index([1, 3])],
+    )
+    assert filters[:, 0, 0].tolist() == [1.0, 2.0, 1.0, 2.0]
+
+    # Labels (particle_id strings) or out-of-range positions are rejected
+    with pytest.raises(TypeError, match="integer row positions"):
+        ps.construct_projective_filters(
+            _ConstantFilter(), (2, 2), images_dft[:1], [pd.Index(["p_00000"])]
+        )
+    with pytest.raises(IndexError, match="out of range"):
+        ps.construct_projective_filters(
+            _ConstantFilter(), (2, 2), images_dft[:1], [pd.Index([4])]
+        )
+
+
+def test_load_images_grouped_by_column_rejects_missing_paths():
+    """Particles without an image path raise instead of silently getting zeros."""
+    df = make_minimal_df(num_rows=2)
+    df["micrograph_path"] = ["/some/mic.mrc", None]
+    ps = ParticleStack(
+        df_path="",
+        extracted_box_size=(6, 6),
+        original_template_size=(4, 4),
+        skip_df_load=True,
+    )
+    ps._set_dataframe(df)
+    with pytest.raises(ValueError, match="empty for 1 particle"):
+        ps.load_images_grouped_by_column("micrograph_path")
+
+
+def test_load_images_grouped_by_column_names_missing_file():
+    """A missing referenced file raises FileNotFoundError naming the column."""
+    df = make_minimal_df(num_rows=2)
+    df["mip_path"] = "/nonexistent/mip.mrc"
+    ps = ParticleStack(
+        df_path="",
+        extracted_box_size=(6, 6),
+        original_template_size=(4, 4),
+        skip_df_load=True,
+    )
+    ps._set_dataframe(df)
+    with pytest.raises(FileNotFoundError, match="mip_path"):
+        ps.load_images_grouped_by_column("mip_path")
+
+
+def test_export_particle_stack_requires_box_sizes_without_source():
+    """Without a source particle stack, box sizes must be given explicitly."""
+    df = make_minimal_df(num_rows=1)
+    with pytest.raises(ValueError, match="extracted_box_size"):
+        export_particle_stack(
+            df=df,
+            output_path="unused.h5",
+            output_format="hdf5",
+        )
+
+
+def test_export_particle_stack_requires_output_format_without_source(tmp_path):
+    """Without a source stack or known extension, output_format can't be inferred."""
+    df = make_minimal_df(num_rows=1)
+    with pytest.raises(ValueError, match="output_format"):
+        export_particle_stack(
+            df=df,
+            output_path=str(tmp_path / "out_without_extension"),
+            extracted_box_size=(34, 34),
+            original_template_size=(32, 32),
+        )

@@ -99,12 +99,13 @@ ENV/
 # Rope project settings
 .ropeproject
 
-# mkdocs documentation
+# mkdocs/zensical documentation
 /site
 /docs/generated/
+/docs/api/
 /docs/examples/60S_*.mrc
-/docs/examples/xenon_*.mrc
-/docs/examples/xenon_*.csv
+/docs/examples/xenon_216_000*
+/docs/examples/refine_template_config.yaml
 
 # mypy
 .mypy_cache/

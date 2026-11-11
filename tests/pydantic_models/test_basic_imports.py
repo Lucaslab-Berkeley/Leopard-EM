@@ -25,6 +25,7 @@ def test_config_imports():
             ComputationalConfigMatch,
             ComputationalConfigRefine,
             DefocusSearchConfig,
+            FastFFTPaddingConfig,
             OrientationSearchConfig,
             PhaseRandomizationFilterConfig,
             PixelSizeSearchConfig,
@@ -56,7 +57,12 @@ def test_data_structure_imports():
 def test_results_import():
     """Test for results imports."""
     try:
-        from leopard_em.pydantic_models.results import MatchTemplateResult
+        from leopard_em.pydantic_models.results import (
+            CorrelationTable,
+            MatchTemplateResult,
+            MatchTemplateResultHDF5,
+            MatchTemplateResultMRC,
+        )
     except ImportError as e:
         raise ImportError(
             "Failed to import one or more results classes from "

@@ -1,6 +1,6 @@
 """Set of classes for configuring correlation filters in 2DTM."""
 
-from typing import Annotated, Any, Optional
+from typing import Annotated, Any
 
 import torch
 from pydantic import Field
@@ -42,14 +42,14 @@ class WhiteningFilterConfig(BaseModel2DTM):
     """
 
     enabled: bool = True
-    num_freq_bins: Optional[int] = None
-    max_freq: Optional[float] = 0.5  # in terms of Nyquist frequency
-    do_power_spectrum: Optional[bool] = True
+    num_freq_bins: int | None = None
+    max_freq: float | None = 0.5  # in terms of Nyquist frequency
+    do_power_spectrum: bool | None = True
 
     def calculate_whitening_filter(
         self,
         ref_img_rfft: torch.Tensor,
-        output_shape: Optional[tuple[int, ...]] = None,
+        output_shape: tuple[int, ...] | None = None,
         output_rfft: bool = True,
         output_fftshift: bool = False,
     ) -> torch.Tensor:
@@ -130,7 +130,7 @@ class PhaseRandomizationFilterConfig(BaseModel2DTM):
     """
 
     enabled: bool = False
-    cuton: Optional[Annotated[float, Field(ge=0.0)]] = None
+    cuton: Annotated[float, Field(ge=0.0)] | None = None
 
     def calculate_phase_randomization_filter(
         self, ref_img_rfft: torch.Tensor
@@ -192,9 +192,9 @@ class BandpassFilterConfig(BaseModel2DTM):
     """
 
     enabled: bool = False
-    low_freq_cutoff: Optional[Annotated[float, Field(ge=0.0)]] = None
-    high_freq_cutoff: Optional[Annotated[float, Field(ge=0.0)]] = None
-    falloff: Optional[Annotated[float, Field(ge=0.0)]] = None
+    low_freq_cutoff: Annotated[float, Field(ge=0.0)] | None = None
+    high_freq_cutoff: Annotated[float, Field(ge=0.0)] | None = None
+    falloff: Annotated[float, Field(ge=0.0)] | None = None
 
     @classmethod
     def from_spatial_resolution(
@@ -284,8 +284,8 @@ class ArbitraryCurveFilterConfig(BaseModel2DTM):
     """
 
     enabled: bool = False
-    frequencies: Optional[list[float]] = None  # in terms of Nyquist frequency
-    amplitudes: Optional[list[float]] = None
+    frequencies: list[float] | None = None  # in terms of Nyquist frequency
+    amplitudes: list[float] | None = None
 
     def calculate_arbitrary_curve_filter(
         self, output_shape: tuple[int, ...]
@@ -396,8 +396,10 @@ class PreprocessingFilters(BaseModel2DTM):
 
     Methods
     -------
-    combined_filter(ref_img_rfft, output_shape)
+    get_combined_filter(ref_img_rfft, output_shape, apply_random_dropout)
         Calculate and combine all Fourier filters into a single filter.
+    get_combined_filter_stack(images_dft, output_shape)
+        Combined filter for each image of a batch, each image as its own reference.
     """
 
     whitening_filter: WhiteningFilterConfig = WhiteningFilterConfig()
@@ -414,7 +416,7 @@ class PreprocessingFilters(BaseModel2DTM):
         self,
         ref_img_rfft: torch.Tensor,
         output_shape: tuple[int, ...],
-        apply_random_dropout: bool = True,
+        apply_random_dropout: bool = False,
     ) -> torch.Tensor:
         """Combine all filters into a single filter.
 
@@ -428,8 +430,8 @@ class PreprocessingFilters(BaseModel2DTM):
             torch_fourier_filter package).
         apply_random_dropout : bool, optional
             Whether to include the random Fourier dropout mask in the combined filter.
-            Pass ``False`` to skip dropout (e.g. for the image side of match-template)
-            without mutating the configured dropout state. Defaults to ``True``.
+            Pass ``True`` to include dropout (e.g. for the template side of
+            match-template). Defaults to ``False``.
 
         Returns
         -------
@@ -468,3 +470,34 @@ class PreprocessingFilters(BaseModel2DTM):
             combined_filter = combined_filter * random_dropout_mask
 
         return combined_filter
+
+    def get_combined_filter_stack(
+        self,
+        images_dft: torch.Tensor,
+        output_shape: tuple[int, ...],
+    ) -> torch.Tensor:
+        """Combined filter for each image in a batch, using that image as reference.
+
+        Parameters
+        ----------
+        images_dft : torch.Tensor
+            Reference images (e.g. micrographs or particles) in Fourier space, with
+            shape ``(N, H, W)``.
+        output_shape : tuple[int, ...]
+            Desired Fourier-space shape of each filter (see ``get_combined_filter``).
+
+        Returns
+        -------
+        torch.Tensor
+            The ``(N, *output_shape)`` stack of combined filters, on the same device as
+            ``images_dft``.
+        """
+        num_images = images_dft.shape[0]
+        filter_stack = torch.zeros(
+            (num_images, *output_shape), device=images_dft.device
+        )
+        for i in range(num_images):
+            filter_stack[i] = self.get_combined_filter(
+                ref_img_rfft=images_dft[i], output_shape=output_shape
+            )
+        return filter_stack
