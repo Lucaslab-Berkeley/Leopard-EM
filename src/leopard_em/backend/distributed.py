@@ -334,7 +334,9 @@ def run_multiprocess_jobs(
     Raises
     ------
     RuntimeError
-        If any child process encounters an error.
+        If any child process exits with a non-zero exit code (e.g. an uncaught
+        exception or being killed by a signal). The child's traceback, if any, is
+        printed to stderr by the child itself.
     ValueError
         If ranks is not None and its length does not match kwargs_list.
 
@@ -382,5 +384,18 @@ def run_multiprocess_jobs(
 
     for p in processes:
         p.join()
+
+    # A child that raised (or was killed) never writes its entry to result_dict, so
+    # without this check its share of the work would be silently dropped.
+    failed = [
+        (rank, p.exitcode)
+        for rank, p in zip(ranks, processes, strict=True)
+        if p.exitcode != 0
+    ]
+    if failed:
+        raise RuntimeError(
+            f"{len(failed)} of {len(processes)} worker process(es) failed "
+            f"(rank, exit code): {failed}. See the worker traceback(s) above."
+        )
 
     return dict(result_dict)

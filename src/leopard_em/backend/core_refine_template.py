@@ -230,7 +230,16 @@ def core_refine_template(
     # Operation not permitted) and empty worker results.
     if len(kwargs_per_device) == 1:
         results: dict = {}
-        _core_refine_template_single_gpu(results, 0, **kwargs_per_device[0])
+        # The worker calls torch.cuda.set_device(); scope it so the caller's
+        # current CUDA device is restored once the in-process run returns.
+        single_device = kwargs_per_device[0]["device"]
+        device_ctx: AbstractContextManager = (
+            torch.cuda.device(single_device)
+            if single_device.type == "cuda"
+            else nullcontext()
+        )
+        with device_ctx:
+            _core_refine_template_single_gpu(results, 0, **kwargs_per_device[0])
     else:
         results = run_multiprocess_jobs(
             target=_core_refine_template_single_gpu,
