@@ -1,7 +1,9 @@
 """Submodule for shared formats used in pydantic models."""
 
+from collections.abc import Iterable
+
 # Full-micrograph 2DTM result map paths, shared across the column-order
-# lists below and by ``_DEFAULT_LOCAL_STAT_COLUMNS`` in particle_stack.py.
+# lists below and by ``DEFAULT_LOCAL_STAT_COLUMNS``.
 STATISTIC_MAP_PATH_COLUMNS = [
     "mip_path",
     "scaled_mip_path",
@@ -10,6 +12,81 @@ STATISTIC_MAP_PATH_COLUMNS = [
     "phi_path",
     "defocus_path",
 ]
+
+# Unique, human-readable identifier column for each particle. Not indexed currently.
+PARTICLE_ID_COLUMN = "particle_id"
+
+# Name of the HDF5 group holding result tensors in a ``MatchTemplateResultHDF5`` file.
+HDF5_TENSORS_GROUP = "tensors"
+
+# Maps each dataframe "*_path" statistic-map column to the dataset name it corresponds
+# to inside a ``MatchTemplateResultHDF5`` file's ``tensors`` group.
+STATISTIC_MAP_PATH_TO_HDF5_DATASET = {
+    "mip_path": "mip",
+    "scaled_mip_path": "scaled_mip",
+    "psi_path": "orientation_psi",
+    "theta_path": "orientation_theta",
+    "phi_path": "orientation_phi",
+    "defocus_path": "relative_defocus",
+    "correlation_average_path": "correlation_average",
+    "correlation_variance_path": "correlation_variance",
+}
+
+# ``ParticleStack.get_local_stat_maps`` when no explicit columns are requested.
+DEFAULT_LOCAL_STAT_COLUMNS = tuple(STATISTIC_MAP_PATH_COLUMNS)
+
+# Pad so  out-of-bounds regions produce ~0 z-scores as opposed to NaN or inf values.
+LARGE_STD_PADDING = 1e10
+_DEFAULT_LOCAL_STAT_PADDING = {"correlation_variance_path": LARGE_STD_PADDING}
+
+
+def local_stat_padding(column: str, padding_value: float | None = None) -> float:
+    """Constant used to pad out-of-bounds regions of a statistic map column.
+
+    Parameters
+    ----------
+    column : str
+        The ``*_path`` column of the statistic map.
+    padding_value : float | None, optional
+        Explicit padding value, returned as-is when given. Defaults to None, which pads
+        the standard deviation map with :data:`LARGE_STD_PADDING` and every other map
+        with ``0.0``.
+
+    Returns
+    -------
+    float
+    """
+    if padding_value is not None:
+        return padding_value
+    return _DEFAULT_LOCAL_STAT_PADDING.get(column, 0.0)
+
+
+# Compressed-CSV file suffixes and the pandas compression method each one selects
+CSV_COMPRESSION_SUFFIXES = {
+    ".gz": "gzip",
+    ".bz2": "bz2",
+    ".zip": "zip",
+    ".xz": "xz",
+    ".zst": "zstd",
+}
+
+
+def split_compression_suffix(path: str) -> tuple[str, str | None]:
+    """Split a trailing compression suffix (e.g. ``.gz``) off a file path."""
+    for suffix, method in CSV_COMPRESSION_SUFFIXES.items():
+        if path.lower().endswith(suffix):
+            return path[: -len(suffix)], method
+    return path, None
+
+
+# Scalar CTF parameter columns which must hold one value shared by all particles
+SHARED_CTF_PARAMETER_COLUMNS = (
+    "voltage",
+    "spherical_aberration",
+    "amplitude_contrast_ratio",
+    "phase_shift",
+    "ctf_B_factor",
+)
 
 MATCH_TEMPLATE_DF_COLUMN_ORDER = [
     "particle_index",
@@ -163,3 +240,12 @@ CONSTRAINED_DF_COLUMN_ORDER = [
     "correlation_average_path",
     "correlation_variance_path",
 ]
+
+
+def result_column_order(
+    column_order: list[str], available_columns: Iterable[str]
+) -> list[str]:
+    """Return ``column_order``, prefixed with ``particle_id`` when it is available."""
+    if PARTICLE_ID_COLUMN in available_columns:
+        return [PARTICLE_ID_COLUMN, *column_order]
+    return list(column_order)

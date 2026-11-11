@@ -12,6 +12,7 @@ from .correlation_filters import (
     WhiteningFilterConfig,
 )
 from .defocus_search import DefocusSearchConfig
+from .fast_fft_padding import FastFFTPaddingConfig
 from .movie_config import MovieConfig
 from .orientation_search import (
     ConstrainedOrientationConfig,
@@ -28,6 +29,7 @@ __all__ = [
     "ComputationalConfigRefine",
     "ConstrainedOrientationConfig",
     "DefocusSearchConfig",
+    "FastFFTPaddingConfig",
     "MovieConfig",
     "MultipleOrientationConfig",
     "OrientationSearchConfig",

@@ -7,7 +7,7 @@ from typing import Any, ClassVar, Literal
 import mrcfile
 import pandas as pd
 import torch
-from pydantic import ConfigDict, field_validator
+from pydantic import ConfigDict, PrivateAttr, field_validator
 
 from leopard_em.backend.core_match_template import core_match_template
 from leopard_em.backend.core_match_template_distributed import (
@@ -16,6 +16,7 @@ from leopard_em.backend.core_match_template_distributed import (
 from leopard_em.pydantic_models.config import (
     ComputationalConfigMatch,
     DefocusSearchConfig,
+    FastFFTPaddingConfig,
     MultipleOrientationConfig,
     OrientationSearchConfig,
     PreprocessingFilters,
@@ -30,8 +31,12 @@ from leopard_em.pydantic_models.results import (
 from leopard_em.pydantic_models.results.correlation_table import CorrelationTable
 from leopard_em.utils.ctf_utils import calculate_ctf_filter_stack
 from leopard_em.utils.data_io import load_mrc_image, load_mrc_volume
+from leopard_em.utils.fft_padding import FFTPaddingPlan
 from leopard_em.utils.fourier_slice import volume_to_rfft_fourier_slice
-from leopard_em.utils.image_processing import preprocess_image
+from leopard_em.utils.image_processing import (
+    get_image_normalization_factor,
+    preprocess_image,
+)
 
 
 # pylint: disable=no-self-argument
@@ -101,12 +106,18 @@ class MatchTemplateManager(BaseModel2DTM):
     defocus_search_config: DefocusSearchConfig
     orientation_search_config: OrientationSearchConfig | MultipleOrientationConfig
     preprocessing_filters: PreprocessingFilters
+    fast_fft_padding: FastFFTPaddingConfig = FastFFTPaddingConfig()
     match_template_result: MatchTemplateResultMRC | MatchTemplateResultHDF5
     computational_config: ComputationalConfigMatch
 
     # Non-serialized large array-like attributes
     micrograph: ExcludedTensor
     template_volume: ExcludedTensor
+
+    # Padding plan for the most recent 'make_backend_core_function_kwargs' call. Used
+    # to tell the backend which valid region to accumulate, and to verify the shapes
+    # it returns. Reset on every call so it can never go stale.
+    _fft_padding_plan: FFTPaddingPlan | None = PrivateAttr(default=None)
 
     ###########################
     ### Pydantic Validators ###
@@ -140,28 +151,123 @@ class MatchTemplateManager(BaseModel2DTM):
     ### Functional (data processing) methods ###
     ############################################
 
-    def make_backend_core_function_kwargs(self) -> dict[str, Any]:
-        """Generates the keyword arguments for backend call from held parameters."""
-        # Ensure the micrograph and template are loaded and in the correct format
+    def _ensure_inputs_loaded(self) -> tuple[torch.Tensor, torch.Tensor]:
+        """Load the micrograph and template volume as tensors, if not already held.
+
+        Returns
+        -------
+        tuple[torch.Tensor, torch.Tensor]
+            The micrograph and the template volume.
+        """
         if self.micrograph is None:
             self.micrograph = load_mrc_image(self.micrograph_path)
         if self.template_volume is None:
             self.template_volume = load_mrc_volume(self.template_volume_path)
 
-        # Ensure the micrograph and template are both Tensors before proceeding
-        if not isinstance(self.micrograph, torch.Tensor):
-            image = torch.from_numpy(self.micrograph)
-        else:
-            image = self.micrograph
+        image = self.micrograph
+        if not isinstance(image, torch.Tensor):
+            image = torch.from_numpy(image)
 
-        if not isinstance(self.template_volume, torch.Tensor):
-            template = torch.from_numpy(self.template_volume)
-        else:
-            template = self.template_volume
+        template = self.template_volume
+        if not isinstance(template, torch.Tensor):
+            template = torch.from_numpy(template)
 
-        # Fourier transform the image (RFFT, unshifted)
-        image_dft = torch.fft.rfftn(image)  # pylint: disable=E1102
-        image_dft[0, 0] = 0 + 0j  # zero out the constant term
+        return image, template
+
+    def _preprocess_padded_image(
+        self,
+        image_dft: torch.Tensor,
+        image_dft_original: torch.Tensor,
+        cumulative_filter_image: torch.Tensor,
+        bandpass_filter: torch.Tensor,
+        padding_plan: FFTPaddingPlan,
+    ) -> torch.Tensor:
+        """Filter and normalize the image, correcting the scale when padded.
+
+        Parameters
+        ----------
+        image_dft : torch.Tensor
+            RFFT of the padded image.
+        image_dft_original : torch.Tensor
+            RFFT of the original, unpadded image.
+        cumulative_filter_image : torch.Tensor
+            Combined Fourier filter evaluated on the padded grid.
+        bandpass_filter : torch.Tensor
+            Bandpass filter evaluated on the padded grid.
+        padding_plan : FFTPaddingPlan
+            Plan describing the padding that was applied.
+
+        Returns
+        -------
+        torch.Tensor
+            Filtered and normalized image in Fourier space.
+        """
+        if not padding_plan.is_padded:
+            return preprocess_image(
+                image_rfft=image_dft,
+                cumulative_fourier_filters=cumulative_filter_image,
+                bandpass_filter=bandpass_filter,
+                full_image_shape=padding_plan.original_shape,
+                extracted_box_shape=padding_plan.original_shape,
+            )
+
+        # NOTE: For "fast padding to FFT shapes", image is pre-processed with filters
+        #       before padding. Whitening and normalization though are still applied
+        #       after padding, so that the padded search reproduces the unpadded one.
+        bp_config = self.preprocessing_filters.bandpass_filter
+        bandpass_original = bp_config.calculate_bandpass_filter(
+            image_dft_original.shape
+        )
+        cumulative_original = self.preprocessing_filters.get_combined_filter(
+            ref_img_rfft=image_dft_original,
+            output_shape=image_dft_original.shape,
+            apply_random_dropout=False,
+        )
+        normalization_factor = get_image_normalization_factor(
+            image_rfft=image_dft_original,
+            cumulative_fourier_filters=cumulative_original,
+            bandpass_filter=bandpass_original,
+            full_image_shape=padding_plan.original_shape,
+            extracted_box_shape=padding_plan.original_shape,
+        )
+
+        # The factor scales as 1 / sqrt(number of pixels), so moving from the original
+        # grid to the padded grid multiplies it by sqrt(N_original / N_padded).
+        original_area = padding_plan.original_shape[0] * padding_plan.original_shape[1]
+        padded_area = padding_plan.padded_shape[0] * padding_plan.padded_shape[1]
+        normalization_factor = (
+            normalization_factor * (original_area / padded_area) ** 0.5
+        )
+
+        return image_dft * cumulative_filter_image * normalization_factor
+
+    def make_backend_core_function_kwargs(self) -> dict[str, Any]:
+        """Generates the keyword arguments for backend call from held parameters."""
+        image, template = self._ensure_inputs_loaded()
+
+        # Reset before recomputing so a failure here cannot leave a stale plan behind.
+        self._fft_padding_plan = None
+        padding_plan = self.fast_fft_padding.make_plan(
+            image_shape=(int(image.shape[-2]), int(image.shape[-1])),
+            template_shape=(int(template.shape[-2]), int(template.shape[-1])),
+            backend=self.computational_config.backend,
+        )
+        self._fft_padding_plan = padding_plan
+
+        # Fourier transform the image (RFFT, unshifted). The *unpadded* transform is
+        # the reference for every Fourier filter and for the normalization scalar, so
+        # that synthetic padding noise can never bias the measured power spectrum.
+        # The padded transform is what the backend actually correlates against.
+        image_dft_original = torch.fft.rfftn(image)  # pylint: disable=E1102
+        image_dft_original[0, 0] = 0 + 0j  # zero out the constant term
+
+        if padding_plan.is_padded:
+            image_dft = torch.fft.rfftn(  # pylint: disable=E1102
+                padding_plan.pad(image)
+            )
+            image_dft[0, 0] = 0 + 0j
+        else:
+            image_dft = image_dft_original
 
         # Get the bandpass filter individually
         bp_config = self.preprocessing_filters.bandpass_filter
@@ -170,8 +276,10 @@ class MatchTemplateManager(BaseModel2DTM):
         # Calculate the cumulative filters for both the image and the template.
         # NOTE: We don't want to do random fourier masking on the image, so skip the
         # dropout mask for the image-side filter (without mutating the config).
+        # NOTE: Filters are computed on the unpadded image but applied to the padded
+        # Fourier transformed image.
         cumulative_filter_image = self.preprocessing_filters.get_combined_filter(
-            ref_img_rfft=image_dft,
+            ref_img_rfft=image_dft_original,
             output_shape=image_dft.shape,
             apply_random_dropout=False,
         )
@@ -179,18 +287,18 @@ class MatchTemplateManager(BaseModel2DTM):
         # NOTE: Here, manually accounting for the RFFT in output shape since we have not
         # RFFT'd the template volume yet. Also, this is 2-dimensional, not 3-dimensional
         cumulative_filter_template = self.preprocessing_filters.get_combined_filter(
-            ref_img_rfft=image_dft,
+            ref_img_rfft=image_dft_original,
             output_shape=(template.shape[-2], template.shape[-1] // 2 + 1),
             apply_random_dropout=True,
         )
 
         # Apply the pre-processing and normalization
-        image_preprocessed_dft = preprocess_image(
-            image_rfft=image_dft,
-            cumulative_fourier_filters=cumulative_filter_image,
+        image_preprocessed_dft = self._preprocess_padded_image(
+            image_dft=image_dft,
+            image_dft_original=image_dft_original,
+            cumulative_filter_image=cumulative_filter_image,
             bandpass_filter=bandpass_filter,
-            full_image_shape=(image.shape[-2], image.shape[-1]),
-            extracted_box_shape=(image.shape[-2], image.shape[-1]),
+            padding_plan=padding_plan,
         )
 
         # Calculate the CTF filters at each defocus value
@@ -242,8 +350,10 @@ class MatchTemplateManager(BaseModel2DTM):
             results to disk directly after running the match template. Default is True.
         compute_correlation_table : bool
             If True, track cross-correlation values which surpass the correlation
-            table threshold during the search. If False, the `CorrelationTable` will be
-            empty. Incurs a small runtime overhead when enabled. Default is False.
+            table threshold during the search and build a `CorrelationTable` from them.
+            If False, no `CorrelationTable` is built at all and
+            `match_template_result.correlation_table` stays `None`. Incurs a runtime
+            overhead when enabled. Default is False.
 
         Returns
         -------
@@ -254,8 +364,9 @@ class MatchTemplateManager(BaseModel2DTM):
             **core_kwargs,
             orientation_batch_size=orientation_batch_size,
             num_cuda_streams=self.computational_config.num_cpus,
-            backend=self.computational_config.backend,
+            backend=self._resolved_backend(),
             compute_correlation_table=compute_correlation_table,
+            unpadded_valid_shape=self._unpadded_valid_shape(),
         )
 
         # Populate the MatchTemplateResult via a private helper
@@ -264,6 +375,7 @@ class MatchTemplateManager(BaseModel2DTM):
             defocus_values=core_kwargs["defocus_values"],
             euler_angles=core_kwargs["euler_angles"],
             do_result_export=do_result_export,
+            compute_correlation_table=compute_correlation_table,
         )
 
     def run_match_template_distributed(
@@ -292,8 +404,9 @@ class MatchTemplateManager(BaseModel2DTM):
             results to disk directly after running the match template. Default is True.
         compute_correlation_table : bool
             If True, track cross-correlation values which surpass the correlation
-            table threshold during the search. If False, the `CorrelationTable` will be
-            empty. Incurs a small runtime overhead when enabled. Default is False.
+            table threshold during the search and build a `CorrelationTable` from them.
+            If False, no `CorrelationTable` is computed or stored. Incurs a runtime
+            overhead when enabled. Default is False.
 
         Raises
         ------
@@ -326,8 +439,9 @@ class MatchTemplateManager(BaseModel2DTM):
             device,
             orientation_batch_size,
             self.computational_config.num_cpus,
-            self.computational_config.backend,
+            self._resolved_backend(),
             compute_correlation_table=compute_correlation_table,
+            unpadded_valid_shape=self._unpadded_valid_shape(),
             **core_kwargs,
         )
 
@@ -338,7 +452,36 @@ class MatchTemplateManager(BaseModel2DTM):
                 defocus_values=core_kwargs["defocus_values"],
                 euler_angles=core_kwargs["euler_angles"],
                 do_result_export=do_result_export,
+                compute_correlation_table=compute_correlation_table,
             )
+
+    def _resolved_backend(self) -> str:
+        """Backend to actually run, honoring any zipFFT fallback from padding.
+
+        Returns
+        -------
+        str
+            ``self.computational_config.backend``, unless the padding plan fell back
+            away from ``"zipfft"`` because no compiled shape fit the image.
+        """
+        plan = self._fft_padding_plan
+        if plan is None:
+            return self.computational_config.backend
+        return plan.effective_backend
+
+    def _unpadded_valid_shape(self) -> tuple[int, int] | None:
+        """Valid correlation shape to request from the backend, if padding is active.
+
+        Returns
+        -------
+        Optional[tuple[int, int]]
+            The unpadded valid shape, or None when no padding was applied (or when
+            the backend kwargs were built on a different rank).
+        """
+        plan = self._fft_padding_plan
+        if plan is None or not plan.is_padded:
+            return None
+        return plan.unpadded_valid_shape
 
     def _populate_match_template_result(
         self,
@@ -346,8 +489,19 @@ class MatchTemplateManager(BaseModel2DTM):
         defocus_values: torch.Tensor,
         euler_angles: torch.Tensor,
         do_result_export: bool = True,
+        compute_correlation_table: bool = False,
     ) -> None:
         """Helper function to populate the MatchTemplateResult object post-core call."""
+        plan = self._fft_padding_plan
+        if plan is not None and plan.is_padded:
+            expected_shape = plan.unpadded_valid_shape
+            if tuple(results["mip"].shape) != expected_shape:
+                raise RuntimeError(
+                    f"Backend returned statistics maps of shape "
+                    f"{tuple(results['mip'].shape)}, expected {expected_shape} from "
+                    f"the FFT padding plan."
+                )
+
         # Place results into the `MatchTemplateResult` object
         self.match_template_result.mip = results["mip"]
         self.match_template_result.scaled_mip = results["scaled_mip"]
@@ -367,15 +521,19 @@ class MatchTemplateManager(BaseModel2DTM):
 
         # Build a typed CorrelationTable from the processed backend output, looking up
         # per-detection mean/variance from the statistics tensors independently.
-        self.match_template_result.correlation_table = (
-            CorrelationTable.from_match_template_results(
-                processed_correlation_table=results["correlation_table"],
-                defocus_values=defocus_values,
-                euler_angles=euler_angles,
-                correlation_average=results["correlation_mean"],
-                correlation_variance_map=results["correlation_variance"],
+        #
+        # Skipped entirely when the correlation table was never requested
+        processed_correlation_table = results.get("correlation_table")
+        if compute_correlation_table and processed_correlation_table is not None:
+            self.match_template_result.correlation_table = (
+                CorrelationTable.from_match_template_results(
+                    processed_correlation_table=processed_correlation_table,
+                    defocus_values=defocus_values,
+                    euler_angles=euler_angles,
+                    correlation_average=results["correlation_mean"],
+                    correlation_variance_map=results["correlation_variance"],
+                )
             )
-        )
 
         # Export the results to disk, if requested
         if do_result_export:

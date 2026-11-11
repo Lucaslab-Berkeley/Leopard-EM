@@ -124,8 +124,8 @@ Computing and storing the correlation table does incur a few percent overhead in
 /metadata              (attrs: correlation_threshold, num_observations)
 /search_space/
     defocus_offsets         float32 1-D
-    phi_theta_angles        float32 (n, 2)
-    psi_angles              float32 1-D
+    euler_angles            float32 (num_orientations, 3), gzip-4 + shuffle
+                            (if `compress=True`, the default, on `to_hdf5()`)
 /detections/
     search_index            int32 1-D
     x                       int32 1-D

@@ -33,7 +33,7 @@ from leopard_em.backend.process_results import (
 from leopard_em.backend.utils import do_iteration_and_correlation_table_updates
 
 DEFAULT_STATISTIC_DTYPE = torch.float32
-CORRELATION_TABLE_THRESHOLD = 5.5
+CORRELATION_TABLE_THRESHOLD = 6.25  # approx 85,000 entries at 20.8 million search size
 
 # Turn off gradient calculations by default
 torch.set_grad_enabled(False)
@@ -164,6 +164,7 @@ def core_match_template(
     backend: str = "streamed",
     mag_matrix: torch.Tensor | None = None,
     compute_correlation_table: bool = True,
+    unpadded_valid_shape: tuple[int, int] | None = None,
 ) -> dict[str, torch.Tensor | dict | int]:
     """Core function for performing the whole-orientation search.
 
@@ -225,6 +226,11 @@ def core_match_template(
         Whether to track cross-correlation values which surpass the correlation table
         threshold. If False, this (comparatively expensive) computation is skipped and
         the returned "correlation_table" will be empty. Default is True.
+    unpadded_valid_shape : tuple[int, int], optional
+        Shape of the valid correlation region to accumulate, overriding the shape
+        implied by the image and template. Used when the image was padded up to a
+        fast FFT size so that results match an unpadded search exactly. Must not be
+        larger than the implied shape. Default is None (use the implied shape).
 
     Returns
     -------
@@ -238,11 +244,11 @@ def core_match_template(
             - "best_theta": Best theta angle for each pixel.
             - "best_psi": Best psi angle for each pixel.
             - "best_defocus": Best defocus value for each pixel.
-            - "correlation_mean": Sum of cross-correlation values for each pixel.
-            - "correlation_variance": Sum of squared cross-correlation values for
+            - "correlation_mean": Mean of the cross-correlation values for each pixel.
+            - "correlation_variance": Standard deviation (despite the name) of the
+              cross-correlation values for each pixel.
             - "correlation_table": Processed correlation table with all points in search
               space and image positions where correlation value exceeded a threshold.
-              each pixel.
             - "total_projections": Total number of cross-correlations computed.
             - "total_orientations": Total number of orientations searched.
             - "total_defocus": Total number of defocus values searched.
@@ -250,6 +256,10 @@ def core_match_template(
     ################################################################
     ### Initial checks for input parameters plus and adjustments ###
     ################################################################
+    # NOTE: checked here as well as in '_core_match_template_single_gpu' so the error
+    # surfaces before worker processes are spawned.
+    _check_backend_supports_mag_matrix(backend, mag_matrix)
+
     # If there are more streams than cross-correlations to compute per batch, then
     # reduce the number of streams to the number of cross-correlations per batch.
     total_cc_per_batch = (
@@ -331,6 +341,7 @@ def core_match_template(
             "device": d,
             "mag_matrix": mag_matrix,
             "compute_correlation_table": compute_correlation_table,
+            "unpadded_valid_shape": unpadded_valid_shape,
         }
 
         kwargs_per_device.append(kwargs)
@@ -387,6 +398,48 @@ def core_match_template(
     }
 
 
+def _check_backend_supports_mag_matrix(
+    backend: str, mag_matrix: torch.Tensor | None
+) -> None:
+    """Reject backend/magnification combinations that would be silently ignored."""
+    if backend == "zipfft" and mag_matrix is not None:
+        raise ValueError("backend='zipfft' does not support anisotropic magnification.")
+
+
+def _prepare_image_dft(
+    image_dft: torch.Tensor, backend: str
+) -> tuple[torch.Tensor, tuple[int, int]]:
+    """Put the image DFT in the layout ``backend`` wants, with its true real shape."""
+    image_shape_real = (int(image_dft.shape[-2]), 2 * (int(image_dft.shape[-1]) - 1))
+
+    if backend == "zipfft":
+        # zipFFT reads a contiguous (W // 2 + 1, H) buffer.
+        image_dft = image_dft.transpose(-2, -1).contiguous()
+
+    return image_dft, image_shape_real
+
+
+def _resolve_valid_correlation_shape(
+    implied_shape: tuple[int, int],
+    unpadded_valid_shape: tuple[int, int] | None,
+) -> tuple[int, int]:
+    """Choose the region over which per-pixel statistics are accumulated."""
+    if unpadded_valid_shape is None:
+        return implied_shape
+
+    if (
+        unpadded_valid_shape[0] > implied_shape[0]
+        or unpadded_valid_shape[1] > implied_shape[1]
+    ):
+        raise ValueError(
+            f"'unpadded_valid_shape' {unpadded_valid_shape} is larger than the valid "
+            f"correlation shape {implied_shape} implied by the image and template "
+            f"shapes."
+        )
+
+    return unpadded_valid_shape
+
+
 # pylint: disable=too-many-locals
 # pylint: disable=too-many-arguments
 # pylint: disable=too-many-positional-arguments
@@ -405,6 +458,7 @@ def _core_match_template_single_gpu(
     device: torch.device,
     mag_matrix: torch.Tensor | None = None,
     compute_correlation_table: bool = True,
+    unpadded_valid_shape: tuple[int, int] | None = None,
 ) -> tuple[
     torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, tensordict.TensorDict
 ]:
@@ -453,6 +507,10 @@ def _core_match_template_single_gpu(
         Whether to track cross-correlation values which surpass the correlation table
         threshold. If False, this (comparatively expensive) computation is skipped and
         the returned correlation table will be empty. Default is True.
+    unpadded_valid_shape : tuple[int, int], optional
+        Shape of the valid correlation region to accumulate, overriding the shape
+        implied by the image and template. Used when the image was padded up to a
+        fast FFT size. Must not be larger than the implied shape. Default is None.
 
     Returns
     -------
@@ -467,15 +525,7 @@ def _core_match_template_single_gpu(
             - correlation_table: Table of search indices and image positions where
               correlation values exceeded a threshold.
     """
-    image_shape_real = (image_dft.shape[0], image_dft.shape[1] * 2 - 2)  # adj. for RFFT
-    projection_shape_real = (
-        template_dft.shape[1],
-        template_dft.shape[2] * 2 - 2,  # adj. for RFFT
-    )
-    valid_correlation_shape = (
-        image_shape_real[0] - projection_shape_real[0] + 1,
-        image_shape_real[1] - projection_shape_real[1] + 1,
-    )
+    _check_backend_supports_mag_matrix(backend, mag_matrix)
 
     # Create CUDA streams for parallel computation
     streams = [torch.cuda.Stream(device=device) for _ in range(num_cuda_streams)]
@@ -491,6 +541,22 @@ def _core_match_template_single_gpu(
     # Move mag_matrix to device if it's not None
     if mag_matrix is not None:
         mag_matrix = mag_matrix.to(device)
+
+    # NOTE: done after the H2D copy above so the zipFFT transpose runs on the device.
+    # Doing it before would copy the (large) host tensor once per worker process.
+    image_dft, image_shape_real = _prepare_image_dft(image_dft, backend)
+
+    projection_shape_real = (
+        template_dft.shape[1],
+        template_dft.shape[2] * 2 - 2,  # adj. for RFFT
+    )
+    valid_correlation_shape = _resolve_valid_correlation_shape(
+        (
+            image_shape_real[0] - projection_shape_real[0] + 1,
+            image_shape_real[1] - projection_shape_real[1] + 1,
+        ),
+        unpadded_valid_shape,
+    )
 
     num_orientations = euler_angles.shape[0]
     num_defocus = defocus_values.shape[0]
@@ -551,12 +617,6 @@ def _core_match_template_single_gpu(
         dtype=DEFAULT_STATISTIC_DTYPE,
         device=device,
     )
-    if backend == "zipfft":
-        # NOTE: zipFFT expects a pre-transformed, pre-transposed input image FFT
-        # Transpose the 'image_dft' along last two dimensions into contiguous layout
-        # with shape (..., W // 2 + 1, H)
-        image_dft = image_dft.transpose(-2, -1).contiguous()
-
     ##################################
     ### Start the orientation loop ###
     ##################################
@@ -584,7 +644,7 @@ def _core_match_template_single_gpu(
                 # flattened into one contiguous dimension.
                 indices = torch.arange(
                     i,
-                    i + orientation_batch_size,
+                    i + euler_angles_batch.shape[0],  # may be a partial batch
                     dtype=torch.int32,
                     device=device,
                 )
@@ -598,6 +658,7 @@ def _core_match_template_single_gpu(
                         rotation_matrices=rot_matrix,
                         projective_filters=projective_filters,
                         mag_matrix=mag_matrix,
+                        image_shape_real=image_shape_real,
                     )
                 elif backend == "streamed":
                     cross_correlation = do_streamed_orientation_cross_correlate(
@@ -607,6 +668,7 @@ def _core_match_template_single_gpu(
                         projective_filters=projective_filters,
                         streams=streams,
                         mag_matrix=mag_matrix,
+                        image_shape_real=image_shape_real,
                     )
                 elif backend == "zipfft":
                     cross_correlation = do_batched_orientation_cross_correlate_zipfft(
@@ -614,6 +676,7 @@ def _core_match_template_single_gpu(
                         template_dft=template_dft,
                         rotation_matrices=rot_matrix,
                         projective_filters=projective_filters,
+                        image_shape_real=image_shape_real,
                     )
                 else:
                     raise ValueError(
@@ -633,7 +696,7 @@ def _core_match_template_single_gpu(
                     threshold=CORRELATION_TABLE_THRESHOLD,
                     valid_shape_h=valid_correlation_shape[0],
                     valid_shape_w=valid_correlation_shape[1],
-                    needs_valid_cropping=(backend != "zipfft"),
+                    needs_valid_cropping=True,
                     compute_correlation_table=compute_correlation_table,
                 )
 

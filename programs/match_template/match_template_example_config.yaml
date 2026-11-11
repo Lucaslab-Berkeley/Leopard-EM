@@ -47,6 +47,9 @@ preprocessing_filters:
     falloff: null
     high_freq_cutoff: null  # Both in terms of Nyquist frequency (e.g. low-pass to 3 Å @ 1.06 Å/px would be high_freq_cutoff=0.353)
     low_freq_cutoff: null
+fast_fft_padding:
+  enabled: true          # Pad the micrograph up to a fast FFT size, then crop results back
+  allowed_factors: [2, 3]  # Prime factors allowed in the padded size; must include 2
 computational_config:
   gpu_ids:  # Use "all" for all GPUs
   - 0

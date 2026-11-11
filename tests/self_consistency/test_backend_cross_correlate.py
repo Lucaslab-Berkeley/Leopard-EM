@@ -25,12 +25,12 @@ from torch_fourier_filter.ctf import calculate_ctf_2d
 from torch_fourier_filter.envelopes import b_envelope
 
 from leopard_em.backend.cross_correlation import (
-    ZIPFFT_AVAILABLE,
     do_batched_orientation_cross_correlate,
     do_batched_orientation_cross_correlate_zipfft,
     do_streamed_orientation_cross_correlate,
 )
 from leopard_em.utils import get_cs_range
+from leopard_em.utils.zipfft_support import ZIPFFT_AVAILABLE
 
 IMAGE_SHAPE = (4096, 4096)
 TEMPLATE_SHAPE = (512, 512, 512)
@@ -157,7 +157,8 @@ def test_batched_zipfft_cross_correlate_consistency(sample_input_data):
     cross_correlate_kwargs["image_dft"] = image_dft
 
     zipfft_result = do_batched_orientation_cross_correlate_zipfft(
-        **cross_correlate_kwargs
+        **cross_correlate_kwargs,
+        image_shape_real=(IMAGE_SHAPE[-2], IMAGE_SHAPE[-1]),
     )
 
     assert zipfft_result.shape == batched_result.shape
@@ -193,4 +194,5 @@ def test_batched_zipfft_cross_correlate_raises_import_error_when_unavailable():
             template_dft=dummy,
             rotation_matrices=dummy,
             projective_filters=dummy,
+            image_shape_real=(1, 1),
         )

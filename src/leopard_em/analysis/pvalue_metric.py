@@ -178,7 +178,7 @@ def find_peaks_from_pvalue(  # pylint: disable=too-many-locals
     mip: torch.Tensor,
     scaled_mip: torch.Tensor,
     p_value_cutoff: float = 8.0,
-    mask_radius: float = 5.0,
+    mask_radius: float = 10.0,
     quadrant: int = 1,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """
@@ -197,7 +197,7 @@ def find_peaks_from_pvalue(  # pylint: disable=too-many-locals
         ``metric_cutoff`` when ``metric="pval"`` there (often ~8, comparable to
         a z-score threshold of similar magnitude). Not a raw probability.
     mask_radius : float, optional
-        Minimum distance between detected peaks.
+        Minimum distance between detected peaks. Default is 10.0 pixels.
     quadrant : int, optional
         Quadrant constraint used in p-value calculation.
 
@@ -254,7 +254,7 @@ def extract_peaks_and_statistics_p_value(  # pylint: disable=too-many-arguments,
     correlation_variance: torch.Tensor,
     total_correlation_positions: int,
     p_value_cutoff: float = 8.0,
-    mask_radius: float = 5.0,
+    mask_radius: float = 10.0,
     quadrant: int = 1,
 ) -> MatchTemplatePeaks:
     """
@@ -285,7 +285,7 @@ def extract_peaks_and_statistics_p_value(  # pylint: disable=too-many-arguments,
         ``pval`` / ``metric_cutoff`` (default 8.0, ballpark comparable to a
         z-score cutoff of 8).
     mask_radius : float, optional
-        Radius for peak masking.
+        Radius for peak masking. Default is 10.0 pixels.
     quadrant : int, optional
         Quadrant constraint used in p-value calculation.
         - 1: First quadrant only (x1 > 0 and x2 > 0)
