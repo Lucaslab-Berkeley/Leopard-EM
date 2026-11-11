@@ -202,6 +202,7 @@ class RefineTemplateManager(BaseModel2DTM):
             pre_exposure=self.movie_config.pre_exposure,
             fluence_per_frame=self.movie_config.fluence_per_frame,
             device_list=self.computational_config.gpu_devices,
+            pad_factor=self.computational_config.template_pad_factor,
         )
 
     def make_differentiable_backend_kwargs(
@@ -275,6 +276,7 @@ class RefineTemplateManager(BaseModel2DTM):
             std_stack=std_stack,
             particle_indices=particle_indices,
             images_are_particles=images_are_particles,
+            pad_factor=self.computational_config.template_pad_factor,
         )
 
     def run_refine_template(

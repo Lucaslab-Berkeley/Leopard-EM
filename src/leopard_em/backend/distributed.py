@@ -286,7 +286,7 @@ class TensorShapeDataclass:
     """Helper class for sending expected tensor shapes to distributed processes."""
 
     image_dft_shape: tuple[int, int]  # (H, W // 2 + 1)
-    template_dft_shape: tuple[int, int, int]  # (l, h, w // 2 + 1)
+    template_dft_shape: tuple[int, int, int]  # (L, H, W // 2 + 1), may be padded
     ctf_filters_shape: tuple[int, int, int, int]  # (num_Cs, num_defocus, h, w // 2 + 1)
     whitening_filter_template_shape: tuple[int, int]  # (h, w // 2 + 1)
     euler_angles_shape: tuple[int, int]  # (num_orientations, 3)

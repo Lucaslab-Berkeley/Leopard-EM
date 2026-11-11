@@ -180,6 +180,7 @@ class ConstrainedSearchManager(BaseModel2DTM):
             apply_global_filtering=apply_global_filtering,
             image_stack=stored_images,
             images_are_particles=stored_images is not None,
+            pad_factor=self.computational_config.template_pad_factor,
         )
 
         # get z diff for each particle
