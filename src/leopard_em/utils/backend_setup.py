@@ -331,7 +331,9 @@ def _setup_images_filters_from_particles(
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Setup images and filters when images are already particles.
 
-    Handles the case where images_are_particles=True.
+    Handles the case where images_are_particles=True. Whole-micrograph (global)
+    filtering is impossible for pre-extracted particles, so filters are always
+    computed per particle here.
 
     Parameters
     ----------
@@ -342,7 +344,8 @@ def _setup_images_filters_from_particles(
     template : torch.Tensor
         The 3D template volume.
     apply_global_filtering : bool
-        If True, apply filtering to the full micrograph before particle extraction.
+        The requested filtering mode. If True, a warning is raised and per-particle
+        filtering is used instead.
     image_stack: torch.Tensor
         The image stack tensor (must be provided).
 
@@ -354,6 +357,20 @@ def _setup_images_filters_from_particles(
         - template_dft: The Fourier transformed template
         - projective_filters: Filters applied to the template
     """
+    # The global branch of '_process_particle_images_for_filters' expects images
+    # cropped from an already-filtered micrograph; given raw particle images it would
+    # skip whitening and normalization altogether.
+    if apply_global_filtering:
+        warnings.warn(
+            "Pre-extracted particle images (images_are_particles=True): global "
+            "(whole-micrograph) filtering is not possible, so filters are computed per "
+            "particle instead. Pass apply_global_filtering=False to silence this "
+            "warning, or pass micrographs (images_are_particles=False) to filter "
+            "globally.",
+            UserWarning,
+            stacklevel=3,
+        )
+
     particle_images = image_stack.to(template.device)
 
     return _process_particle_images_for_filters(
@@ -361,7 +378,7 @@ def _setup_images_filters_from_particles(
         preprocessing_filters=preprocessing_filters,
         template=template,
         particle_images=particle_images,
-        apply_global_filtering=apply_global_filtering,
+        apply_global_filtering=False,
         fixed_image_filters=None,
         fixed_projective_filters=None,
     )
@@ -399,7 +416,8 @@ def setup_images_filters_particle_stack(
     apply_global_filtering : bool, optional
         If True, apply filtering to the full micrograph before particle extraction.
         If False, filters are calculated and applied to the cropped particle images.
-        Default is True.
+        Default is True. Pre-extracted particles (``images_are_particles=True``) are
+        always filtered per particle; requesting global filtering for them warns.
     movie: torch.Tensor | None
         The movie tensor.
     deformation_field: DeformationField | None

@@ -1,5 +1,6 @@
 """Tests for the particle backend setup helpers, incl. stored HDF5 image stacks."""
 
+import contextlib
 import shutil
 
 import pytest
@@ -89,6 +90,53 @@ def test_stored_image_stack_matches_micrograph_path(workspace, self_contained_st
 
     for key in COMPARED_KEYS:
         torch.testing.assert_close(from_stored[key], from_micrographs[key], msg=key)
+
+
+@pytest.mark.parametrize("apply_global_filtering", [True, False])
+def test_explicit_particle_images_are_filtered_per_particle(
+    workspace, self_contained_stack, apply_global_filtering
+):
+    """Particle images passed by the caller must be whitened per particle.
+
+    ``run_differentiable_refine(images_are_particles=True)`` passes particle images
+    directly, bypassing ``resolve_particle_image_source``. With the default
+    ``apply_global_filtering=True`` they used to come back unfiltered and
+    unnormalized, with all-ones projective filters.
+    """
+    expected = _backend_kwargs(
+        workspace,
+        ParticleStackHDF5(
+            hdf5_path=self_contained_stack.hdf5_path, use_stored_image_stack=False
+        ),
+        apply_global_filtering=False,
+    )
+
+    stack = self_contained_stack
+    warns = (
+        pytest.warns(UserWarning, match="images_are_particles=True")
+        if apply_global_filtering
+        else contextlib.nullcontext()
+    )
+    with warns:
+        kwargs = setup_particle_backend_kwargs(
+            particle_stack=stack,
+            template=load_mrc_volume(workspace.template_path),
+            preprocessing_filters=PreprocessingFilters(),
+            euler_angles=stack.get_euler_angles(prefer_refined_angles=False),
+            euler_angle_offsets=torch.zeros(1, 3),
+            defocus_offsets=torch.tensor([0.0]),
+            pixel_size_offsets=torch.tensor([0.0]),
+            apply_global_filtering=apply_global_filtering,
+            device_list=[torch.device("cpu")],
+            image_stack=stack.image_stack,
+            mean_stack=stack.local_stats["correlation_average_path"],
+            std_stack=stack.local_stats["correlation_variance_path"],
+            images_are_particles=True,
+        )
+
+    assert not torch.all(kwargs["projective_filters"] == 1.0)
+    for key in COMPARED_KEYS:
+        torch.testing.assert_close(kwargs[key], expected[key], msg=key)
 
 
 def test_caller_micrograph_stats_bypass_stored_image_stack(
