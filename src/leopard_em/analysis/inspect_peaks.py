@@ -20,7 +20,7 @@ from leopard_em.backend.core_refine_template import (
     construct_multi_gpu_refine_template_kwargs,
 )
 from leopard_em.backend.cross_correlation import do_batched_orientation_frc
-from leopard_em.backend.distributed import run_multiprocess_jobs
+from leopard_em.backend.distributed import run_device_jobs
 from leopard_em.backend.utils import EULER_ANGLE_FMT
 from leopard_em.utils.ctf_utils import (
     calculate_ctf_filter_stack_full_args,
@@ -127,7 +127,8 @@ def core_inspect_template(
         kwargs["apply_projection_normalization"] = apply_projection_normalization
         kwargs["output_mode"] = output_mode
 
-    results = run_multiprocess_jobs(
+    # Runs in-process for a single device, one spawned process per device otherwise
+    results = run_device_jobs(
         target=_core_inspect_template_single_gpu,
         kwargs_list=kwargs_per_device,
     )
