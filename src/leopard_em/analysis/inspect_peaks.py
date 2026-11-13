@@ -20,7 +20,7 @@ from leopard_em.backend.core_refine_template import (
     construct_multi_gpu_refine_template_kwargs,
 )
 from leopard_em.backend.cross_correlation import do_batched_orientation_frc
-from leopard_em.backend.distributed import run_multiprocess_jobs
+from leopard_em.backend.distributed import run_device_jobs
 from leopard_em.backend.utils import EULER_ANGLE_FMT
 from leopard_em.utils.ctf_utils import (
     calculate_ctf_filter_stack_full_args,
@@ -127,25 +127,11 @@ def core_inspect_template(
         kwargs["apply_projection_normalization"] = apply_projection_normalization
         kwargs["output_mode"] = output_mode
 
-    # Single-GPU: run in-process to avoid CUDA IPC failures from forking/spawning
-    # after the parent has already initialized CUDA (e.g. pidfd_getfd errors).
-    if len(kwargs_per_device) == 1:
-        results: dict = {}
-        # The worker calls torch.cuda.set_device(); scope it so the caller's
-        # current CUDA device is restored once the in-process run returns.
-        single_device = kwargs_per_device[0]["device"]
-        device_ctx: AbstractContextManager = (
-            torch.cuda.device(single_device)
-            if single_device.type == "cuda"
-            else nullcontext()
-        )
-        with device_ctx:
-            _core_inspect_template_single_gpu(results, 0, **kwargs_per_device[0])
-    else:
-        results = run_multiprocess_jobs(
-            target=_core_inspect_template_single_gpu,
-            kwargs_list=kwargs_per_device,
-        )
+    # Runs in-process for a single device, one spawned process per device otherwise
+    results = run_device_jobs(
+        target=_core_inspect_template_single_gpu,
+        kwargs_list=kwargs_per_device,
+    )
 
     for dev in device:
         if dev.type == "cuda":

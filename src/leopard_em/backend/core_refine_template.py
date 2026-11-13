@@ -17,7 +17,7 @@ from leopard_em.backend.cross_correlation import (
     do_batched_orientation_cross_correlate,
     do_batched_orientation_cross_correlate_cpu,
 )
-from leopard_em.backend.distributed import run_multiprocess_jobs
+from leopard_em.backend.distributed import run_device_jobs
 from leopard_em.backend.utils import (
     EULER_ANGLE_FMT,
     combine_euler_angles,
@@ -225,26 +225,11 @@ def core_refine_template(
         mag_matrix=mag_matrix,
     )
 
-    # Single-GPU: run in-process. Spawning a child after the parent has already
-    # initialized CUDA can fail with CUDA IPC errors (e.g. pidfd_getfd:
-    # Operation not permitted) and empty worker results.
-    if len(kwargs_per_device) == 1:
-        results: dict = {}
-        # The worker calls torch.cuda.set_device(); scope it so the caller's
-        # current CUDA device is restored once the in-process run returns.
-        single_device = kwargs_per_device[0]["device"]
-        device_ctx: AbstractContextManager = (
-            torch.cuda.device(single_device)
-            if single_device.type == "cuda"
-            else nullcontext()
-        )
-        with device_ctx:
-            _core_refine_template_single_gpu(results, 0, **kwargs_per_device[0])
-    else:
-        results = run_multiprocess_jobs(
-            target=_core_refine_template_single_gpu,
-            kwargs_list=kwargs_per_device,
-        )
+    # Runs in-process for a single device, one spawned process per device otherwise
+    results = run_device_jobs(
+        target=_core_refine_template_single_gpu,
+        kwargs_list=kwargs_per_device,
+    )
 
     # Synchronize all devices to ensure all computations are complete
     for dev in device:

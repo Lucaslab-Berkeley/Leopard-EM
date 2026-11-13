@@ -3,11 +3,13 @@
 These lock the behavior of ``_reduce_refine_best_zscore`` on deterministic synthetic
 correlation batches so that backend refactors (e.g. moving z-score computation
 out of the batch generator and into the reducer) provably do not change the
-refined statistics. Runs on CPU; no GPU or downloaded data required.
+refined statistics. Runs on CPU; no GPU or downloaded data required, except for the
+device-restore test, which needs 2+ GPUs and is skipped otherwise.
 """
 
 from unittest.mock import patch
 
+import pytest
 import torch
 
 from leopard_em.backend.core_refine_template import (
@@ -133,9 +135,7 @@ def test_core_refine_template_single_device_runs_in_process():
         result_dict[device_id] = fake
 
     with (
-        patch(
-            "leopard_em.backend.core_refine_template.run_multiprocess_jobs"
-        ) as mock_mp,
+        patch("leopard_em.backend.distributed.run_multiprocess_jobs") as mock_mp,
         patch(
             "leopard_em.backend.core_refine_template._core_refine_template_single_gpu",
             side_effect=_in_process,
@@ -148,6 +148,33 @@ def test_core_refine_template_single_device_runs_in_process():
     assert result["refined_z_score"].shape == (num_particles,)
 
 
+@pytest.mark.skipif(
+    not torch.cuda.is_available() or torch.cuda.device_count() < 2,
+    reason="needs 2+ CUDA devices to tell the caller's device from the worker's",
+)
+def test_core_refine_template_single_device_restores_current_cuda_device():
+    """Refining in-process on cuda:1 must leave the caller's current device as-is."""
+    num_particles = 2
+    kwargs = _minimal_refine_kwargs(num_particles)
+    fake = _fake_single_gpu_result(num_particles)
+    worker_devices = []
+
+    def _sets_device(result_dict, device_id, device, **_kwargs):
+        torch.cuda.set_device(device)  # same call the real worker makes
+        worker_devices.append(torch.cuda.current_device())
+        result_dict[device_id] = fake
+
+    torch.cuda.set_device(0)
+    with patch(
+        "leopard_em.backend.core_refine_template._core_refine_template_single_gpu",
+        side_effect=_sets_device,
+    ):
+        core_refine_template(device=torch.device("cuda", 1), **kwargs)
+
+    assert worker_devices == [1]
+    assert torch.cuda.current_device() == 0
+
+
 def test_core_refine_template_multi_device_uses_multiprocess():
     """Multi-GPU refine still dispatches through ``run_multiprocess_jobs``."""
     num_particles = 2
@@ -156,7 +183,7 @@ def test_core_refine_template_multi_device_uses_multiprocess():
 
     with (
         patch(
-            "leopard_em.backend.core_refine_template.run_multiprocess_jobs",
+            "leopard_em.backend.distributed.run_multiprocess_jobs",
             return_value={0: fake},
         ) as mock_mp,
         patch(
