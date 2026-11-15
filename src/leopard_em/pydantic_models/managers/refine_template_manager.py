@@ -353,9 +353,9 @@ class RefineTemplateManager(BaseModel2DTM):
             Number of cross-correlations to process in one batch, defaults to 32.
         images_are_particles : bool
             Whether the images are particles or not. Defaults to False. Particle
-            images are always whitened per particle, since whole-micrograph (global)
-            filtering is impossible for them; with ``apply_global_filtering=True``
-            this raises a warning.
+            images can only be filtered per particle, so this requires
+            ``apply_global_filtering=False``; with ``apply_global_filtering=True`` a
+            ``ValueError`` is raised.
         output_format : Literal["csv", "hdf5"] | None
             Output back-end to write. Defaults to None, which infers it from the
             extension of ``output_dataframe_path`` (``.csv`` / ``.h5``, ``.hdf5``) and

@@ -1,6 +1,5 @@
 """Tests for the particle backend setup helpers, incl. stored HDF5 image stacks."""
 
-import contextlib
 import shutil
 
 import pytest
@@ -92,16 +91,32 @@ def test_stored_image_stack_matches_micrograph_path(workspace, self_contained_st
         torch.testing.assert_close(from_stored[key], from_micrographs[key], msg=key)
 
 
-@pytest.mark.parametrize("apply_global_filtering", [True, False])
+def _explicit_particle_kwargs(workspace, stack, apply_global_filtering):
+    """Pass particle images explicitly, as ``run_differentiable_refine`` does."""
+    return setup_particle_backend_kwargs(
+        particle_stack=stack,
+        template=load_mrc_volume(workspace.template_path),
+        preprocessing_filters=PreprocessingFilters(),
+        euler_angles=stack.get_euler_angles(prefer_refined_angles=False),
+        euler_angle_offsets=torch.zeros(1, 3),
+        defocus_offsets=torch.tensor([0.0]),
+        pixel_size_offsets=torch.tensor([0.0]),
+        apply_global_filtering=apply_global_filtering,
+        device_list=[torch.device("cpu")],
+        image_stack=stack.image_stack,
+        mean_stack=stack.local_stats["correlation_average_path"],
+        std_stack=stack.local_stats["correlation_variance_path"],
+        images_are_particles=True,
+    )
+
+
 def test_explicit_particle_images_are_filtered_per_particle(
-    workspace, self_contained_stack, apply_global_filtering
+    workspace, self_contained_stack
 ):
-    """Particle images passed by the caller must be whitened per particle.
+    """Particle images passed by the caller are whitened per particle.
 
     ``run_differentiable_refine(images_are_particles=True)`` passes particle images
-    directly, bypassing ``resolve_particle_image_source``. With the default
-    ``apply_global_filtering=True`` they used to come back unfiltered and
-    unnormalized, with all-ones projective filters.
+    directly, bypassing ``resolve_particle_image_source``.
     """
     expected = _backend_kwargs(
         workspace,
@@ -111,32 +126,27 @@ def test_explicit_particle_images_are_filtered_per_particle(
         apply_global_filtering=False,
     )
 
-    stack = self_contained_stack
-    warns = (
-        pytest.warns(UserWarning, match="images_are_particles=True")
-        if apply_global_filtering
-        else contextlib.nullcontext()
+    kwargs = _explicit_particle_kwargs(
+        workspace, self_contained_stack, apply_global_filtering=False
     )
-    with warns:
-        kwargs = setup_particle_backend_kwargs(
-            particle_stack=stack,
-            template=load_mrc_volume(workspace.template_path),
-            preprocessing_filters=PreprocessingFilters(),
-            euler_angles=stack.get_euler_angles(prefer_refined_angles=False),
-            euler_angle_offsets=torch.zeros(1, 3),
-            defocus_offsets=torch.tensor([0.0]),
-            pixel_size_offsets=torch.tensor([0.0]),
-            apply_global_filtering=apply_global_filtering,
-            device_list=[torch.device("cpu")],
-            image_stack=stack.image_stack,
-            mean_stack=stack.local_stats["correlation_average_path"],
-            std_stack=stack.local_stats["correlation_variance_path"],
-            images_are_particles=True,
-        )
 
     assert not torch.all(kwargs["projective_filters"] == 1.0)
     for key in COMPARED_KEYS:
         torch.testing.assert_close(kwargs[key], expected[key], msg=key)
+
+
+def test_explicit_particle_images_reject_global_filtering(
+    workspace, self_contained_stack
+):
+    """Global filtering of caller-provided particle images is an error.
+
+    They used to go through the global branch and come back unfiltered and
+    unnormalized, with all-ones projective filters.
+    """
+    with pytest.raises(ValueError, match="images_are_particles=True"):
+        _explicit_particle_kwargs(
+            workspace, self_contained_stack, apply_global_filtering=True
+        )
 
 
 def test_caller_micrograph_stats_bypass_stored_image_stack(
