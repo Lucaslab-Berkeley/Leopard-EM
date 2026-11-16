@@ -118,7 +118,7 @@ What a data a particle stack needs is taken from the file if it was stored, and 
 
 - **Only the particle table stored**: particle images and statistic maps are extracted on demand from the micrograph/statistics-map paths in the table, same as the CSV back-end.
 - **Local statistic maps stored** (`local_stats_stored`): the per-particle correlation mean/standard-deviation crops used by refinement are read from the file instead of re-reading and cropping the full-size maps.
-- **Image stack stored** (`image_stack_stored`): `refine_template`, `optimize_template`, and `constrained_search` use the stored particle images directly, so the micrographs are not needed. Whole-micrograph (global) filtering is impossible for pre-extracted particles, so the whitening/bandpass filters are then computed **per particle** (as with `apply_global_filtering: false`), and a warning is emitted if global filtering was requested. Set `use_stored_image_stack: false` to re-extract from the micrographs instead.
+- **Image stack stored** (`image_stack_stored`): `refine_template`, `optimize_template`, and `constrained_search` use the stored particle images directly, so the micrographs are not needed. Whole-micrograph (global) filtering is impossible for pre-extracted particles, so the whitening/bandpass filters are computed **per particle**, and the program config must set `apply_global_filtering: false`; requesting global filtering raises an error. Set `use_stored_image_stack: false` to re-extract from the micrographs instead.
 
 Stored tensors are tied to the particle positions they were extracted at. Changing a position column (or the referenced paths) with `set_column(...)` discards the affected stored tensors, and they are recomputed from the referenced files.
 

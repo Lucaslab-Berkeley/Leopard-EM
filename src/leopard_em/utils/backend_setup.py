@@ -607,8 +607,8 @@ def resolve_particle_image_source(
 
     Notes
     -----
-    Whole-micrograph (global) filtering is impossible for pre-extracted particles, so
-    filters are then computed per particle.
+    Whole-micrograph (global) filtering is impossible for pre-extracted particles, so a
+    stored image stack can only be used with ``apply_global_filtering=False``.
 
     Parameters
     ----------
@@ -620,15 +620,21 @@ def resolve_particle_image_source(
         True when particles will be extracted from a movie (motion-corrected); the
         movie takes precedence over a stored image stack.
     warn_on_filter_switch : bool
-        Warn when a stored image stack forces per-particle filtering although global
-        filtering was requested. Defaults to True.
+        Deprecated and ignored. Requesting global filtering with a stored image stack
+        now raises instead of warning and switching to per-particle filtering.
 
     Returns
     -------
     tuple[torch.Tensor | None, bool]
         The stored image stack to use (or None to extract particles from the
         micrographs/movie as usual) and the effective ``apply_global_filtering``.
+
+    Raises
+    ------
+    ValueError
+        If the stored image stack would be used and ``apply_global_filtering`` is True.
     """
+    del warn_on_filter_switch  # deprecated, no longer used
     stored = particle_stack.get_stored_image_stack()
     if stored is None:
         return None, apply_global_filtering
@@ -642,14 +648,13 @@ def resolve_particle_image_source(
         )
         return None, apply_global_filtering
 
-    if apply_global_filtering and warn_on_filter_switch:
-        warnings.warn(
-            "Using the particle stack's stored image stack: global (whole-micrograph) "
-            "filtering is not possible for pre-extracted particles, so filters are "
-            "computed per particle instead. Set 'use_stored_image_stack: false' on the "
-            "particle stack to re-extract particles from the micrographs.",
-            UserWarning,
-            stacklevel=2,
+    if apply_global_filtering:
+        raise ValueError(
+            "The particle stack stores its particle images, and global "
+            "(whole-micrograph) filtering is not possible for pre-extracted particles. "
+            "Set 'apply_global_filtering: false' to filter each stored particle image, "
+            "or set 'use_stored_image_stack: false' on the particle stack to "
+            "re-extract the particles from the micrographs and filter them globally."
         )
     return stored, False
 
@@ -849,9 +854,10 @@ def setup_particle_backend_kwargs(
     -----
     When no ``image_stack`` is passed and the particle stack holds a stored image stack
     (see :func:`resolve_particle_image_source`), the stored particle images are used
-    with per-particle filtering instead of extracting from the micrographs. This only
-    happens when ``mean_stack``, ``std_stack`` and ``particle_indices`` are not given
-    either: those describe full-size micrograph maps, so the micrographs are used.
+    with per-particle filtering instead of extracting from the micrographs; this
+    requires ``apply_global_filtering=False`` and raises ``ValueError`` otherwise. This
+    only happens when ``mean_stack``, ``std_stack`` and ``particle_indices`` are not
+    given either: those describe full-size micrograph maps, so the micrographs are used.
     """
     caller_gave_micrograph_inputs = (
         mean_stack is not None or std_stack is not None or particle_indices is not None

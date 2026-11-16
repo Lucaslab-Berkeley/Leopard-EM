@@ -43,8 +43,9 @@ class ParticleStackHDF5(_ParticleStackBase):
     * **Stored image stack**: when the file has an ``image_stack`` and
       ``use_stored_image_stack`` is True (default), programs (refine, optimize,
       constrained search) use those particle images directly -- the micrographs are
-      not needed -- and compute filters per particle, since whole-micrograph
-      (global) filtering is impossible without the micrograph. Set
+      not needed -- and compute filters per particle. Whole-micrograph (global)
+      filtering is impossible without the micrograph, so the program must set
+      ``apply_global_filtering: false`` (it raises otherwise). Set
       ``use_stored_image_stack: false`` to re-extract from the micrographs instead.
     * **Stored local stats**: per-particle statistic maps under ``/local_stats``
       (any subset of the ``*_path`` columns) are used in place of re-reading and
