@@ -108,6 +108,7 @@ def _crop_rfft_slices(
     fourier_slices: torch.Tensor,
     padded_shape: tuple[int, int],
     output_shape: tuple[int, int],
+    rows_centered: bool = True,
 ) -> torch.Tensor:
     """Crop RFFT slices of a padded volume back to the template size.
 
@@ -119,6 +120,10 @@ def _crop_rfft_slices(
         Real-space shape (H, W) of the padded projections.
     output_shape : tuple[int, int]
         Real-space shape (h, w) to crop to.
+    rows_centered : bool, optional
+        True (default) if the zero frequency is centered along dim -2, as returned by
+        ``extract_central_slices_rfft_3d``; False if it is at row index 0. The output
+        uses the same layout as the input.
 
     Returns
     -------
@@ -126,7 +131,9 @@ def _crop_rfft_slices(
         Slices with shape (..., h, w // 2 + 1).
     """
     # pylint: disable=not-callable
-    projections = torch.fft.ifftshift(fourier_slices, dim=(-2,))
+    projections = fourier_slices
+    if rows_centered:
+        projections = torch.fft.ifftshift(projections, dim=(-2,))
     projections = torch.fft.irfftn(projections, s=padded_shape, dim=(-2, -1))
     projections = torch.fft.fftshift(projections, dim=(-2, -1))  # origin to center
 
@@ -137,7 +144,8 @@ def _crop_rfft_slices(
 
     projections = torch.fft.ifftshift(projections, dim=(-2, -1))  # center to origin
     cropped: torch.Tensor = torch.fft.rfftn(projections, dim=(-2, -1))
-    cropped = torch.fft.fftshift(cropped, dim=(-2,))
+    if rows_centered:
+        cropped = torch.fft.fftshift(cropped, dim=(-2,))
     return cropped
 
 

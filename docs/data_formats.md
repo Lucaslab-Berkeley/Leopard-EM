@@ -127,7 +127,7 @@ New columns with descriptions are listed below:
 
 | Column Name                   | Type  | Description                                                                                       |
 |-------------------------------|-------|---------------------------------------------------------------------------------------------------|
-| `refined_mip`                 | float | New maximum cross-correlation over refinement search space.                                       |
+| `refined_mip`                 | float | Cross-correlation at the refined hypothesis (the one with the best z-score).                      |
 | `refined_scaled_mip`          | float | New scaled MIP value (z-score) normalized by cross-correlation mean and standard deviation.       |
 | `refined_pos_x`               | int   | The refined x position of the particle, top-left corner of the template.                          |
 | `refined_pos_y`               | int   | The refined y position of the particle, top-left corner of the template.                          |

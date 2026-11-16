@@ -350,9 +350,15 @@ class ConstrainedSearchManager(BaseModel2DTM):
                 self.orientation_refinement_config.euler_angles_offsets[0].shape[0]
             )
 
+        # The constrained prior is not at the crop center and its threshold assumes
+        # the whole valid crop, so the GEMM backend searches every position there
         result: dict[str, np.ndarray] = {}
         result = core_refine_template(
-            batch_size=orientation_batch_size, **backend_kwargs
+            batch_size=orientation_batch_size,
+            backend=self.computational_config.backend,
+            shift_search_radius=None,
+            fft_centering=False,
+            **backend_kwargs,
         )
         result = {k: v.cpu().numpy() for k, v in result.items()}
         return result

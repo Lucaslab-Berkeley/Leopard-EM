@@ -5,16 +5,16 @@ from typing import Any, ClassVar, Literal
 import numpy as np
 import pandas as pd
 import torch
-from pydantic import ConfigDict
+from pydantic import ConfigDict, Field
 from torch_motion_correction.deformation_field import DeformationField
 
-from leopard_em.backend.core_differentiable_refine import core_differentiable_refine
 from leopard_em.backend.core_refine_template import core_refine_template
 from leopard_em.pydantic_models.config import (
     ComputationalConfigRefine,
     DefocusSearchConfig,
     MovieConfig,
     PixelSizeSearchConfig,
+    PositionRefinementConfig,
     PreprocessingFilters,
     RefineOrientationConfig,
 )
@@ -78,6 +78,9 @@ class RefineTemplateManager(BaseModel2DTM):
         The template volume tensor (excluded from serialization).
     movie_config : MovieConfig
         Configuration for the movie.
+    position_refinement_config : PositionRefinementConfig
+        How particle positions are searched by the ``"gemm"`` backend (window
+        half-width and FFT centering). Defaults to a +/- 2 pixel window.
 
     Methods
     -------
@@ -107,6 +110,9 @@ class RefineTemplateManager(BaseModel2DTM):
     computational_config: ComputationalConfigRefine
     movie_config: MovieConfig
     apply_global_filtering: bool = True
+    position_refinement_config: PositionRefinementConfig = Field(
+        default_factory=PositionRefinementConfig
+    )
 
     # Excluded tensors
     template_volume: ExcludedTensor
@@ -406,8 +412,9 @@ class RefineTemplateManager(BaseModel2DTM):
         correlation_batch_size : int
             Number of orientations to process at once. Defaults to 32.
         use_differentiable : bool
-            If True, use differentiable refine. If False, use regular refine.
-            Defaults to False.
+            If True, run with grad mode enabled and return the result as tensors, so
+            the refined cross-correlation and z-score carry gradients to any input
+            that requires grad. If False, return numpy arrays. Defaults to False.
 
         Returns
         -------
@@ -415,22 +422,22 @@ class RefineTemplateManager(BaseModel2DTM):
             The result of the refine template program. Returns torch.Tensor
             for differentiable refine, np.ndarray for regular refine.
         """
-        # pylint: disable=duplicate-code
+        refine_options: dict[str, Any] = {
+            "batch_size": correlation_batch_size,
+            "num_cuda_streams": self.computational_config.num_cpus,
+            "backend": self.computational_config.backend,
+            "shift_search_radius": self.position_refinement_config.shift_search_radius,
+            "fft_centering": self.position_refinement_config.fft_centering,
+        }
         if use_differentiable:
-            result = core_differentiable_refine(
-                batch_size=correlation_batch_size,
-                num_cuda_streams=self.computational_config.num_cpus,
-                **backend_kwargs,
-            )
-            # Keep as torch.Tensor for differentiable refine
-            return result
-        result = core_refine_template(
-            batch_size=correlation_batch_size,
-            num_cuda_streams=self.computational_config.num_cpus,
-            **backend_kwargs,
-        )
-        result = {k: v.cpu().numpy() for k, v in result.items()}
-        return result
+            with torch.enable_grad():
+                tensor_result: dict[str, np.ndarray | torch.Tensor] = {
+                    **core_refine_template(**refine_options, **backend_kwargs)
+                }
+            return tensor_result
+
+        result = core_refine_template(**refine_options, **backend_kwargs)
+        return {k: v.cpu().numpy() for k, v in result.items()}
 
     # pylint: disable=too-many-locals
     def refine_result_to_dataframe(
