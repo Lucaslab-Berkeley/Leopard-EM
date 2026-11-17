@@ -4,6 +4,7 @@ import json
 
 import mrcfile
 import numpy as np
+import pandas as pd
 import pytest
 import torch
 import yaml
@@ -153,3 +154,39 @@ def test_floor_too_high_reports_none(monkeypatch, tmp_path, config_path):
     summary = manager.run()
     assert summary["thresholds"][0]["phase_randomized"] is None
     assert "analytic" not in summary["thresholds"][0]
+
+
+def test_null_particles_are_the_counted_peaks(monkeypatch, tmp_path, config_path):
+    def run_with_maps(self, *args, **kwargs):
+        _fake_run(self, *args, **kwargs)
+        result = self.match_template_result
+        rng = np.random.default_rng(1)
+        for name in (
+            "mip",
+            "orientation_psi",
+            "orientation_theta",
+            "orientation_phi",
+            "relative_defocus",
+            "correlation_average",
+            "correlation_variance",
+        ):
+            values = rng.normal(size=(VALID, VALID)).astype(np.float32)
+            setattr(result, name, torch.from_numpy(values))
+        result.total_projections = 7
+
+    monkeypatch.setattr(MatchTemplateManager, "run_match_template", run_with_maps)
+    manager = NullCalibrationManager(
+        match_template_config_path=str(config_path),
+        output_directory=str(tmp_path / "null"),
+        seeds=[3],
+        peak_floor=1.5,
+        mask_radius=4.0,
+        border=2,
+        write_null_particles=True,
+    )
+    null_peaks = manager.run_phase_randomized_null()
+    df = pd.read_csv(tmp_path / "null" / "null_seed3_particles.csv")
+    assert len(df) == len(null_peaks.zscores[0])
+    np.testing.assert_allclose(df["scaled_mip"], null_peaks.zscores[0], rtol=1e-6)
+    assert (df["total_correlations"] == 7).all()
+    assert (df["pos_y_img"] - df["pos_y"] == TEMPLATE // 2).all()

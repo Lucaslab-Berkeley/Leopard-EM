@@ -35,6 +35,7 @@ from leopard_em.analysis.empirical_null import (
     distinct_peaks,
     valid_region,
 )
+from leopard_em.analysis.match_template_peaks import MatchTemplatePeaks
 from leopard_em.analysis.zscore_metric import gaussian_noise_zscore_cutoff
 from leopard_em.pydantic_models.custom_types import BaseModel2DTM
 from leopard_em.pydantic_models.managers.match_template_manager import (
@@ -53,6 +54,43 @@ RESULT_NAMES = (
     "orientation_phi",
     "relative_defocus",
 )
+
+
+def peaks_at(result: Any, peaks: DistinctPeaks) -> MatchTemplatePeaks:
+    """The match_template statistics of a result at the given distinct peaks.
+
+    Same fields as :meth:`MatchTemplateResult.locate_peaks`, at positions found by
+    :func:`~leopard_em.analysis.empirical_null.distinct_peaks` instead, which takes
+    linear time; the pairwise peak filter of ``locate_peaks`` is too slow for the
+    tens of thousands of peaks a low floor gives on a 4k null map.
+
+    Parameters
+    ----------
+    result : MatchTemplateResult
+        The search's result maps.
+    peaks : DistinctPeaks
+        Positions in those maps.
+
+    Returns
+    -------
+    MatchTemplatePeaks
+    """
+    device = result.scaled_mip.device
+    pos_y = torch.as_tensor(peaks.pos_y, dtype=torch.long, device=device)
+    pos_x = torch.as_tensor(peaks.pos_x, dtype=torch.long, device=device)
+    return MatchTemplatePeaks(
+        pos_y=pos_y,
+        pos_x=pos_x,
+        mip=result.mip[pos_y, pos_x],
+        scaled_mip=result.scaled_mip[pos_y, pos_x],
+        psi=result.orientation_psi[pos_y, pos_x],
+        theta=result.orientation_theta[pos_y, pos_x],
+        phi=result.orientation_phi[pos_y, pos_x],
+        relative_defocus=result.relative_defocus[pos_y, pos_x],
+        correlation_mean=result.correlation_average[pos_y, pos_x],
+        correlation_variance=result.correlation_variance[pos_y, pos_x],
+        total_correlations=result.total_projections,
+    )
 
 
 class AnalyticNullConfig(BaseModel):
@@ -117,9 +155,10 @@ class NullCalibrationManager(BaseModel2DTM):
         map's shape, e.g. carbon or flat regions. Use the same mask for the real
         micrograph.
     write_null_particles : bool
-        Also export each copy's result maps and a particle stack CSV of its peaks
-        above ``peak_floor`` (``null_seed<seed>_particles.csv``), e.g. to refine the
-        null candidates the same way as the real ones. Default False.
+        Also export each copy's result maps and a particle stack CSV of its distinct
+        peaks at or above ``peak_floor`` (``null_seed<seed>_particles.csv``; the same
+        peaks that are counted, so border and mask apply), e.g. to refine the null
+        candidates the same way as the real ones. Default False.
     analytic : AnalyticNullConfig
         Settings of the analytic prediction.
     """
@@ -215,19 +254,15 @@ class NullCalibrationManager(BaseModel2DTM):
                 orientation_batch_size=orientation_batch_size,
                 do_result_export=self.write_null_particles,
             )
-            zscore = manager.match_template_result.scaled_mip
-            peaks.append(
-                distinct_peaks(
-                    zscore, self.peak_floor, self.mask_radius, self.border, mask
-                )
+            result = manager.match_template_result
+            found = distinct_peaks(
+                result.scaled_mip, self.peak_floor, self.mask_radius, self.border, mask
             )
+            peaks.append(found)
             if self.write_null_particles:
-                df = manager.results_to_dataframe(
-                    locate_peaks_kwargs={
-                        "z_score_cutoff": self.peak_floor,
-                        "mask_radius": self.mask_radius,
-                    }
-                )
+                # the counted null peaks themselves, so refined nulls match the count
+                result.match_template_peaks = peaks_at(result, found)
+                df = manager.results_to_dataframe()
                 df.to_csv(Path(self.output_directory) / f"{name}_particles.csv")
             del manager
             if torch.cuda.is_available():
