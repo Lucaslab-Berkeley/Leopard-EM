@@ -34,7 +34,7 @@ from .field import (
 )
 from .lattice import AnalyticNullPrediction, predict_null_rate
 
-DEFAULT_THRESHOLDS = np.round(np.arange(4.5, 9.5, 0.01), 3)
+DEFAULT_THRESHOLDS = np.round(np.arange(2.0, 10.0, 0.01), 3)
 
 
 def _grid_step(values: np.ndarray) -> float:
@@ -164,7 +164,7 @@ def predict_match_template_null(
     batch_size : int
         Orientations per batch (each uses every defocus plane). Default 4.
     thresholds : np.ndarray | None
-        Thresholds to evaluate. Default 4.5 to 9.5 in steps of 0.01.
+        Thresholds to evaluate. Default 2 to 10 in steps of 0.01.
     seed : int
         Seed for sampling orientations. Default 0.
     device : torch.device | str
