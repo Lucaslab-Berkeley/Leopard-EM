@@ -28,6 +28,7 @@ nav = [
     { "Optimize Template details"  = "programs/optimize_template.md" },
     { "Constrained Search details" = "programs/constrained_search.md" },
     { "Peak & Frame Inspection"    = "programs/inspect_peaks.md" },
+    { "Null Calibration"           = "programs/null_calibration.md" },
   ]},
   { "Program Output Formats" = [
     { "Overview"                             = "data_formats.md" },

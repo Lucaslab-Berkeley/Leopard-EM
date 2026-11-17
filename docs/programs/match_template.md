@@ -272,6 +272,11 @@ df = mt_manager.results_to_dataframe(locate_peaks_kwargs={"z_score_cutoff": 7.8}
 
 Currently, Leopard-EM uses a false-positive rate of 1 per micrograph by default to differentiate between true particles and background.
 
+!!! note "Calibrating the threshold"
+
+    The default threshold treats every correlation of the search as an independent trial, so the number of false positives it allows is only approximately one.
+    The [null calibration program](null_calibration.md) measures the null of your exact search configuration, from phase-randomised copies of the micrograph or analytically, and gives the threshold for any target.
+
 ### Match template output files
 
 The provided program script will output the statistics maps over the image for the search as well as a Pandas DataFrame with compacted information on found particles.
