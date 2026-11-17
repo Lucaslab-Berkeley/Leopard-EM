@@ -12,10 +12,10 @@ defocus_refinement_config:
   defocus_step: 20.0
 orientation_refinement_config:
   enabled: false
-  psi_step_coarse: 1.5
-  psi_step_fine: 0.15
-  theta_step_coarse: 2.5
-  theta_step_fine: 0.25
+  psi_step_coarse: 2.0
+  psi_step_fine: 0.5
+  theta_step_coarse: 2.0
+  theta_step_fine: 0.5
 pixel_size_refinement_config:
   enabled: false
   pixel_size_min: -0.005

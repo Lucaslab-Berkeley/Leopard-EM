@@ -1,6 +1,7 @@
 """Tests for the OrientationSearchConfig and RefineOrientationConfig models"""
 
 import pytest
+import roma
 import torch
 from pydantic import ValidationError
 
@@ -118,10 +119,11 @@ def test_refine_orientation_default_values():
     refinement are correctly set to their expected values.
     """
     config = RefineOrientationConfig()
-    assert config.psi_step_coarse == 1.5
-    assert config.psi_step_fine == 0.1
-    assert config.theta_step_coarse == 2.5
-    assert config.theta_step_fine == 0.25
+    assert config.psi_step_coarse == 2.0
+    assert config.psi_step_fine == 0.5
+    assert config.theta_step_coarse == 2.0
+    assert config.theta_step_fine == 0.5
+    assert config.base_grid_method == "uniform"
 
 
 def test_refine_orientation_invalid_in_plane_angular_step_coarse():
@@ -193,4 +195,40 @@ def test_refine_orientation_euler_angles_offsets():
     euler_angles_offsets = config.euler_angles_offsets
 
     assert isinstance(euler_angles_offsets, torch.Tensor)
-    assert euler_angles_offsets.shape == (42, 3)
+    # 20 tilt directions (rings at 0, 1 and 2 degrees) x 7 in-plane offsets
+    assert euler_angles_offsets.shape == (140, 3)
+
+
+def _rotation_vectors_deg(euler_angles: torch.Tensor) -> torch.Tensor:
+    """Rotation vectors (axis x angle, degrees) of ZYZ Euler angles in degrees."""
+    rotmat = roma.euler_to_rotmat("ZYZ", euler_angles.double(), degrees=True)
+    return torch.rad2deg(roma.rotmat_to_rotvec(rotmat))
+
+
+@pytest.mark.parametrize("base_grid_method", ["uniform", "healpix", "cartesian"])
+def test_refine_orientation_offsets_cover_all_axes(base_grid_method):
+    """
+    Test that the default refinement offsets cover rotations about all three axes.
+
+    The tilts should reach theta_step_coarse about both x and y, the in-plane
+    rotations psi_step_coarse about z, and the identity should be included.
+    """
+    config = RefineOrientationConfig(base_grid_method=base_grid_method)
+    rotvec = _rotation_vectors_deg(config.euler_angles_offsets)
+    tilt = torch.hypot(rotvec[:, 0], rotvec[:, 1])
+
+    assert rotvec[:, 0].abs().max() > 1.5
+    assert rotvec[:, 1].abs().max() > 1.5
+    assert tilt.max() < config.theta_step_coarse + 0.05
+    assert torch.allclose(
+        rotvec[:, 2].abs().max(),
+        torch.tensor(config.psi_step_coarse, dtype=rotvec.dtype),
+        atol=0.05,
+    )
+    assert bool((rotvec.norm(dim=1) < 1e-6).any())
+
+
+def test_refine_orientation_disabled_offsets():
+    """Test that a disabled refinement searches only the identity."""
+    config = RefineOrientationConfig(enabled=False)
+    assert torch.equal(config.euler_angles_offsets, torch.zeros((1, 3)))

@@ -89,21 +89,42 @@ Defocus refinement can be turned off by setting `enabled: false`, but is enabled
 
 ### Sampling orientation space locally
 
-Orientation space is sampled in fine increments during the refinement step, and this sampling is configured with the `orientation_refinement_config` block.
-Here, the in-plane rotation sampling increment is controlled by the `psi_step_fine` field, and the range of in-plane rotations is defined by `psi_step_coarse`.
-In the configuration example below, the relative searched relative in-plane rotations would be \( [-1.5, -1.35, \dots, 1.35, 1.5] \) in units of degrees.
-The same applies for the out-of-plane rotations controlled by the `theta_step_coarse` and `theta_step_fine` fields.
+Orientation space is sampled locally around each particle's orientation during the refinement step, and this sampling is configured with the `orientation_refinement_config` block.
+The set of orientation offsets is built around the pole and rotated onto every particle, and covers rotations about all three axes:
+
+- `theta_step_coarse` sets how far the out-of-plane tilts reach, in every direction, and `theta_step_fine` their spacing;
+- `psi_step_coarse` sets the range of in-plane rotations, \( [-\text{psi\_step\_coarse}, \text{psi\_step\_coarse}] \), and `psi_step_fine` their spacing.
+
+With the configuration below (the defaults), the tilts reach 2° in every direction at 0.5° spacing, and the in-plane rotations are \( [-2.0, -1.5, \dots, 1.5, 2.0] \) degrees: 576 orientations.
 
 ```yaml
 orientation_refinement_config:
   enabled: true
-  psi_step_coarse:   1.5   # in degrees
-  psi_step_fine:     0.15  # in degrees
-  theta_step_coarse: 2.5   # in degrees
+  psi_step_coarse:   2.0   # in degrees
+  psi_step_fine:     0.5   # in degrees
+  theta_step_coarse: 2.0   # in degrees
+  theta_step_fine:   0.5   # in degrees
+```
+
+The reach (`theta_step_coarse`, `psi_step_coarse`) should cover the distance from a `match_template` grid point to the particle's true orientation; 2° suits the default `match_template` sampling.
+Keep `psi_step_coarse` a whole multiple of `psi_step_fine`, so that an in-plane offset of 0 is searched.
+The `phi_step_coarse` and `phi_step_fine` fields are no longer used: the tilt directions always cover the full circle.
+
+The number of orientations grows quickly with finer steps (with the square of `theta_step_coarse / theta_step_fine`, times `psi_step_coarse / psi_step_fine`): 0.1° steps over 2.5° and 1.5° give 63,333 orientations.
+For a finer pose, refine twice instead: run once with the settings above, then run `refine_template` again on its output with a smaller, finer grid and a narrower defocus range, for example
+
+```yaml
+orientation_refinement_config:
+  enabled: true
+  psi_step_coarse:   1.0   # in degrees
+  psi_step_fine:     0.25  # in degrees
+  theta_step_coarse: 1.0   # in degrees
   theta_step_fine:   0.25  # in degrees
 ```
 
-A good way of choosing these parameters is setting the coarse angular step size to the step size used in `match_template` while the fine angular step size is a free parameter to choose based on desired accuracy.
+The second run starts from the first run's refined orientations, defocus and positions, since the particle stack uses the `refined_*` columns when they are present.
+You can also restrict the second run to particles near the detection threshold.
+
 Also, like the defocus refinement search, orientation refinement can be disabled by setting `enabled: false`, but it is enabled by default.
 
 ### Varying pixel size during refinement
