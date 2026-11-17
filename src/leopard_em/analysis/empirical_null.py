@@ -20,7 +20,7 @@ from typing import Literal
 
 import numpy as np
 import torch
-from scipy.special import gammainc
+from scipy.special import gammainc  # pylint: disable=no-name-in-module
 from scipy.stats import chi2
 
 ONE_SIGMA = 0.6826894921370859  # coverage of +-1 standard deviation

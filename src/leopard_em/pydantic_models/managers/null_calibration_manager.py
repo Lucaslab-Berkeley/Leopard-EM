@@ -41,19 +41,11 @@ from leopard_em.pydantic_models.custom_types import BaseModel2DTM
 from leopard_em.pydantic_models.managers.match_template_manager import (
     MatchTemplateManager,
 )
+from leopard_em.pydantic_models.results.match_template_result import (
+    _TENSOR_NAMES as RESULT_NAMES,
+)
 from leopard_em.utils.data_io import load_mrc_image
 from leopard_em.utils.phase_randomization import phase_randomize_image
-
-RESULT_NAMES = (
-    "mip",
-    "scaled_mip",
-    "correlation_average",
-    "correlation_variance",
-    "orientation_psi",
-    "orientation_theta",
-    "orientation_phi",
-    "relative_defocus",
-)
 
 
 def peaks_at(result: Any, peaks: DistinctPeaks) -> MatchTemplatePeaks:
