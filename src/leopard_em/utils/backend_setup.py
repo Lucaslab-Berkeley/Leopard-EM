@@ -331,7 +331,8 @@ def _setup_images_filters_from_particles(
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Setup images and filters when images are already particles.
 
-    Handles the case where images_are_particles=True.
+    Handles the case where images_are_particles=True. Filters are computed and
+    applied per particle; global (whole-micrograph) filtering is not supported here.
 
     Parameters
     ----------
@@ -342,7 +343,8 @@ def _setup_images_filters_from_particles(
     template : torch.Tensor
         The 3D template volume.
     apply_global_filtering : bool
-        If True, apply filtering to the full micrograph before particle extraction.
+        Must be False. Caller-provided particle images carry no record of how they
+        were extracted or filtered, and there is no micrograph to filter globally.
     image_stack: torch.Tensor
         The image stack tensor (must be provided).
 
@@ -353,7 +355,23 @@ def _setup_images_filters_from_particles(
         - particle_images_dft: The particle images in Fourier space
         - template_dft: The Fourier transformed template
         - projective_filters: Filters applied to the template
+
+    Raises
+    ------
+    ValueError
+        If ``apply_global_filtering`` is True.
     """
+    # The global branch of '_process_particle_images_for_filters' expects images
+    # cropped from an already-filtered micrograph; given raw particle images it would
+    # skip whitening and normalization altogether. Refuse rather than guess.
+    if apply_global_filtering:
+        raise ValueError(
+            "Global (whole-micrograph) filtering is not possible for pre-extracted "
+            "particle images (images_are_particles=True). Set "
+            "apply_global_filtering=False to filter each particle image, or pass the "
+            "micrographs (images_are_particles=False) to filter globally."
+        )
+
     particle_images = image_stack.to(template.device)
 
     return _process_particle_images_for_filters(
@@ -361,7 +379,7 @@ def _setup_images_filters_from_particles(
         preprocessing_filters=preprocessing_filters,
         template=template,
         particle_images=particle_images,
-        apply_global_filtering=apply_global_filtering,
+        apply_global_filtering=False,
         fixed_image_filters=None,
         fixed_projective_filters=None,
     )
@@ -399,7 +417,8 @@ def setup_images_filters_particle_stack(
     apply_global_filtering : bool, optional
         If True, apply filtering to the full micrograph before particle extraction.
         If False, filters are calculated and applied to the cropped particle images.
-        Default is True.
+        Default is True. Must be False for pre-extracted particles
+        (``images_are_particles=True``), which can only be filtered per particle.
     movie: torch.Tensor | None
         The movie tensor.
     deformation_field: DeformationField | None
@@ -588,8 +607,8 @@ def resolve_particle_image_source(
 
     Notes
     -----
-    Whole-micrograph (global) filtering is impossible for pre-extracted particles, so
-    filters are then computed per particle.
+    Whole-micrograph (global) filtering is impossible for pre-extracted particles, so a
+    stored image stack can only be used with ``apply_global_filtering=False``.
 
     Parameters
     ----------
@@ -601,15 +620,21 @@ def resolve_particle_image_source(
         True when particles will be extracted from a movie (motion-corrected); the
         movie takes precedence over a stored image stack.
     warn_on_filter_switch : bool
-        Warn when a stored image stack forces per-particle filtering although global
-        filtering was requested. Defaults to True.
+        Deprecated and ignored. Requesting global filtering with a stored image stack
+        now raises instead of warning and switching to per-particle filtering.
 
     Returns
     -------
     tuple[torch.Tensor | None, bool]
         The stored image stack to use (or None to extract particles from the
         micrographs/movie as usual) and the effective ``apply_global_filtering``.
+
+    Raises
+    ------
+    ValueError
+        If the stored image stack would be used and ``apply_global_filtering`` is True.
     """
+    del warn_on_filter_switch  # deprecated, no longer used
     stored = particle_stack.get_stored_image_stack()
     if stored is None:
         return None, apply_global_filtering
@@ -623,14 +648,13 @@ def resolve_particle_image_source(
         )
         return None, apply_global_filtering
 
-    if apply_global_filtering and warn_on_filter_switch:
-        warnings.warn(
-            "Using the particle stack's stored image stack: global (whole-micrograph) "
-            "filtering is not possible for pre-extracted particles, so filters are "
-            "computed per particle instead. Set 'use_stored_image_stack: false' on the "
-            "particle stack to re-extract particles from the micrographs.",
-            UserWarning,
-            stacklevel=2,
+    if apply_global_filtering:
+        raise ValueError(
+            "The particle stack stores its particle images, and global "
+            "(whole-micrograph) filtering is not possible for pre-extracted particles. "
+            "Set 'apply_global_filtering: false' to filter each stored particle image, "
+            "or set 'use_stored_image_stack: false' on the particle stack to "
+            "re-extract the particles from the micrographs and filter them globally."
         )
     return stored, False
 
@@ -830,9 +854,10 @@ def setup_particle_backend_kwargs(
     -----
     When no ``image_stack`` is passed and the particle stack holds a stored image stack
     (see :func:`resolve_particle_image_source`), the stored particle images are used
-    with per-particle filtering instead of extracting from the micrographs. This only
-    happens when ``mean_stack``, ``std_stack`` and ``particle_indices`` are not given
-    either: those describe full-size micrograph maps, so the micrographs are used.
+    with per-particle filtering instead of extracting from the micrographs; this
+    requires ``apply_global_filtering=False`` and raises ``ValueError`` otherwise. This
+    only happens when ``mean_stack``, ``std_stack`` and ``particle_indices`` are not
+    given either: those describe full-size micrograph maps, so the micrographs are used.
     """
     caller_gave_micrograph_inputs = (
         mean_stack is not None or std_stack is not None or particle_indices is not None
