@@ -52,8 +52,8 @@ def move_ctf_kwargs_tensors_to_device(
 
 def calculate_ctf_filter_stack_full_args(
     template_shape: tuple[int, int],
-    defocus_u: float,  # in Angstrom
-    defocus_v: float,  # in Angstrom
+    defocus_u: float | torch.Tensor,  # in Angstrom
+    defocus_v: float | torch.Tensor,  # in Angstrom
     defocus_offsets: torch.Tensor,  # in Angstrom, relative
     pixel_size_offsets: torch.Tensor,  # in Angstrom, relative
     **kwargs: Any,
@@ -64,9 +64,9 @@ def calculate_ctf_filter_stack_full_args(
     ----------
     template_shape : tuple[int, int]
         Desired output shape for the filter, in real space.
-    defocus_u : float
+    defocus_u : float | torch.Tensor
         Defocus along the major axis, in Angstroms.
-    defocus_v : float
+    defocus_v : float | torch.Tensor
         Defocus along the minor axis, in Angstroms.
     defocus_offsets : torch.Tensor
         Tensor of defocus offsets to search over, in Angstroms.
@@ -83,7 +83,12 @@ def calculate_ctf_filter_stack_full_args(
     """
     # Calculate the defocus values + offsets in terms of Angstrom
     defocus = defocus_offsets + ((defocus_u + defocus_v) / 2)
-    astigmatism = abs(defocus_u - defocus_v) / 2
+    difference = defocus_u - defocus_v
+    astigmatism: float | torch.Tensor
+    if isinstance(difference, torch.Tensor):
+        astigmatism = difference.abs() / 2
+    else:
+        astigmatism = abs(difference) / 2
 
     # The different Cs values to search over as another dimension
     cs_values = get_cs_range(

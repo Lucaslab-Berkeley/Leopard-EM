@@ -5,16 +5,16 @@ from typing import Any, ClassVar, Literal
 import numpy as np
 import pandas as pd
 import torch
-from pydantic import ConfigDict
+from pydantic import ConfigDict, Field
 from torch_motion_correction.deformation_field import DeformationField
 
-from leopard_em.backend.core_differentiable_refine import core_differentiable_refine
 from leopard_em.backend.core_refine_template import core_refine_template
 from leopard_em.pydantic_models.config import (
     ComputationalConfigRefine,
     DefocusSearchConfig,
     MovieConfig,
     PixelSizeSearchConfig,
+    PositionRefinementConfig,
     PreprocessingFilters,
     RefineOrientationConfig,
 )
@@ -78,6 +78,9 @@ class RefineTemplateManager(BaseModel2DTM):
         The template volume tensor (excluded from serialization).
     movie_config : MovieConfig
         Configuration for the movie.
+    position_refinement_config : PositionRefinementConfig
+        How particle positions are searched by the ``"gemm"`` backend (window
+        half-width and FFT centering). Defaults to a +/- 2 pixel window.
 
     Methods
     -------
@@ -86,7 +89,8 @@ class RefineTemplateManager(BaseModel2DTM):
         Initialize the refine template manager.
     make_backend_core_function_kwargs(self) -> dict[str, Any]
         Create the kwargs for the backend refine_template core function.
-    run_refine_template(self, correlation_batch_size: int = 32) -> None
+    run_refine_template(self, correlation_batch_size: int = 32,
+                        particle_batch_size: int | None = None) -> None
         Run the refine template program.
     refine_result_to_dataframe(self, result, prefer_refined_angles: bool = True)
         -> pd.DataFrame
@@ -107,6 +111,9 @@ class RefineTemplateManager(BaseModel2DTM):
     computational_config: ComputationalConfigRefine
     movie_config: MovieConfig
     apply_global_filtering: bool = True
+    position_refinement_config: PositionRefinementConfig = Field(
+        default_factory=PositionRefinementConfig
+    )
 
     # Excluded tensors
     template_volume: ExcludedTensor
@@ -202,6 +209,7 @@ class RefineTemplateManager(BaseModel2DTM):
             pre_exposure=self.movie_config.pre_exposure,
             fluence_per_frame=self.movie_config.fluence_per_frame,
             device_list=self.computational_config.gpu_devices,
+            pad_factor=self.computational_config.template_pad_factor,
         )
 
     def make_differentiable_backend_kwargs(
@@ -275,6 +283,7 @@ class RefineTemplateManager(BaseModel2DTM):
             std_stack=std_stack,
             particle_indices=particle_indices,
             images_are_particles=images_are_particles,
+            pad_factor=self.computational_config.template_pad_factor,
         )
 
     def run_refine_template(
@@ -283,6 +292,7 @@ class RefineTemplateManager(BaseModel2DTM):
         correlation_batch_size: int = 32,
         output_format: Literal["csv", "hdf5"] | None = None,
         allow_file_overwrite: bool | None = None,
+        particle_batch_size: int | None = None,
     ) -> None:
         """Run the refine template program and export the resultant DataFrame.
 
@@ -291,7 +301,7 @@ class RefineTemplateManager(BaseModel2DTM):
         output_dataframe_path : str
             Path to save the refined particle data.
         correlation_batch_size : int
-            Number of cross-correlations to process in one batch, defaults to 32.
+            Number of orientations to process in one batch, defaults to 32.
         output_format : Literal["csv", "hdf5"] | None
             Output back-end to write. Defaults to None, which infers it from the
             extension of ``output_dataframe_path`` (``.csv`` / ``.h5``, ``.hdf5``) and
@@ -300,6 +310,10 @@ class RefineTemplateManager(BaseModel2DTM):
             Deprecated and ignored; an existing file at ``output_dataframe_path`` is
             always overwritten (atomically), unless it is the input particle stack's
             file, which raises ``ValueError``.
+        particle_batch_size : int | None
+            Number of particles each GPU moves to the device and refines at once, to
+            bound GPU memory for large particle stacks. Defaults to None (all of a
+            GPU's particles at once).
         """
         if allow_file_overwrite is not None:
             _warn_allow_file_overwrite_deprecated()
@@ -310,7 +324,11 @@ class RefineTemplateManager(BaseModel2DTM):
 
         backend_kwargs = self.make_backend_core_function_kwargs()
 
-        result = self.get_refine_result(backend_kwargs, correlation_batch_size)
+        result = self.get_refine_result(
+            backend_kwargs,
+            correlation_batch_size,
+            particle_batch_size=particle_batch_size,
+        )
 
         self.export_results(
             output_dataframe_path=output_dataframe_path,
@@ -331,6 +349,7 @@ class RefineTemplateManager(BaseModel2DTM):
         images_are_particles: bool = False,
         output_format: Literal["csv", "hdf5"] | None = None,
         allow_file_overwrite: bool | None = None,
+        particle_batch_size: int | None = None,
     ) -> None:
         """Run the differentiable refine template program and export the DataFrame.
 
@@ -364,7 +383,10 @@ class RefineTemplateManager(BaseModel2DTM):
             Deprecated and ignored; an existing file at ``output_dataframe_path`` is
             always overwritten (atomically), unless it is the input particle stack's
             file, which raises ``ValueError``.
-
+        particle_batch_size : int | None
+            Number of particles each GPU moves to the device and refines at once, to
+            bound GPU memory for large particle stacks. Defaults to None (all of a
+            GPU's particles at once).
         """
         if allow_file_overwrite is not None:
             _warn_allow_file_overwrite_deprecated()
@@ -383,7 +405,10 @@ class RefineTemplateManager(BaseModel2DTM):
         )
 
         result = self.get_refine_result(
-            backend_kwargs, correlation_batch_size, use_differentiable=True
+            backend_kwargs,
+            correlation_batch_size,
+            use_differentiable=True,
+            particle_batch_size=particle_batch_size,
         )
 
         self.export_results(
@@ -397,6 +422,7 @@ class RefineTemplateManager(BaseModel2DTM):
         backend_kwargs: dict,
         correlation_batch_size: int = 32,
         use_differentiable: bool = False,
+        particle_batch_size: int | None = None,
     ) -> dict[str, np.ndarray | torch.Tensor]:
         """Get refine template result.
 
@@ -407,8 +433,13 @@ class RefineTemplateManager(BaseModel2DTM):
         correlation_batch_size : int
             Number of orientations to process at once. Defaults to 32.
         use_differentiable : bool
-            If True, use differentiable refine. If False, use regular refine.
-            Defaults to False.
+            If True, run with grad mode enabled and return the result as tensors, so
+            the refined cross-correlation and z-score carry gradients to any input
+            that requires grad. If False, return numpy arrays. Defaults to False.
+        particle_batch_size : int | None
+            Number of particles each GPU moves to the device and refines at once, to
+            bound GPU memory for large particle stacks. Defaults to None (all of a
+            GPU's particles at once).
 
         Returns
         -------
@@ -416,22 +447,23 @@ class RefineTemplateManager(BaseModel2DTM):
             The result of the refine template program. Returns torch.Tensor
             for differentiable refine, np.ndarray for regular refine.
         """
-        # pylint: disable=duplicate-code
+        refine_options: dict[str, Any] = {
+            "batch_size": correlation_batch_size,
+            "num_cuda_streams": self.computational_config.num_cpus,
+            "backend": self.computational_config.backend,
+            "shift_search_radius": self.position_refinement_config.shift_search_radius,
+            "fft_centering": self.position_refinement_config.fft_centering,
+            "particle_batch_size": particle_batch_size,
+        }
         if use_differentiable:
-            result = core_differentiable_refine(
-                batch_size=correlation_batch_size,
-                num_cuda_streams=self.computational_config.num_cpus,
-                **backend_kwargs,
-            )
-            # Keep as torch.Tensor for differentiable refine
-            return result
-        result = core_refine_template(
-            batch_size=correlation_batch_size,
-            num_cuda_streams=self.computational_config.num_cpus,
-            **backend_kwargs,
-        )
-        result = {k: v.cpu().numpy() for k, v in result.items()}
-        return result
+            with torch.enable_grad():
+                tensor_result: dict[str, np.ndarray | torch.Tensor] = {
+                    **core_refine_template(**refine_options, **backend_kwargs)
+                }
+            return tensor_result
+
+        result = core_refine_template(**refine_options, **backend_kwargs)
+        return {k: v.cpu().numpy() for k, v in result.items()}
 
     # pylint: disable=too-many-locals
     def refine_result_to_dataframe(

@@ -38,6 +38,10 @@ preprocessing_filters:
 computational_config:
   gpu_ids: 0
   num_cpus: 1
+  backend: gemm  # "gemm" (default) or "fft"
+position_refinement_config:  # used by the "gemm" backend only
+  shift_search_radius: 2  # window half-width in pixels; null searches the whole valid crop
+  fft_centering: true     # start the window at the peak of one FFT correlation at the prior pose
 apply_global_filtering: true
 movie_config:
   enabled: false

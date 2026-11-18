@@ -49,7 +49,9 @@ def test_reduce_refine_best_zscore_matches_snapshot():
     """The reducer reproduces the pre-refactor refined statistics exactly.
 
     Expected values were captured from the original implementation (which
-    pre-computed z-score inside the batch generator) on the same synthetic data.
+    pre-computed z-score inside the batch generator) on the same synthetic data,
+    except ``max_cc``: it used to be the largest correlation in the batch holding the
+    best z-score, and is now the correlation at the best hypothesis.
     """
     batches, corr_mean, corr_std = _build_synthetic_batches()
     defocus_offsets = torch.tensor([-10.0, 0.0, 10.0])  # len N_DEF
@@ -67,7 +69,10 @@ def test_reduce_refine_best_zscore_matches_snapshot():
         value = result[key]
         return value.item() if torch.is_tensor(value) else value
 
-    assert _val("max_cc") == 3.4028263092041016
+    # The cross-correlation at the best hypothesis (pixel size 1, defocus 1, angle 2
+    # in the first batch, position (1, 0)); not the largest one in that batch.
+    assert _val("max_cc") == batches[0][2][1, 1, 2, 1, 0].item()
+    assert _val("max_cc") == 2.63523530960083
     assert _val("max_z_score") == 5.6347527503967285
     assert _val("refined_phi_offset") == -2.2187793254852295
     assert _val("refined_theta_offset") == 0.2589845359325409
@@ -77,6 +82,8 @@ def test_reduce_refine_best_zscore_matches_snapshot():
     assert _val("refined_pos_y") == 1
     assert _val("refined_pos_x") == 0
     assert _val("angle_idx") == 2
+    assert _val("defocus_idx") == 1
+    assert _val("pixel_size_idx") == 1
 
 
 if __name__ == "__main__":

@@ -21,6 +21,7 @@ from .orientation_search import (
     RefineOrientationConfig,
 )
 from .pixel_size_search import PixelSizeSearchConfig
+from .position_refinement import PositionRefinementConfig
 
 __all__ = [
     "ArbitraryCurveFilterConfig",
@@ -35,6 +36,7 @@ __all__ = [
     "OrientationSearchConfig",
     "PhaseRandomizationFilterConfig",
     "PixelSizeSearchConfig",
+    "PositionRefinementConfig",
     "PreprocessingFilters",
     "RefineOrientationConfig",
     "WhiteningFilterConfig",

@@ -113,6 +113,7 @@ class OptimizeTemplateManager(BaseModel2DTM):
             pixel_size_offsets=pixel_size_offsets,
             apply_global_filtering=self.apply_global_filtering,
             device_list=self.computational_config.gpu_devices,
+            pad_factor=self.computational_config.template_pad_factor,
         )
 
     def run_optimize_template(
@@ -344,7 +345,9 @@ class OptimizeTemplateManager(BaseModel2DTM):
         # pylint: disable=duplicate-code
         result: dict[str, np.ndarray] = {}
         result = core_refine_template(
-            batch_size=orientation_batch_size, **backend_kwargs
+            batch_size=orientation_batch_size,
+            backend=self.computational_config.backend,
+            **backend_kwargs,
         )
         result = {k: v.cpu().numpy() for k, v in result.items()}
 

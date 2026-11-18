@@ -687,11 +687,16 @@ from leopard_em.pydantic_models.managers import RefineTemplateManager
 
 YAML_CONFIG_PATH = "refine_template_config_60S_intro.yaml"
 DATAFRAME_OUTPUT_PATH = "results_refine_template_60S_intro.csv"
-PARTICLE_BATCH_SIZE = 64  # Tune this values based on GPU memory
+ORIENTATION_BATCH_SIZE = 64  # Number of orientations scored simultaneously
+PARTICLE_BATCH_SIZE = None  # Number of particles scored simultaneously (None = all particles at once)
 
 def main() -> None:
     rt_manager = RefineTemplateManager.from_yaml(YAML_CONFIG_PATH)
-    rt_manager.run_refine_template(DATAFRAME_OUTPUT_PATH, PARTICLE_BATCH_SIZE)
+    rt_manager.run_refine_template(
+        DATAFRAME_OUTPUT_PATH,
+        correlation_batch_size=ORIENTATION_BATCH_SIZE,
+        particle_batch_size=PARTICLE_BATCH_SIZE,
+    )
 
 if __name__ == "__main__":
     main()

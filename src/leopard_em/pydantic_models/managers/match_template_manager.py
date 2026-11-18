@@ -319,7 +319,9 @@ class MatchTemplateManager(BaseModel2DTM):
         euler_angles = self.orientation_search_config.euler_angles
         euler_angles = euler_angles.to(torch.float32)
 
-        template_dft = volume_to_rfft_fourier_slice(template)
+        template_dft = volume_to_rfft_fourier_slice(
+            template, pad_factor=self.computational_config.template_pad_factor
+        )
 
         return {
             "image_dft": image_preprocessed_dft,

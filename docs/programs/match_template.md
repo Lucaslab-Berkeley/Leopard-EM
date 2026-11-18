@@ -251,6 +251,20 @@ Once installed, `zipfft` is importable from the same Python environment as Leopa
     Leopard-EM does not validate that `zipfft` is importable when the `computational_config` is loaded.
     If `backend: zipfft` is configured but the package isn't installed, the run raises a clear `ImportError` ("backend='zipfft' requires the optional 'zipfft' package...") as soon as the first cross-correlation batch is computed.
 
+### Padding the template volume before slice extraction
+
+Template projections are computed as central slices of the template volume's 3D Fourier transform.
+Before that transform, the volume is zero-padded by `computational_config.template_pad_factor` (default `2.0`), matching the default of [torch-fourier-slice](https://github.com/teamtomo/teamtomo)'s `project_3d_to_2d`.
+Padding samples the volume's Fourier transform more finely, which reduces the interpolation error in each extracted slice. Slices are cropped back to the template size before any filtering, so all downstream shapes are unchanged.
+
+```yaml
+computational_config:
+  gpu_ids: [0, 1]
+  template_pad_factor: 2.0  # 1.0 disables template padding
+```
+
+The same field is available on the `computational_config` of every program (refine template, optimize template, constrained search, and peak/frame inspection).
+
 ## Running the match template program
 
 Once you've configured a YAML file, running the match template program is fairly simple.

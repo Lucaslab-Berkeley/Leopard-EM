@@ -1,5 +1,7 @@
 """Utilities related to distributed computing for the backend functions."""
 
+import signal
+import traceback
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -286,7 +288,7 @@ class TensorShapeDataclass:
     """Helper class for sending expected tensor shapes to distributed processes."""
 
     image_dft_shape: tuple[int, int]  # (H, W // 2 + 1)
-    template_dft_shape: tuple[int, int, int]  # (l, h, w // 2 + 1)
+    template_dft_shape: tuple[int, int, int]  # (L, H, W // 2 + 1), may be padded
     ctf_filters_shape: tuple[int, int, int, int]  # (num_Cs, num_defocus, h, w // 2 + 1)
     whitening_filter_template_shape: tuple[int, int]  # (h, w // 2 + 1)
     euler_angles_shape: tuple[int, int]  # (num_orientations, 3)
@@ -334,7 +336,9 @@ def run_multiprocess_jobs(
     Raises
     ------
     RuntimeError
-        If any child process encounters an error.
+        If any child process raises an exception, exits with a non-zero code (for
+        example, killed by the out-of-memory killer), or exits without storing a
+        result under its rank. All processes are joined first.
     ValueError
         If ranks is not None and its length does not match kwargs_list.
 
@@ -363,24 +367,72 @@ def run_multiprocess_jobs(
     if extra_kwargs is None:
         extra_kwargs = {}
 
-    # Manager object for shared result data as a dictionary
-    manager = Manager()
-    result_dict = manager.dict()
-    processes: list[Process] = []
+    # Manager object for shared result data (and child tracebacks) as dictionaries
+    with Manager() as manager:
+        result_dict = manager.dict()
+        error_dict = manager.dict()
+        processes: list[Process] = []
 
-    for rank, kwargs in zip(ranks, kwargs_list, strict=False):
-        args = (*extra_args, result_dict, rank)
+        for rank, kwargs in zip(ranks, kwargs_list, strict=False):
+            args = (target, error_dict, rank, *extra_args, result_dict, rank)
 
-        # Merge per-process kwargs with common kwargs.
-        proc_kwargs = {**extra_kwargs, **kwargs}
-        p = Process(target=target, args=args, kwargs=proc_kwargs)
-        processes.append(p)
-        p.start()
+            # Merge per-process kwargs with common kwargs.
+            proc_kwargs = {**extra_kwargs, **kwargs}
+            p = Process(target=_record_child_errors, args=args, kwargs=proc_kwargs)
+            processes.append(p)
+            p.start()
 
-    if post_start_callback is not None:
-        post_start_callback()
+        if post_start_callback is not None:
+            post_start_callback()
 
-    for p in processes:
-        p.join()
+        for p in processes:
+            p.join()
 
-    return dict(result_dict)
+        results = dict(result_dict)
+        errors = dict(error_dict)
+
+    # A failed child must not silently drop its share of the work
+    failures = []
+    for rank, p in zip(ranks, processes, strict=False):
+        if rank in errors:
+            failures.append(f"process {rank} raised an exception:\n{errors[rank]}")
+        elif p.exitcode != 0:
+            failures.append(f"process {rank} {_describe_exit_code(p.exitcode)}.")
+        elif rank not in results:
+            failures.append(f"process {rank} exited without storing a result.")
+    if failures:
+        raise RuntimeError(
+            f"{len(failures)} of {len(processes)} worker processes failed; no "
+            "results were returned.\n\n" + "\n\n".join(failures)
+        )
+
+    return results
+
+
+def _record_child_errors(
+    target: Callable,
+    error_dict: dict[Any, str],
+    rank: Any,
+    *args: Any,
+    **kwargs: Any,
+) -> None:
+    """Run ``target`` in a child process, storing the traceback of any exception."""
+    try:
+        target(*args, **kwargs)
+    except BaseException:
+        error_dict[rank] = traceback.format_exc()
+        raise
+
+
+def _describe_exit_code(exit_code: int | None) -> str:
+    """Human-readable reason for a child process exit code."""
+    if exit_code is None:
+        return "did not exit"
+    if exit_code < 0:
+        try:
+            name = signal.Signals(-exit_code).name
+        except ValueError:
+            name = f"signal {-exit_code}"
+        hint = " (possibly the out-of-memory killer)" if name == "SIGKILL" else ""
+        return f"was killed by {name}{hint}"
+    return f"exited with code {exit_code}"

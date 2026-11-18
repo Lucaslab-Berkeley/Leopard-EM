@@ -153,13 +153,50 @@ computational_config:
   num_cpus: 2
 ```
 
+<!-- !!! note "Template padding"
+
+    The template volume is zero-padded by `computational_config.template_pad_factor` (default `2.0`) before slices are extracted, for more accurate projections.
+    In refine template, slice extraction is most of the work, so the default padding makes each particle several times slower than `template_pad_factor: 1.0` (see the timings below).
+    See [padding the template volume](match_template.md#padding-the-template-volume-before-slice-extraction) for details. -->
+
+### Scoring backend and position search
+
+Refine template scores every combination of orientation offset, defocus offset, pixel size offset, and particle position, and keeps the one with the largest z-score.
+`computational_config.backend` chooses how those correlations are computed; both choices give the same results to within float32 round-off:
+
+- `"gemm"` (default) computes the correlations directly as matrix multiplications over Fourier coefficients, and only at the positions it needs.
+  On CUDA GPUs, template slices are taken with a fast Triton kernel.
+- `"fft"` correlates every (orientation, defocus) projection with the whole particle image by FFT, and searches every position in the valid correlation crop.
+  The older values `"batched"` and `"streamed"` mean `"fft"`.
+
+With the `"gemm"` backend, positions are searched in a small window, configured by `position_refinement_config`:
+
+```yaml
+position_refinement_config:
+  shift_search_radius: 2   # window half-width in pixels; null searches the whole valid crop
+  fft_centering: true      # start the window at the peak of one FFT correlation at the prior pose
+```
+
+If the best position lands on the edge of the window, the window is moved there (at most twice) and then, if it is still on an edge, the whole valid crop is searched.
+`shift_search_radius: 0` searches only the starting position, with no re-centering.
+
+The `correlation_batch_size` argument of `run_refine_template` is the number of orientations processed at once by either backend.
+The `particle_batch_size` argument is the number of particles each GPU moves to the device and refines at once; the default (`None`) moves all of a GPU's particles at once, so set it to cap GPU memory for large particle stacks.
+
+!!! note "Differentiable refinement"
+
+    `leopard_em.backend.core_refine_template` is differentiable: with grad mode enabled, when any input tensor (for example the template volume DFT) requires grad, the returned `refined_cross_correlation` and `refined_z_score` carry gradients.
+    The search itself is an argmax; the scores of the winning hypotheses are re-computed with differentiable operations.
+    `RefineTemplateManager.get_refine_result(..., use_differentiable=True)` runs it with grad mode enabled and returns tensors.
+    Importing `leopard_em.backend` disables grad mode globally, so wrap your own calls in `with torch.enable_grad():`.
+
 ## Running the refine template program
 
 Once you've configured a YAML file, running the refine template program is fairly simple.
 We have an example script, [`Leopard-EM/programs/run_refine_template.py`](https://github.com/Lucaslab-Berkeley/Leopard-EM/blob/main/programs/refine_template/run_refine_template.py), which processes single particle stack against a single reference template.
-In addition to the YAML configuration path, there are the additional variables `DATAFRAME_OUTPUT_PATH` and `PARTICLE_BATCH_SIZE` near the top of the Python script.
-The latter variable is used to process multiple particles at once since we want to maximize hardware utilization.
-But this parameter also needs to balance available GPU memory.
+In addition to the YAML configuration path, there are the additional variables `DATAFRAME_OUTPUT_PATH`, `ORIENTATION_BATCH_SIZE` and `PARTICLE_BATCH_SIZE` near the top of the Python script.
+`ORIENTATION_BATCH_SIZE` is the number of orientations scored at once: larger batches make better use of the GPU but need more memory.
+`PARTICLE_BATCH_SIZE` is the number of particles each GPU holds and refines at once; leave it as `None` to refine all of a GPU's particles in one pass, or set an integer to cap GPU memory for large particle stacks.
 
-The former variable, `DATAFRAME_OUTPUT_PATH`, will write a new particle stack file with new columns corresponding to the refined position, orientation, defocus, and pixel size on a per-particle basis — as CSV or HDF5, matching the input `particle_stack`'s back-end by default (or override via `output_format` on `run_refine_template(...)`).
+`DATAFRAME_OUTPUT_PATH` will write a new particle stack file with new columns corresponding to the refined position, orientation, defocus, and pixel size on a per-particle basis — as CSV or HDF5, matching the input `particle_stack`'s back-end by default (or override via `output_format` on `run_refine_template(...)`).
 More details on the particle stack csv/HDF5 formats can be found on the [Leopard-EM data formats page](../data_formats.md) and the [particle stack formats page](../data_formats/particle_stack.md).

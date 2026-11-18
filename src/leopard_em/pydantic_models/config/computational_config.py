@@ -1,16 +1,27 @@
 """Computational configuration for 2DTM."""
 
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 import torch
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+from leopard_em.utils.fourier_slice import DEFAULT_FOURIER_PAD_FACTOR
 
 # Type alias for non-negative integer
 NonNegativeInt = Annotated[int, Field(ge=0)]  # pylint: disable=invalid-name
 
 
 class BaseComputationalConfig(BaseModel):
-    """Base class for computational configuration with shared GPU device handling."""
+    """Base class for computational configuration with shared GPU device handling.
+
+    Attributes
+    ----------
+    template_pad_factor : float
+        Zero-padding factor applied to the template volume before taking its 3D Fourier
+        transform, matching ``torch_fourier_slice.project_3d_to_2d``.
+    """
+
+    template_pad_factor: Annotated[float, Field(ge=1.0)] = DEFAULT_FOURIER_PAD_FACTOR
 
     @property
     def gpu_devices(self) -> list[torch.device]:
@@ -73,6 +84,9 @@ class ComputationalConfigMatch(BaseComputationalConfig):
         - The specific string "cpu" which means to use CPU.
     num_cpus : int
         Total number of CPUs to use, defaults to 1.
+    template_pad_factor : float
+        Zero-padding factor for the template volume before its 3D FFT, defaults to
+        2.0. See :class:`BaseComputationalConfig`.
     backend : Literal["streamed", "batched", "zipfft"], optional
         The cross-correlation backend to use for match template. Must be one of
         "streamed", "batched", or "zipfft". When "streamed", individual 2D
@@ -119,10 +133,13 @@ class ComputationalConfigRefine(BaseComputationalConfig):
         - The specific string "cpu" which means to use CPU.
     num_cpus : int
         Total number of CPUs to use, defaults to 1.
-    backend : Optional[str]
-        The backend to use for match template.
-        Must be "streamed" or "batched".
-        Defaults to "streamed".
+    template_pad_factor : float
+        Zero-padding factor for the template volume before its 3D FFT, defaults to
+        2.0. See :class:`BaseComputationalConfig`.
+    backend : Literal["gemm", "fft"]
+        How refine template scores its hypotheses. ``"gemm"`` (default) evaluates the
+        correlations with matrix multiplications. ``"fft"`` correlates every projection
+        with the whole particle image by FFT.
     """
 
     # Type-hinting here is ensuring non-negative integers, and list of at least one
@@ -134,4 +151,12 @@ class ComputationalConfigRefine(BaseComputationalConfig):
         | None
     ) = [0]
     num_cpus: Annotated[int, Field(ge=1)] = 1
-    backend: Literal["streamed", "batched"] = "batched"
+    backend: Literal["gemm", "fft"] = "gemm"
+
+    @field_validator("backend", mode="before")
+    @classmethod
+    def _fft_backend_aliases(cls, value: Any) -> Any:
+        """Map the pre-GEMM backend names ("batched", "streamed") to "fft"."""
+        if value in ("batched", "streamed"):
+            return "fft"
+        return value

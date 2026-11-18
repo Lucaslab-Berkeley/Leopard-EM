@@ -21,9 +21,14 @@ YAML_CONFIG_PATH = "/path/to/constrained-search-configuration.yaml"
 # tables are always written as CSV regardless of this setting.
 DATAFRAME_OUTPUT_PATH = "/path/to/constrained-search-results.csv"
 
-# Number of particles to refine simultaneously. Will need to tune this parameter
-# based on the memory & computational resources available.
-PARTICLE_BATCH_SIZE = 80
+# Number of orientations simulated in refine template as once. Larger values require
+# more GPU memory, but can sometimes be faster.
+ORIENTATION_BATCH_SIZE = 80
+
+# Number of particles each GPU moves to the device and refines at once. None moves all
+# of a GPU's particles at once. Use to tune performance for large particle stacks.
+PARTICLE_BATCH_SIZE = None
+
 FALSE_POSITIVES = 0.005  # False positives per particle
 
 ###############################################################
@@ -43,7 +48,8 @@ def main() -> None:
     cs_manager.run_constrained_search(
         output_dataframe_path=DATAFRAME_OUTPUT_PATH,
         false_positives=FALSE_POSITIVES,
-        orientation_batch_size=PARTICLE_BATCH_SIZE,
+        orientation_batch_size=ORIENTATION_BATCH_SIZE,
+        particle_batch_size=PARTICLE_BATCH_SIZE,
     )
 
     print("Finished core call.")
