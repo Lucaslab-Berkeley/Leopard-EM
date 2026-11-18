@@ -172,6 +172,7 @@ def core_refine_template(
     backend: RefineBackend = "gemm",
     shift_search_radius: int | None = DEFAULT_SHIFT_SEARCH_RADIUS,
     fft_centering: bool = True,
+    particle_batch_size: int | None = None,
 ) -> dict[str, torch.Tensor]:
     """Refine the orientation, defocus, pixel size, and position of particles.
 
@@ -248,12 +249,19 @@ def core_refine_template(
         Which backend scores the hypotheses, see above. Default is ``"gemm"``.
     shift_search_radius : int | None, optional
         Half-width ``r`` in pixels of the position window searched by the ``"gemm"``
-        backend. None searches the whole valid crop (the ``"fft"`` behaviour).
-        Ignored by the ``"fft"`` backend. Default is 2.
+        backend. None searches the whole valid crop (the ``"fft"`` behaviour) When 0,
+        searches only the starting position. Ignored by the ``"fft"`` backend.
+        Default is 2.
     fft_centering : bool, optional
         If True, the ``"gemm"`` window starts at the peak of one FFT correlation at
         the prior orientation, defocus, and pixel size. If False, it starts at the
         center of the valid crop. Ignored by the ``"fft"`` backend. Default is True.
+    particle_batch_size : int | None, optional
+        Number of particles each device moves to the GPU and refines at once, to
+        bound GPU memory for large particle stacks (the template is moved once). With
+        the ``"gemm"`` backend it is also the number of particles per FFT-centering
+        correlation. None (default) moves all of a device's particles at once and
+        batches the FFT centering by ``batch_size``.
 
     Returns
     -------
@@ -267,13 +275,18 @@ def core_refine_template(
     Raises
     ------
     ValueError
-        If ``backend`` is unknown or ``shift_search_radius`` is negative.
+        If ``backend`` is unknown, ``shift_search_radius`` is negative, or
+        ``particle_batch_size`` is less than 1.
     """
     if backend not in ("gemm", "fft"):
         raise ValueError(f"Unknown refine backend '{backend}'. Use 'gemm' or 'fft'.")
     if shift_search_radius is not None and shift_search_radius < 0:
         raise ValueError(
             f"shift_search_radius must be >= 0 or None, got {shift_search_radius}."
+        )
+    if particle_batch_size is not None and particle_batch_size < 1:
+        raise ValueError(
+            f"particle_batch_size must be >= 1 or None, got {particle_batch_size}."
         )
 
     # Convert single device to list for consistent handling
@@ -314,6 +327,7 @@ def core_refine_template(
         kwargs["backend"] = backend
         kwargs["shift_search_radius"] = shift_search_radius
         kwargs["fft_centering"] = fft_centering
+        kwargs["particle_batch_size"] = particle_batch_size
 
     results = run_multiprocess_jobs(
         target=_core_refine_template_single_gpu,
@@ -645,6 +659,7 @@ def _core_refine_template_single_gpu(
     backend: RefineBackend = "gemm",
     shift_search_radius: int | None = DEFAULT_SHIFT_SEARCH_RADIUS,
     fft_centering: bool = True,
+    particle_batch_size: int | None = None,
 ) -> None:
     """Run refine template on a subset of particles on a single GPU.
 
@@ -698,51 +713,71 @@ def _core_refine_template_single_gpu(
         Position window half-width for the ``"gemm"`` backend. Default is 2.
     fft_centering : bool, optional
         Whether the ``"gemm"`` window starts at an FFT correlation peak. Default True.
+    particle_batch_size : int | None, optional
+        Number of particles moved to the device and refined at once. None (default)
+        moves all of this device's particles at once.
     """
     if device.type == "cuda":
         torch.cuda.set_device(device)
 
-    refine_stack = _move_refine_template_stack_to_device(
-        device,
-        particle_stack_dft,
-        particle_indices,
-        template_dft,
-        euler_angles,
-        euler_angle_offsets,
-        defocus_u,
-        defocus_v,
-        defocus_angle,
-        defocus_offsets,
-        pixel_size_offsets,
-        corr_mean,
-        corr_std,
-        projective_filters,
-        mag_matrix,
+    # The template is moved once; particles are moved and refined in chunks
+    template_dft = template_dft.to(device)
+    num_particles = particle_stack_dft.shape[0]
+    chunk_size = max(1, particle_batch_size or num_particles)
+    starts = list(range(0, num_particles, chunk_size)) or [0]
+    progress = _tqdm_for_refine_particle_loop(
+        num_particles, device, device_id, "Refining"
     )
 
-    with torch.no_grad():
-        if backend == "gemm":
-            records = _refine_stack_gemm(
-                refine_stack,
-                ctf_kwargs=ctf_kwargs,
-                batch_size=batch_size,
-                shift_search_radius=shift_search_radius,
-                fft_centering=fft_centering,
-                device=device,
-                device_id=device_id,
-            )
-        else:
-            records = _refine_stack_fft(
-                refine_stack,
-                ctf_kwargs=ctf_kwargs,
-                batch_size=batch_size,
-                num_cuda_streams=num_cuda_streams,
-                device=device,
-                device_id=device_id,
-            )
-        result = _records_to_result(records, refine_stack)
+    chunk_results = []
+    for start in starts:
+        chunk = slice(start, start + chunk_size)
+        refine_stack = _move_refine_template_stack_to_device(
+            device,
+            particle_stack_dft[chunk],
+            particle_indices[chunk],
+            template_dft,
+            euler_angles[chunk],
+            euler_angle_offsets,
+            defocus_u[chunk],
+            defocus_v[chunk],
+            defocus_angle[chunk],
+            defocus_offsets,
+            pixel_size_offsets,
+            corr_mean[chunk],
+            corr_std[chunk],
+            projective_filters[chunk],
+            mag_matrix,
+        )
+        with torch.no_grad():
+            if backend == "gemm":
+                records = _refine_stack_gemm(
+                    refine_stack,
+                    ctf_kwargs=ctf_kwargs,
+                    batch_size=batch_size,
+                    centering_batch_size=particle_batch_size or batch_size,
+                    shift_search_radius=shift_search_radius,
+                    fft_centering=fft_centering,
+                    device=device,
+                    progress=progress,
+                )
+            else:
+                records = _refine_stack_fft(
+                    refine_stack,
+                    ctf_kwargs=ctf_kwargs,
+                    batch_size=batch_size,
+                    num_cuda_streams=num_cuda_streams,
+                    device=device,
+                    progress=progress,
+                )
+            chunk_results.append(_records_to_result(records, refine_stack))
+        del refine_stack
+    progress.close()
 
-    result_dict[device_id] = {k: v.cpu().numpy() for k, v in result.items()}
+    result_dict[device_id] = {
+        key: torch.cat([r[key] for r in chunk_results]).cpu().numpy()
+        for key in chunk_results[0]
+    }
 
 
 class _ParticleRecord(NamedTuple):
@@ -810,17 +845,14 @@ def _refine_stack_fft(
     batch_size: int,
     num_cuda_streams: int,
     device: torch.device,
-    device_id: int,
+    progress: tqdm.tqdm,
 ) -> list[_ParticleRecord]:
     """FFT backend: correlate every hypothesis with the whole particle image."""
     streams = _make_device_streams(device, num_cuda_streams)
     num_particles = refine_stack.particle_stack_dft.shape[0]
-    pbar_iter = _tqdm_for_refine_particle_loop(
-        num_particles, device, device_id, "Refining"
-    )
 
     records = []
-    for i in pbar_iter:
+    for i in range(num_particles):
         # Distribute different particles across streams
         stream = streams[i % len(streams)]
         stream_context: AbstractContextManager[None] = (
@@ -857,6 +889,7 @@ def _refine_stack_fft(
                 pos_x=int(stats["refined_pos_x"]),
             )
         )
+        progress.update(1)
 
     # Wait for all streams to finish
     _synchronize_device_streams(streams)
@@ -926,12 +959,17 @@ def _refine_stack_gemm(
     refine_stack: _RefineTemplateStackOnDevice,
     ctf_kwargs: dict,
     batch_size: int,
+    centering_batch_size: int,
     shift_search_radius: int | None,
     fft_centering: bool,
     device: torch.device,
-    device_id: int,
+    progress: tqdm.tqdm,
 ) -> list[_ParticleRecord]:
-    """GEMM backend: score hypotheses in a position window around each particle."""
+    """GEMM backend: score hypotheses in a position window around each particle.
+
+    ``batch_size`` is the number of orientations per GEMM chunk, and
+    ``centering_batch_size`` the number of particles per FFT-centering correlation.
+    """
     num_particles, img_h, img_w = refine_stack.particle_stack_dft.shape
     image_shape = (img_h, 2 * (img_w - 1))
     template_h, template_w = projection_shape_from_filters(
@@ -956,16 +994,13 @@ def _refine_stack_gemm(
     )
     if fft_centering and window_smaller_than_crop and num_particles > 0:
         centers = _fft_centering_positions(
-            refine_stack, ctf_dev_kwargs, prior_rotations, batch_size
+            refine_stack, ctf_dev_kwargs, prior_rotations, centering_batch_size
         )
     else:
         centers = [(crop_shape[0] // 2, crop_shape[1] // 2)] * num_particles
 
-    pbar_iter = _tqdm_for_refine_particle_loop(
-        num_particles, device, device_id, "Refining"
-    )
     records = []
-    for i in pbar_iter:
+    for i in range(num_particles):
         ctf_filters = calculate_ctf_filter_stack_full_args(
             defocus_u=refine_stack.defocus_u[i],
             defocus_v=refine_stack.defocus_v[i],
@@ -1005,6 +1040,7 @@ def _refine_stack_gemm(
                 pos_x=best.pos_x,
             )
         )
+        progress.update(1)
     return records
 
 

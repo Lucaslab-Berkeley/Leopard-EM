@@ -23,7 +23,8 @@ class PositionRefinementConfig(BaseModel2DTM):
     ----------
     shift_search_radius : int | None
         Window half-width ``r`` in pixels, defaults to 2. None searches the whole
-        valid crop (the same positions as the ``"fft"`` backend).
+        valid crop (the same positions as the ``"fft"`` backend). 0 searches only the
+        starting position.
     fft_centering : bool
         If True (default), the window starts at the peak of one FFT correlation at the
         prior orientation, defocus, and pixel size. If False, it starts at the center

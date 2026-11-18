@@ -89,7 +89,8 @@ class RefineTemplateManager(BaseModel2DTM):
         Initialize the refine template manager.
     make_backend_core_function_kwargs(self) -> dict[str, Any]
         Create the kwargs for the backend refine_template core function.
-    run_refine_template(self, correlation_batch_size: int = 32) -> None
+    run_refine_template(self, correlation_batch_size: int = 32,
+                        particle_batch_size: int | None = None) -> None
         Run the refine template program.
     refine_result_to_dataframe(self, result, prefer_refined_angles: bool = True)
         -> pd.DataFrame
@@ -291,6 +292,7 @@ class RefineTemplateManager(BaseModel2DTM):
         correlation_batch_size: int = 32,
         output_format: Literal["csv", "hdf5"] | None = None,
         allow_file_overwrite: bool | None = None,
+        particle_batch_size: int | None = None,
     ) -> None:
         """Run the refine template program and export the resultant DataFrame.
 
@@ -299,7 +301,7 @@ class RefineTemplateManager(BaseModel2DTM):
         output_dataframe_path : str
             Path to save the refined particle data.
         correlation_batch_size : int
-            Number of cross-correlations to process in one batch, defaults to 32.
+            Number of orientations to process in one batch, defaults to 32.
         output_format : Literal["csv", "hdf5"] | None
             Output back-end to write. Defaults to None, which infers it from the
             extension of ``output_dataframe_path`` (``.csv`` / ``.h5``, ``.hdf5``) and
@@ -308,6 +310,10 @@ class RefineTemplateManager(BaseModel2DTM):
             Deprecated and ignored; an existing file at ``output_dataframe_path`` is
             always overwritten (atomically), unless it is the input particle stack's
             file, which raises ``ValueError``.
+        particle_batch_size : int | None
+            Number of particles each GPU moves to the device and refines at once, to
+            bound GPU memory for large particle stacks. Defaults to None (all of a
+            GPU's particles at once).
         """
         if allow_file_overwrite is not None:
             _warn_allow_file_overwrite_deprecated()
@@ -318,7 +324,11 @@ class RefineTemplateManager(BaseModel2DTM):
 
         backend_kwargs = self.make_backend_core_function_kwargs()
 
-        result = self.get_refine_result(backend_kwargs, correlation_batch_size)
+        result = self.get_refine_result(
+            backend_kwargs,
+            correlation_batch_size,
+            particle_batch_size=particle_batch_size,
+        )
 
         self.export_results(
             output_dataframe_path=output_dataframe_path,
@@ -339,6 +349,7 @@ class RefineTemplateManager(BaseModel2DTM):
         images_are_particles: bool = False,
         output_format: Literal["csv", "hdf5"] | None = None,
         allow_file_overwrite: bool | None = None,
+        particle_batch_size: int | None = None,
     ) -> None:
         """Run the differentiable refine template program and export the DataFrame.
 
@@ -369,7 +380,10 @@ class RefineTemplateManager(BaseModel2DTM):
             Deprecated and ignored; an existing file at ``output_dataframe_path`` is
             always overwritten (atomically), unless it is the input particle stack's
             file, which raises ``ValueError``.
-
+        particle_batch_size : int | None
+            Number of particles each GPU moves to the device and refines at once, to
+            bound GPU memory for large particle stacks. Defaults to None (all of a
+            GPU's particles at once).
         """
         if allow_file_overwrite is not None:
             _warn_allow_file_overwrite_deprecated()
@@ -388,7 +402,10 @@ class RefineTemplateManager(BaseModel2DTM):
         )
 
         result = self.get_refine_result(
-            backend_kwargs, correlation_batch_size, use_differentiable=True
+            backend_kwargs,
+            correlation_batch_size,
+            use_differentiable=True,
+            particle_batch_size=particle_batch_size,
         )
 
         self.export_results(
@@ -402,6 +419,7 @@ class RefineTemplateManager(BaseModel2DTM):
         backend_kwargs: dict,
         correlation_batch_size: int = 32,
         use_differentiable: bool = False,
+        particle_batch_size: int | None = None,
     ) -> dict[str, np.ndarray | torch.Tensor]:
         """Get refine template result.
 
@@ -415,6 +433,10 @@ class RefineTemplateManager(BaseModel2DTM):
             If True, run with grad mode enabled and return the result as tensors, so
             the refined cross-correlation and z-score carry gradients to any input
             that requires grad. If False, return numpy arrays. Defaults to False.
+        particle_batch_size : int | None
+            Number of particles each GPU moves to the device and refines at once, to
+            bound GPU memory for large particle stacks. Defaults to None (all of a
+            GPU's particles at once).
 
         Returns
         -------
@@ -428,6 +450,7 @@ class RefineTemplateManager(BaseModel2DTM):
             "backend": self.computational_config.backend,
             "shift_search_radius": self.position_refinement_config.shift_search_radius,
             "fft_centering": self.position_refinement_config.fft_centering,
+            "particle_batch_size": particle_batch_size,
         }
         if use_differentiable:
             with torch.enable_grad():

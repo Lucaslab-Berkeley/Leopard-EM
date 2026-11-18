@@ -474,7 +474,8 @@ def gemm_search_particle(
     Shifts are searched in a ``(2r + 1) x (2r + 1)`` window around ``center``. If the
     best shift lands on the window edge (and that edge is not the crop edge), the
     window is re-centered on it, up to ``max_recenters`` times, after which the whole
-    valid crop is searched.
+    valid crop is searched. With ``r = 0`` only ``center`` is searched: a one-pixel
+    window has no interior, so it is never re-centered.
 
     Parameters
     ----------
@@ -496,7 +497,8 @@ def gemm_search_particle(
     center : tuple[int, int]
         Starting window center (y, x) in the valid crop.
     shift_search_radius : int | None
-        Window half-width ``r`` in pixels. None searches the whole valid crop.
+        Window half-width ``r`` in pixels. None searches the whole valid crop; 0
+        searches only ``center``.
     orientation_batch_size : int
         Number of orientations per GEMM chunk.
     max_recenters : int, optional
@@ -517,7 +519,10 @@ def gemm_search_particle(
 
     num_orient = rotation_matrices.shape[0]
     num_k = filters.shape[-2] * filters.shape[-1]
-    can_recenter = shift_search_radius is not None and max_recenters > 0
+
+    # Add guard for one-pixel window (r = 0) which would always be on the edge.
+    edge_guard = shift_search_radius is not None and shift_search_radius > 0
+    can_recenter = edge_guard and max_recenters > 0
     cache_slices = can_recenter and num_orient * num_k * 12 <= _SLICE_CACHE_BYTES
     cached: list[tuple[torch.Tensor, torch.Tensor, int]] = []
 
@@ -548,7 +553,7 @@ def gemm_search_particle(
     for _ in range(max_recenters + 1):
         bounds = _window(center, shift_search_radius, crop_shape)
         result = search(bounds)
-        if shift_search_radius is None or not _on_inner_edge(
+        if not edge_guard or not _on_inner_edge(
             (result.pos_y, result.pos_x), bounds, crop_shape
         ):
             return result

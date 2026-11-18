@@ -204,6 +204,41 @@ def test_gemm_window_recenters_toward_the_peak(target, start):
     assert (best.pos_y, best.pos_x) == target
 
 
+def test_gemm_zero_radius_searches_only_the_start():
+    torch.manual_seed(4)
+    problem = _problem(2.0)
+    # The z-score peak is far from the start; a zero-radius window must not move to
+    # it (re-centering a one-pixel window, then falling back to the whole crop)
+    ys, xs = torch.meshgrid(torch.arange(CROP), torch.arange(CROP), indexing="ij")
+    distance = ((ys - 1) ** 2 + (xs - 7) ** 2).float().sqrt()
+    corr_mean = 100.0 * distance
+    corr_std = torch.ones((CROP, CROP))
+
+    reference = reference_slice_operands(problem["template_dft"], (SIZE, SIZE))
+    calls = []
+
+    def counted(rotation_matrices):
+        calls.append(rotation_matrices.shape[0])
+        return reference(rotation_matrices)
+
+    start = (6, 1)
+    best = gemm_search_particle(
+        slice_operands=counted,
+        rotation_matrices=problem["rotations"],
+        image=problem["image"],
+        image_sum=problem["image_dft"][0, 0].real,
+        filters=problem["filters"],
+        corr_mean=corr_mean,
+        corr_std=corr_std,
+        center=start,
+        shift_search_radius=0,
+        orientation_batch_size=NUM_ORIENT,
+    )
+
+    assert (best.pos_y, best.pos_x) == start
+    assert calls == [NUM_ORIENT]  # a single pass over the orientations
+
+
 def test_score_hypotheses_gradient_matches_finite_differences():
     torch.manual_seed(5)
     problem = _problem(2.0)
@@ -356,12 +391,32 @@ def test_core_differentiable_refine_is_a_deprecated_alias(workspace):
     )
 
 
+@pytest.mark.parametrize("backend", ["gemm", "fft"])
+def test_core_refine_template_particle_batches_match_one_pass(workspace, backend):
+    kwargs = _workspace_kwargs(workspace)
+    num_particles = kwargs["particle_stack_dft"].shape[0]
+    assert num_particles > 2  # so a batch of 2 leaves a partial last chunk
+
+    expected = core_refine_template(**kwargs, backend=backend)
+    for particle_batch_size in (1, 2, num_particles + 5):
+        result = core_refine_template(
+            **kwargs, backend=backend, particle_batch_size=particle_batch_size
+        )
+        assert set(result) == set(expected)
+        for key, value in expected.items():
+            torch.testing.assert_close(
+                result[key], value, msg=f"batch of {particle_batch_size}: {key}"
+            )
+
+
 def test_core_refine_template_rejects_bad_options(workspace):
     kwargs = _workspace_kwargs(workspace)
     with pytest.raises(ValueError, match="backend"):
         core_refine_template(**kwargs, backend="streamed")
     with pytest.raises(ValueError, match="shift_search_radius"):
         core_refine_template(**kwargs, shift_search_radius=-1)
+    with pytest.raises(ValueError, match="particle_batch_size"):
+        core_refine_template(**kwargs, particle_batch_size=0)
 
 
 def test_refine_config_backend_and_position_defaults():

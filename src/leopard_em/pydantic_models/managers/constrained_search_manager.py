@@ -100,7 +100,8 @@ class ConstrainedSearchManager(BaseModel2DTM):
         Initialize the constrained search manager.
     make_backend_core_function_kwargs(self) -> dict[str, Any]
         Create the kwargs for the backend refine_template core function.
-    run_constrained_search(self, orientation_batch_size: int = 64) -> None
+    run_constrained_search(self, orientation_batch_size: int = 64,
+                           particle_batch_size: int | None = None) -> None
         Run the constrained search program.
     refine_result_to_dataframe(self, result) -> pd.DataFrame
         Build the refined particle DataFrame from a backend result (no I/O).
@@ -274,6 +275,7 @@ class ConstrainedSearchManager(BaseModel2DTM):
         orientation_batch_size: int = 64,
         output_format: Literal["csv", "hdf5"] | None = None,
         allow_file_overwrite: bool | None = None,
+        particle_batch_size: int | None = None,
     ) -> None:
         """Run the constrained search program and export the resultant DataFrame.
 
@@ -296,6 +298,10 @@ class ConstrainedSearchManager(BaseModel2DTM):
             Deprecated and ignored; existing output files are always overwritten
             (atomically), unless one is the input particle stack's file, which raises
             ``ValueError``.
+        particle_batch_size : int | None
+            Number of particles each GPU moves to the device and refines at once, to
+            bound GPU memory for large particle stacks. Defaults to None (all of a
+            GPU's particles at once).
         """
         if allow_file_overwrite is not None:
             _warn_allow_file_overwrite_deprecated()
@@ -313,7 +319,11 @@ class ConstrainedSearchManager(BaseModel2DTM):
 
         backend_kwargs = self.make_backend_core_function_kwargs()
 
-        result = self.get_refine_result(backend_kwargs, orientation_batch_size)
+        result = self.get_refine_result(
+            backend_kwargs,
+            orientation_batch_size,
+            particle_batch_size=particle_batch_size,
+        )
 
         self.export_results(
             output_dataframe_path=output_dataframe_path,
@@ -323,7 +333,10 @@ class ConstrainedSearchManager(BaseModel2DTM):
         )
 
     def get_refine_result(
-        self, backend_kwargs: dict, orientation_batch_size: int = 64
+        self,
+        backend_kwargs: dict,
+        orientation_batch_size: int = 64,
+        particle_batch_size: int | None = None,
     ) -> dict[str, np.ndarray]:
         """Get refine template result.
 
@@ -333,6 +346,10 @@ class ConstrainedSearchManager(BaseModel2DTM):
             Keyword arguments for the backend processing
         orientation_batch_size : int
             Number of orientations to process at once. Defaults to 64.
+        particle_batch_size : int | None
+            Number of particles each GPU moves to the device and refines at once, to
+            bound GPU memory for large particle stacks. Defaults to None (all of a
+            GPU's particles at once).
 
         Returns
         -------
@@ -358,6 +375,7 @@ class ConstrainedSearchManager(BaseModel2DTM):
             backend=self.computational_config.backend,
             shift_search_radius=None,
             fft_centering=False,
+            particle_batch_size=particle_batch_size,
             **backend_kwargs,
         )
         result = {k: v.cpu().numpy() for k, v in result.items()}
