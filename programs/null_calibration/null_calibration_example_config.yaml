@@ -27,8 +27,8 @@ write_null_particles: false
 analytic:
   enabled: true
   n_mean_samples: 3000
-  n_kappa_pairs: 64
-  n_lattice_samples: 128
+  n_kappa_pairs: 256
+  n_lattice_samples: 32
   batch_size: 4
   seed: 0
   device: cpu

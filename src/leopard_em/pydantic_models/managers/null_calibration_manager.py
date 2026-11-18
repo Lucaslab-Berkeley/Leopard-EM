@@ -95,9 +95,9 @@ class AnalyticNullConfig(BaseModel):
     n_mean_samples : int
         Orientations sampled for the mean template. Default 3000.
     n_kappa_pairs : int
-        Pairs of orientation batches sampled for kappa. Default 64.
+        Pairs of orientation batches sampled for kappa. Default 256.
     n_lattice_samples : int
-        Grid points sampled for the lattice correlations. Default 128.
+        Grid points sampled for the lattice correlations. Default 32.
     batch_size : int
         Orientations per batch. Default 4.
     seed : int
@@ -110,8 +110,8 @@ class AnalyticNullConfig(BaseModel):
 
     enabled: bool = True
     n_mean_samples: int = Field(default=3000, ge=2)
-    n_kappa_pairs: int = Field(default=64, ge=2)
-    n_lattice_samples: int = Field(default=128, ge=1)
+    n_kappa_pairs: int = Field(default=256, ge=2)
+    n_lattice_samples: int = Field(default=32, ge=1)
     batch_size: int = Field(default=4, ge=1)
     seed: int = 0
     device: str = "cpu"

@@ -63,7 +63,7 @@ The prediction has three parts:
 3. **Per-pixel normalisation:** the z-score divides by the standard deviation over the search at each pixel. A null peak raises its own pixel's standard deviation, and the standard deviation fluctuates between pixels; to first order this multiplies the null tail by exp(−κ(z⁴/4 − z²/2)), with κ the mean squared correlation of random search points.
 
 The projections are built with the backend's own steps (CTF and whitening filters, normalisation), and the inner products are weighted by the preprocessed micrograph's power spectrum.
-Sampling sizes (`n_mean_samples`, `n_kappa_pairs`, `n_lattice_samples`) set the precision; the defaults give about ±0.01 z.
+Sampling sizes (`n_mean_samples`, `n_kappa_pairs`, `n_lattice_samples`) set the precision. The spread of the cut between sampling seeds comes almost entirely from κ's sample, which is heavy-tailed; the number of lattice samples hardly matters (16 to 512 give the same cut). The defaults (3,000 / 256 / 32) give a spread of about ±0.003 z (SD over seeds) on the xenon_131 13-plane search, for about 45 s on a GPU.
 
 The engine-agnostic parts (`leopard_em.analysis.analytic_null.field` and `.lattice`) take projections and grid neighbours from a callable, so other search engines can reuse them.
 
@@ -86,8 +86,8 @@ write_null_particles: false
 analytic:
   enabled: true
   n_mean_samples: 3000
-  n_kappa_pairs: 64
-  n_lattice_samples: 128
+  n_kappa_pairs: 256
+  n_lattice_samples: 32
   batch_size: 4
   seed: 0
   device: cpu              # e.g. cuda:0
@@ -135,14 +135,15 @@ The measured thresholds come from phase-randomised copies searched with the same
 
 | Search | Analytic 1-FP threshold | Measured: counted / smoothed (copies) | Nominal |
 |---|---|---|---|
-| 13 planes 200 Å apart, B 0 | **7.698** | 7.700 / 7.678 (4) | 7.775 |
-| 13 planes, B 60 | **7.588** | 7.661 / 7.554 (3) | 7.775 |
-| 13 planes, B 120 | **7.504** | 7.542 / 7.482 (3) | 7.775 |
-| 3 planes 400 Å apart, B 0 | **7.526** | 7.515 / 7.506 (14) | 7.587 |
+| 13 planes 200 Å apart, B 0 | **7.693** | 7.700 / 7.678 (4) | 7.775 |
+| 13 planes, B 60 | **7.581** | 7.661 / 7.554 (3) | 7.775 |
+| 13 planes, B 120 | **7.496** | 7.542 / 7.482 (3) | 7.775 |
+| 3 planes 400 Å apart, B 0 | **7.522** | 7.515 / 7.506 (14) | 7.587 |
 
 - **Thresholds:** every prediction is within the measured thresholds' counting error.
 - **Null rate:** wherever there are 100 or more null peaks to compare, the predicted rate is within about ±15% of the measured one.
-- **Cost:** each prediction took 13 s (3 planes) to 44 s (13 planes) on an RTX 6000 Ada.
+- **Sampling:** the analytic thresholds use the default sample sizes (3,000 / 256 / 32) and seed 0. Seeds 1 and 2 move them by up to +0.01 z. On the 13-plane B 0 search, 16 to 512 lattice samples give the same threshold, and the spread between seeds comes from κ's sample: ±0.006 z (SD) with 64 κ batch pairs, ±0.003 z with 256.
+- **Cost:** each prediction took 9 s (3 planes) to about 47 s (13 planes) on an RTX 6000 Ada, after the search set-up.
 - **Why the nominal threshold is so far off for blurred templates:** at z = 7 the predicted null is 0.58, 0.24 and 0.13 of the formula at B 0, 60 and 120. A blurred template gives a smoother correlation field, with fewer effectively independent trials (adjacent ψ steps correlate at 0.69, 0.80 and 0.84). It also gives more correlation that every orientation shares, which the per-pixel normalisation removes (κ = 4.7, 7.8 and 10 × 10⁻⁴).
 
 **Phase-randomised null.** The copies are those used for the measured thresholds above. The phase randomisation reproduces them bit for bit (same algorithm and seeds).

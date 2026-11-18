@@ -134,8 +134,8 @@ def predict_match_template_null(
     *,
     mask_radius: float = 10.0,
     n_mean_samples: int = 3000,
-    n_kappa_pairs: int = 64,
-    n_lattice_samples: int = 128,
+    n_kappa_pairs: int = 256,
+    n_lattice_samples: int = 32,
     batch_size: int = 4,
     thresholds: np.ndarray | None = None,
     seed: int = 0,
@@ -158,9 +158,9 @@ def predict_match_template_null(
     n_mean_samples : int
         Orientations sampled for the mean template. Default 3000.
     n_kappa_pairs : int
-        Pairs of orientation batches sampled for kappa. Default 64.
+        Pairs of orientation batches sampled for kappa. Default 256.
     n_lattice_samples : int
-        Grid points sampled for the lattice correlations. Default 128.
+        Grid points sampled for the lattice correlations. Default 32.
     batch_size : int
         Orientations per batch (each uses every defocus plane). Default 4.
     thresholds : np.ndarray | None
