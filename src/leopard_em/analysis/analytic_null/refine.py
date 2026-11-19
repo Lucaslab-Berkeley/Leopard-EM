@@ -269,6 +269,69 @@ def score_layout(  # pylint: disable=too-many-locals,too-many-arguments
     return ScoreLayout(projection_a, dy_a, dx_a, in_window, beaten, centre_index)
 
 
+def _lag_grams(
+    q: torch.Tensor, rows: list[int], weighting: PowerWeighting, rw: int, r: int
+) -> tuple[dict[tuple[int, int], torch.Tensor], dict[tuple[int, int], torch.Tensor]]:
+    """Real parts of the power-weighted Gram matrices of ``q`` at every lag.
+
+    ``full`` (every projection pair) for lags within +-2 ``rw`` (window positions
+    against window positions); ``partial`` (``rows`` against every projection) for
+    every lag within +-2 ``r``.
+    """
+    device = q.device
+    q_conj = q.conj().T.contiguous()
+    weights = weighting.weights.reshape(-1).double().clamp(min=0)
+    ky = weighting.ky.expand(weighting.weights.shape).reshape(-1).double()
+    kx = weighting.kx.expand(weighting.weights.shape).reshape(-1).double()
+    row_index = torch.as_tensor(rows, device=device)
+    full: dict[tuple[int, int], torch.Tensor] = {}
+    partial: dict[tuple[int, int], torch.Tensor] = {}
+    for dy in range(-2 * r, 2 * r + 1):
+        for dx in range(-2 * r, 2 * r + 1):
+            phase = weights * torch.exp(-2j * math.pi * (ky * dy + kx * dx))
+            if max(abs(dy), abs(dx)) > 2 * rw:
+                partial[(dy, dx)] = ((q[row_index] * phase) @ q_conj).real
+                continue
+            if (-dy, -dx) in full:  # G(-d) = G(d)^T
+                full[(dy, dx)] = full[(-dy, -dx)].T
+            else:
+                full[(dy, dx)] = ((q * phase) @ q_conj).real
+            partial[(dy, dx)] = full[(dy, dx)][row_index]
+    return full, partial
+
+
+def _assemble(  # pylint: disable=too-many-locals
+    layout: ScoreLayout,
+    full: dict[tuple[int, int], torch.Tensor],
+    partial: dict[tuple[int, int], torch.Tensor],
+    row_of: dict[int, int],
+    device: torch.device,
+) -> torch.Tensor:
+    """The covariance of ``layout``'s scores from the lag Gram matrices."""
+    # each position's scores are contiguous
+    keys = list(zip(layout.dy.tolist(), layout.dx.tolist(), strict=True))
+    groups: dict[tuple[int, int], slice] = {}
+    for i, key in enumerate(keys):
+        start = groups[key].start if key in groups else i
+        groups[key] = slice(start, i + 1)
+    cov = torch.empty((len(keys), len(keys)), device=device, dtype=torch.float64)
+    for (ya, xa), sa in groups.items():
+        ta = layout.projection[sa]
+        a_search = not bool(layout.in_window[sa].any())
+        a_rows = [row_of[int(t)] for t in ta] if a_search else None
+        for (yb, xb), sb in groups.items():
+            tb = layout.projection[sb]
+            lag = (ya - yb, xa - xb)
+            if a_rows is not None:
+                cov[sa, sb] = partial[lag][a_rows][:, tb]
+            elif not bool(layout.in_window[sb].any()):
+                back = (-lag[0], -lag[1])
+                cov[sa, sb] = partial[back][[row_of[int(t)] for t in tb]][:, ta].T
+            else:
+                cov[sa, sb] = full[lag][ta][:, tb]
+    return cov
+
+
 def window_covariance(  # pylint: disable=too-many-locals
     window: RefinementWindow,
     weighting: PowerWeighting,
@@ -319,53 +382,11 @@ def window_covariance(  # pylint: disable=too-many-locals
     if mean_template is not None:
         projections = projections - mean_template.mean.to(device)
     q = projections.reshape(n_all, -1).to(torch.complex128)
-    q_conj = q.conj().T.contiguous()
-    weights = weighting.weights.reshape(-1).double().clamp(min=0)
-    ky = weighting.ky.expand(weighting.weights.shape).reshape(-1).double()
-    kx = weighting.kx.expand(weighting.weights.shape).reshape(-1).double()
     # rows of the search points and the candidate's own projection, at any lag
     own_row = n_all - 1 if separate else int(window.centre)
-    rows = torch.as_tensor(
-        [own_row, *range(n_window, n_window + n_search)], device=device
-    )
-    row_of = {int(t): i for i, t in enumerate(rows.tolist())}
-    full: dict[tuple[int, int], torch.Tensor] = {}
-    partial: dict[tuple[int, int], torch.Tensor] = {}
-    r = max(rw, rc)
-    for dy in range(-2 * r, 2 * r + 1):
-        for dx in range(-2 * r, 2 * r + 1):
-            phase = weights * torch.exp(-2j * math.pi * (ky * dy + kx * dx))
-            if abs(dy) <= 2 * rw and abs(dx) <= 2 * rw:
-                if (-dy, -dx) in full:  # G(-d) = G(d)^T
-                    full[(dy, dx)] = full[(-dy, -dx)].T
-                else:
-                    full[(dy, dx)] = ((q * phase) @ q_conj).real
-                partial[(dy, dx)] = full[(dy, dx)][rows]
-            else:
-                partial[(dy, dx)] = ((q[rows] * phase) @ q_conj).real
-    # each position's scores are contiguous
-    keys = list(zip(layout.dy.tolist(), layout.dx.tolist(), strict=True))
-    groups: dict[tuple[int, int], slice] = {}
-    for i, key in enumerate(keys):
-        start = groups[key].start if key in groups else i
-        groups[key] = slice(start, i + 1)
-    size = len(keys)
-    cov = torch.empty((size, size), device=device, dtype=torch.float64)
-    for (ya, xa), sa in groups.items():
-        ta = layout.projection[sa]
-        a_search = not bool(layout.in_window[sa].any())
-        a_rows = [row_of[int(t)] for t in ta] if a_search else None
-        for (yb, xb), sb in groups.items():
-            tb = layout.projection[sb]
-            lag = (ya - yb, xa - xb)
-            if a_rows is not None:
-                block = partial[lag][a_rows][:, tb]
-            elif not bool(layout.in_window[sb].any()):
-                back = (-lag[0], -lag[1])
-                block = partial[back][[row_of[int(t)] for t in tb]][:, ta].T
-            else:
-                block = full[lag][ta][:, tb]
-            cov[sa, sb] = block
+    rows = [own_row, *range(n_window, n_window + n_search)]
+    full, partial = _lag_grams(q, rows, weighting, rw, max(rw, rc))
+    cov = _assemble(layout, full, partial, {t: i for i, t in enumerate(rows)}, device)
     if mean_template is not None:
         cov /= mean_template.sigma2
     return cov, layout
