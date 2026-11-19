@@ -188,6 +188,39 @@ def test_run_writes_refined_thresholds(monkeypatch, tmp_path, config_path):
     assert refined["details"]["defocus_offsets"] == [0.0]
 
 
+def test_run_writes_fdr_cuts(monkeypatch, tmp_path, config_path):
+    """With q targets and the real search's z map, the summary cuts it per null."""
+    monkeypatch.setattr(MatchTemplateManager, "run_match_template", _fake_run)
+    rng = np.random.default_rng(3)
+    real = gaussian_filter(rng.normal(size=(VALID, VALID)), 1.5)
+    real = (real - real.mean()) / real.std()
+    real[20, 20] = real[50, 60] = 8.0  # two "particles"
+    _write_mrc(tmp_path / "real_scaled_mip.mrc", real)
+    manager = NullCalibrationManager(
+        match_template_config_path=str(config_path),
+        output_directory=str(tmp_path / "null"),
+        seeds=[1, 2],
+        peak_floor=1.0,
+        mask_radius=4.0,
+        analytic={"n_mean_samples": 40, "n_kappa_pairs": 4, "n_lattice_samples": 8},
+        false_discovery_rates=[0.05, 0.2],
+    )
+    manager.run()
+    summary = json.loads((tmp_path / "null" / "null_summary.json").read_text())
+    fdr = summary["fdr"]
+    assert fdr["n_peaks"] > 2
+    assert [row["q"] for row in fdr["cuts"]] == [0.05, 0.2]
+    for row in fdr["cuts"]:
+        assert set(row) == {"q", "nominal", "phase_randomized", "analytic"}
+        for cut in (row["nominal"], row["phase_randomized"], row["analytic"]):
+            if cut["threshold"] is not None:
+                assert cut["threshold"] >= 1.0 and cut["n_picks"] >= 1
+                assert cut["estimated_fdr"] <= row["q"] + 1e-12
+    (tmp_path / "real_scaled_mip.mrc").unlink()
+    summary = manager.summarize()
+    assert "note" in summary["fdr"]
+
+
 def test_floor_too_high_reports_none(monkeypatch, tmp_path, config_path):
     monkeypatch.setattr(MatchTemplateManager, "run_match_template", _fake_run)
     manager = NullCalibrationManager(

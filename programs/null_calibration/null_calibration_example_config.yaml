@@ -40,6 +40,10 @@ analytic:
     condition_radius: 2  # positions where the candidate beat the search's points, +-px
     defocus_step: 40.0   # modelled defocus step, A (the refine's own if coarser)
 
+# Optional: false-discovery-rate cuts (targets q) of the real micrograph's distinct
+# peaks under each null; needs the match_template result (its scaled_mip_path)
+false_discovery_rates: []
+
 # Optional: also predict the threshold on refined z-scores, for candidates at or above
 # refine_candidate_threshold refined with this refine_template configuration (only its
 # orientation, defocus and pixel size refinement settings are read)

@@ -42,6 +42,7 @@ from leopard_em.analysis.empirical_null import (
     distinct_peaks,
     valid_region,
 )
+from leopard_em.analysis.fdr import bh_cutoff, nominal_null_rate, null_rate
 from leopard_em.analysis.match_template_peaks import MatchTemplatePeaks
 from leopard_em.analysis.zscore_metric import gaussian_noise_zscore_cutoff
 from leopard_em.pydantic_models.custom_types import BaseModel2DTM
@@ -202,6 +203,11 @@ class NullCalibrationManager(BaseModel2DTM):
     refine_candidate_threshold : float | None
         Match_template z-score at or above which candidates are refined. Required with
         ``refine_template_config_path``.
+    false_discovery_rates : list[float]
+        Targets q for a false-discovery-rate cut of the real micrograph's picks: with
+        its match_template result present (``scaled_mip_path`` of the match_template
+        YAML), the summary holds the Benjamini-Hochberg cut of its distinct peaks
+        (same floor, radius, border and mask) under each null. Default none.
     """
 
     match_template_config_path: str
@@ -216,6 +222,7 @@ class NullCalibrationManager(BaseModel2DTM):
     analytic: AnalyticNullConfig = AnalyticNullConfig()
     refine_template_config_path: str | None = None
     refine_candidate_threshold: float | None = None
+    false_discovery_rates: list[float] = Field(default_factory=list)
 
     @model_validator(mode="after")  # type: ignore
     def _check_refine(self) -> "NullCalibrationManager":
@@ -464,7 +471,56 @@ class NullCalibrationManager(BaseModel2DTM):
                 str(self.refine_template_config_path)
             )
             out["analytic_refined"] = refined.as_dict()
+        if self.false_discovery_rates:
+            out["fdr"] = self._fdr_cuts(
+                manager, out["valid_area"], positions, null_peaks, prediction
+            )
         return out
+
+    # pylint: disable=too-many-arguments
+    def _fdr_cuts(
+        self,
+        manager: MatchTemplateManager,
+        area: int,
+        positions: int,
+        null_peaks: NullPeaks | None,
+        prediction: AnalyticNullPrediction | None,
+    ) -> dict[str, Any]:
+        """Benjamini-Hochberg cuts of the real micrograph's peaks under each null."""
+        path = self._match_template_config().get("match_template_result", {})
+        path = path.get("scaled_mip_path")
+        if not path or not os.path.exists(path):
+            return {"note": "no match_template result (scaled_mip_path) to cut"}
+        zscore = load_mrc_image(path).numpy()
+        shape = self._map_shape(manager)
+        if tuple(zscore.shape) != tuple(shape):
+            raise ValueError(
+                f"The real z-score map {path} is {zscore.shape}, not {shape}."
+            )
+        peaks = distinct_peaks(
+            zscore,
+            self.peak_floor,
+            mask_radius=self.mask_radius,
+            border=self.border,
+            exclude_mask=self._exclude_mask(),
+        )
+        nulls = {"nominal": nominal_null_rate(float(area) * positions)}
+        if null_peaks is not None:
+            nulls["phase_randomized"] = null_rate(null_peaks)
+        if prediction is not None:
+            nulls["analytic"] = null_rate(prediction)
+        rows = []
+        for q in self.false_discovery_rates:
+            row: dict[str, Any] = {"q": q}
+            for name, rate in nulls.items():
+                cut = bh_cutoff(peaks.zscore, rate, q, floor=self.peak_floor)
+                row[name] = cut.as_dict()
+            rows.append(row)
+        return {
+            "scaled_mip_path": os.path.abspath(path),
+            "n_peaks": int(peaks.zscore.size),
+            "cuts": rows,
+        }
 
     def run(self, orientation_batch_size: int = 16) -> dict[str, Any]:
         """Run the configured nulls and write ``null_summary.json``.

@@ -94,6 +94,19 @@ Counting every local maximum of refinement's fine grid over the whole search ins
 The engine-agnostic part (`leopard_em.analysis.analytic_null.refine`) takes the window's and the search points' projections from the engine, like the rest of the analytic null.
 An engine whose search scores approximate templates (Panther-EM's SVD templates, re-scored exactly by refine_template) also passes the search's own templates of the candidate and its neighbours (`RefinementWindow.own`). The candidate is then conditioned on its search score, refinement's exact window is drawn, and the gain can be negative.
 
+## False discovery rate
+
+A false discovery rate cut adapts to each micrograph: it keeps the most picks for which the expected share of false ones stays below q.
+With λ(t) the expected null distinct peaks at or above t on the micrograph, and its own distinct peaks sorted z₍₁₎ ≥ z₍₂₎ ≥ …, the Benjamini-Hochberg rule keeps the k* highest, where k* is the largest k with λ(z₍ₖ₎) ≤ q·k (`leopard_em.analysis.bh_cutoff`).
+The rule needs λ a few z below the one-false-positive threshold, where the nulls above supply it (`leopard_em.analysis.null_rate`):
+
+- the phase-randomised copies' pooled peaks (`NullPeaks`);
+- the analytic null (`AnalyticNullPrediction`);
+- for refined z-scores of the search's candidates, the analytic refined null (`RefinedNullPrediction`);
+- the independent-trials formula N·Q(t) (`nominal_null_rate`), which over-counts false peaks, so its cuts are conservative.
+
+With `false_discovery_rates` in the configuration and the real micrograph's match_template result present, `null_summary.json` holds the cut of the micrograph's distinct peaks at each q under each null (`fdr`). The peaks use the same floor, radius, border and mask as the null.
+
 ## Configuration
 
 ```yaml
@@ -125,6 +138,9 @@ analytic:
     condition_radius: 2    # positions where the candidate beat the search's points
     defocus_step: 40.0     # modelled defocus step, A (refine's own if coarser)
 
+# Optional: false-discovery-rate cuts of the real micrograph's peaks (needs its result)
+false_discovery_rates: [0.05]
+
 # Optional: also predict the threshold on refined z-scores
 refine_template_config_path: /path/to/refine-template-configuration.yaml
 refine_candidate_threshold: 6.25  # match_template z at or above which candidates are refined
@@ -142,6 +158,8 @@ It writes `null_summary.json` to the output directory. For each target, the file
 - `phase_randomized`, `phase_randomized_confidence_90`: the thresholds from the null copies;
 - `analytic`: the predicted threshold;
 - `analytic_refined` (with a refine_template configuration): the predicted threshold on refined z-scores.
+
+With `false_discovery_rates`, `fdr` holds per q the Benjamini-Hochberg cut under the `nominal`, `phase_randomized` and `analytic` nulls: threshold, picks, expected false picks and the estimated FDR.
 
 It also holds the null peak rate λ(z) (expected distinct null peaks ≥ z per micrograph) from the copies and from the prediction.
 
@@ -168,6 +186,12 @@ predicted = prediction.zscore_cutoff(1.0)
 refined = manager.predict_analytic_refined_null(prediction)  # RefinedNullPrediction
 refined_threshold = refined.zscore_cutoff(1.0)
 refined.gain.summary()  # median, p90, p99 gain of a null candidate by its height
+
+# false discovery rate: one micrograph's distinct-peak z-scores against a null
+from leopard_em.analysis import bh_cutoff, null_rate
+cut = bh_cutoff(peak_z, null_rate(prediction), q=0.05)  # or null_rate(null_peaks)
+cut.threshold, cut.n_picks, cut.expected_false
+cut = bh_cutoff(refined_z, null_rate(refined), q=0.05)  # refined z of the candidates
 ```
 
 ## Validation
@@ -204,6 +228,10 @@ The calculated curve is scaled to the copies' counted area (a 30 px border and o
 - **Window and sampling:** 9 sampled candidates (3 per plane); seeds 0–2 give thresholds of 7.893–7.898, and rates at z 7.0 within ±1.5%. Scoring ±2 px instead of ±1 px, or conditioning at ±1, ±2 or ±3 px, moves the threshold by at most 0.005 z; an 80 Å defocus step instead of 40 Å, by 0.015 z.
 - **Cost:** about 35 s per sampled candidate on an RTX 6000 Ada (7,900 scores per window), after the search prediction.
 - **Another engine:** Panther-EM's approximate (SVD) search, re-scored exactly by refine_template, goes through the same module with the search's own templates (`RefinementWindow.own`). On 20 refined Panther-EM nulls of the same micrograph it reproduces the null candidates' gain quantiles within 0.04 z, losses included (median −0.10 at z 6.9).
+
+**False discovery rate.** On the xenon_131 13-plane searches the rule reproduces the earlier analysis's 18 cuts (B 0, 60, 120; q 1, 5, 10%; analytic and counted nulls) exactly: same thresholds and picks.
+At q = 5% and B 0, the analytic null cuts at 7.293 (428 picks, 21.4 expected false) and the counted null at 7.313 (421 picks). That is about 30 picks more than the 1-FP threshold's 392.
+On refined z (the 3-plane search refined as above), q = 5% cuts at 7.50 under the analytic refined null (366 picks) and 7.47 under the counted refined null (371 picks).
 
 **Phase-randomised null.** The copies are those used for the measured thresholds above. The phase randomisation reproduces them bit for bit (same algorithm and seeds).
 
