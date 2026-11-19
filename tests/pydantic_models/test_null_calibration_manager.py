@@ -141,6 +141,53 @@ def test_run_writes_summary(monkeypatch, tmp_path, config_path):
     assert summary["analytic"]["details"]["planes"] == 1
 
 
+def test_run_writes_refined_thresholds(monkeypatch, tmp_path, config_path):
+    monkeypatch.setattr(MatchTemplateManager, "run_match_template", _fake_run)
+    refine_path = tmp_path / "refine.yaml"
+    refine_path.write_text(
+        yaml.safe_dump(
+            {
+                "orientation_refinement_config": {
+                    "enabled": True,
+                    "psi_step_coarse": 30.0,
+                    "psi_step_fine": 15.0,
+                    "theta_step_coarse": 30.0,
+                    "theta_step_fine": 15.0,
+                },
+                "defocus_refinement_config": {"enabled": False},
+            }
+        )
+    )
+    with pytest.raises(ValueError, match="go together"):
+        NullCalibrationManager(
+            match_template_config_path=str(config_path),
+            output_directory=str(tmp_path / "null"),
+            refine_template_config_path=str(refine_path),
+        )
+    manager = NullCalibrationManager(
+        match_template_config_path=str(config_path),
+        output_directory=str(tmp_path / "null"),
+        seeds=[],
+        mask_radius=4.0,
+        analytic={
+            "n_mean_samples": 40,
+            "n_kappa_pairs": 4,
+            "n_lattice_samples": 8,
+            "refine": {"n_candidates": 2, "n_draws": 2000},
+        },
+        refine_template_config_path=str(refine_path),
+        refine_candidate_threshold=3.0,
+    )
+    manager.run()
+    summary = json.loads((tmp_path / "null" / "null_summary.json").read_text())
+    row = summary["thresholds"][0]
+    assert row["analytic_refined"] > row["analytic"]
+    refined = summary["analytic_refined"]
+    assert refined["candidate_threshold"] == 3.0
+    assert refined["gain"]["n_windows"] == 2
+    assert refined["details"]["defocus_offsets"] == [0.0]
+
+
 def test_floor_too_high_reports_none(monkeypatch, tmp_path, config_path):
     monkeypatch.setattr(MatchTemplateManager, "run_match_template", _fake_run)
     manager = NullCalibrationManager(

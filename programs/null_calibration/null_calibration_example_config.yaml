@@ -32,3 +32,16 @@ analytic:
   batch_size: 4
   seed: 0
   device: cpu
+  # Refined null (with refine_template_config_path below): ~35 s per candidate on a GPU
+  refine:
+    n_candidates: 8      # sampled null candidates, spread over the defocus planes
+    n_draws: 200000      # Gaussian draws per candidate
+    shift_radius: 1      # positions refinement scores, +-px
+    condition_radius: 2  # positions where the candidate beat the search's points, +-px
+    defocus_step: 40.0   # modelled defocus step, A (the refine's own if coarser)
+
+# Optional: also predict the threshold on refined z-scores, for candidates at or above
+# refine_candidate_threshold refined with this refine_template configuration (only its
+# orientation, defocus and pixel size refinement settings are read)
+refine_template_config_path: null
+refine_candidate_threshold: null

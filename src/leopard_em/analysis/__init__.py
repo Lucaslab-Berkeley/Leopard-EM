@@ -1,6 +1,11 @@
 """Submodule for analyzing results during the template matching pipeline."""
 
-from .analytic_null import AnalyticNullPrediction, predict_match_template_null
+from .analytic_null import (
+    AnalyticNullPrediction,
+    RefinedNullPrediction,
+    predict_match_template_null,
+    predict_refine_template_null,
+)
 from .empirical_null import (
     DistinctPeaks,
     NullPeaks,
@@ -31,6 +36,7 @@ __all__ = [
     "MatchTemplatePeaks",
     "NullPeaks",
     "NullRateCurve",
+    "RefinedNullPrediction",
     "distinct_peaks",
     "empirical_zscore_cutoff",
     "extract_peaks_and_statistics_p_value",
@@ -40,5 +46,6 @@ __all__ = [
     "match_template_peaks_to_dataframe",
     "match_template_peaks_to_dict",
     "predict_match_template_null",
+    "predict_refine_template_null",
     "save_inspection_result",
 ]

@@ -9,6 +9,10 @@ configuration for a target number of false positives per micrograph, two ways:
 * **Analytic null** (:meth:`NullCalibrationManager.predict_analytic_null`): predict
   the null peak rate from the template, filters, grids and the micrograph's power
   spectrum, without a search.
+* **Analytic refined null** (:meth:`NullCalibrationManager.
+  predict_analytic_refined_null`): with a refine_template configuration and a
+  candidate threshold, predict the null peak rate after the search's candidates are
+  refined, for a threshold on refined z-scores.
 
 See :mod:`leopard_em.analysis.empirical_null` and
 :mod:`leopard_em.analysis.analytic_null`.
@@ -23,11 +27,14 @@ import mrcfile
 import numpy as np
 import torch
 import yaml  # type: ignore
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from leopard_em.analysis.analytic_null import (
     AnalyticNullPrediction,
+    RefinedNullPrediction,
     predict_match_template_null,
+    predict_refine_template_null,
+    refine_window,
 )
 from leopard_em.analysis.empirical_null import (
     DistinctPeaks,
@@ -85,6 +92,37 @@ def peaks_at(result: Any, peaks: DistinctPeaks) -> MatchTemplatePeaks:
     )
 
 
+class AnalyticRefineConfig(BaseModel):
+    """Settings of the analytic refined null (used with a refine_template config).
+
+    Attributes
+    ----------
+    n_candidates : int
+        Grid points sampled as null candidates, spread over the defocus planes.
+        Default 8 (about 35 s each on a GPU for a 77-offset refine).
+    n_draws : int
+        Gaussian draws per candidate. Default 200,000.
+    shift_radius : int
+        Positions refinement scores about each candidate, +-pixels. Default 1 (+-2
+        gives the same gains on xenon_131, at ~8x the cost).
+    condition_radius : int
+        Positions at which the candidate is known to beat the search's grid points
+        (it is a distinct peak), +-pixels. Default 2.
+    defocus_step : float | None
+        Defocus step of the modelled window, A, when coarser than the refine's own.
+        Default 40 (40 and 80 A give the same threshold within 0.02 z for a 20 A
+        refine). None: the refine's own step.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    n_candidates: int = Field(default=8, ge=1)
+    n_draws: int = Field(default=200_000, ge=1000)
+    shift_radius: int = Field(default=1, ge=0)
+    condition_radius: int = Field(default=2, ge=0)
+    defocus_step: float | None = Field(default=40.0, gt=0.0)
+
+
 class AnalyticNullConfig(BaseModel):
     """Settings of the analytic null prediction.
 
@@ -104,6 +142,8 @@ class AnalyticNullConfig(BaseModel):
         Sampling seed. Default 0.
     device : str
         Device for the calculation, e.g. "cpu" or "cuda:0". Default "cpu".
+    refine : AnalyticRefineConfig
+        Settings of the refined null (with ``refine_template_config_path``).
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -115,6 +155,7 @@ class AnalyticNullConfig(BaseModel):
     batch_size: int = Field(default=4, ge=1)
     seed: int = 0
     device: str = "cpu"
+    refine: AnalyticRefineConfig = AnalyticRefineConfig()
 
 
 class NullCalibrationManager(BaseModel2DTM):
@@ -153,6 +194,14 @@ class NullCalibrationManager(BaseModel2DTM):
         candidates the same way as the real ones. Default False.
     analytic : AnalyticNullConfig
         Settings of the analytic prediction.
+    refine_template_config_path : str | None
+        A refine_template YAML the search's candidates are refined with. With it (and
+        ``refine_candidate_threshold``), the analytic prediction also gives the
+        threshold on refined z-scores. Only its orientation, defocus and pixel size
+        refinement settings are read.
+    refine_candidate_threshold : float | None
+        Match_template z-score at or above which candidates are refined. Required with
+        ``refine_template_config_path``.
     """
 
     match_template_config_path: str
@@ -165,6 +214,19 @@ class NullCalibrationManager(BaseModel2DTM):
     exclude_mask_path: str | None = None
     write_null_particles: bool = False
     analytic: AnalyticNullConfig = AnalyticNullConfig()
+    refine_template_config_path: str | None = None
+    refine_candidate_threshold: float | None = None
+
+    @model_validator(mode="after")  # type: ignore
+    def _check_refine(self) -> "NullCalibrationManager":
+        if (self.refine_template_config_path is None) != (
+            self.refine_candidate_threshold is None
+        ):
+            raise ValueError(
+                "refine_template_config_path and refine_candidate_threshold go "
+                "together."
+            )
+        return self
 
     def _match_template_config(self) -> dict[str, Any]:
         with open(self.match_template_config_path, encoding="utf-8") as f:
@@ -284,10 +346,56 @@ class NullCalibrationManager(BaseModel2DTM):
             device=settings.device,
         )
 
+    def predict_analytic_refined_null(
+        self, prediction: AnalyticNullPrediction | None = None
+    ) -> RefinedNullPrediction:
+        """Predict the null peak rate after refining the candidates, without a search.
+
+        Parameters
+        ----------
+        prediction : AnalyticNullPrediction | None
+            The search's prediction (:meth:`predict_analytic_null`); made if None.
+
+        Returns
+        -------
+        RefinedNullPrediction
+        """
+        if (
+            self.refine_template_config_path is None
+            or self.refine_candidate_threshold is None
+        ):
+            raise ValueError(
+                "Set refine_template_config_path and refine_candidate_threshold."
+            )
+        if prediction is None:
+            prediction = self.predict_analytic_null()
+        manager = self.make_match_template_manager("analytic")
+        kwargs = manager.make_backend_core_function_kwargs()
+        settings = self.analytic
+        offsets, defocus = refine_window(
+            self.refine_template_config_path, settings.refine.defocus_step
+        )
+        return predict_refine_template_null(
+            kwargs,
+            manager.optics_group,
+            prediction,
+            offsets,
+            defocus,
+            self.refine_candidate_threshold,
+            shift_radius=settings.refine.shift_radius,
+            condition_radius=settings.refine.condition_radius,
+            n_candidates=settings.refine.n_candidates,
+            n_draws=settings.refine.n_draws,
+            n_mean_samples=settings.n_mean_samples,
+            seed=settings.seed,
+            device=settings.device,
+        )
+
     def summarize(
         self,
         null_peaks: NullPeaks | None = None,
         prediction: AnalyticNullPrediction | None = None,
+        refined: RefinedNullPrediction | None = None,
     ) -> dict[str, Any]:
         """Thresholds for each target and the null peak rates, as a JSON-able dict.
 
@@ -297,13 +405,16 @@ class NullCalibrationManager(BaseModel2DTM):
             From :meth:`run_phase_randomized_null`.
         prediction : AnalyticNullPrediction | None
             From :meth:`predict_analytic_null`.
+        refined : RefinedNullPrediction | None
+            From :meth:`predict_analytic_refined_null`.
 
         Returns
         -------
         dict[str, Any]
             Includes, per target, the nominal (independent-trials) threshold, the
-            phase-randomised null thresholds (``"mean"`` and ``"confidence"`` rules)
-            and the analytic threshold.
+            phase-randomised null thresholds (``"mean"`` and ``"confidence"`` rules),
+            the analytic threshold and, with a refinement, the analytic threshold on
+            refined z-scores (``"analytic_refined"``).
         """
         manager = self.make_match_template_manager("summary")
         shape = self._map_shape(manager)
@@ -339,6 +450,8 @@ class NullCalibrationManager(BaseModel2DTM):
                 )
             if prediction is not None:
                 row["analytic"] = prediction.zscore_cutoff(fp)
+            if refined is not None:
+                row["analytic_refined"] = refined.zscore_cutoff(fp)
             out["thresholds"].append(row)
         if null_peaks is not None:
             grid = np.round(np.arange(self.peak_floor, self.peak_floor + 4.0, 0.05), 3)
@@ -346,6 +459,11 @@ class NullCalibrationManager(BaseModel2DTM):
             out["null_peaks"] = null_peaks.as_dict()
         if prediction is not None:
             out["analytic"] = prediction.as_dict()
+        if refined is not None:
+            out["refine_template_config_path"] = os.path.abspath(
+                str(self.refine_template_config_path)
+            )
+            out["analytic_refined"] = refined.as_dict()
         return out
 
     def run(self, orientation_batch_size: int = 16) -> dict[str, Any]:
@@ -367,7 +485,12 @@ class NullCalibrationManager(BaseModel2DTM):
             else None
         )
         prediction = self.predict_analytic_null() if self.analytic.enabled else None
-        summary = self.summarize(null_peaks, prediction)
+        refined = (
+            self.predict_analytic_refined_null(prediction)
+            if prediction is not None and self.refine_template_config_path is not None
+            else None
+        )
+        summary = self.summarize(null_peaks, prediction, refined)
         path = Path(self.output_directory) / "null_summary.json"
         with open(path, "w", encoding="utf-8") as f:
             json.dump(summary, f, indent=1)

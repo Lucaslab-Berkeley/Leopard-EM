@@ -27,6 +27,7 @@ from leopard_em.backend.utils import normalize_template_projection
 
 from .field import (
     AxisNeighbours,
+    MeanTemplate,
     PowerWeighting,
     estimate_kappa,
     estimate_mean_template,
@@ -127,6 +128,82 @@ def _batches(rows: np.ndarray, batch_size: int) -> Iterator[np.ndarray]:
         yield rows[i : i + batch_size]
 
 
+class _LeopardSearch:  # pylint: disable=too-many-instance-attributes
+    """The pieces of a match_template search the analytic null needs.
+
+    From the dictionary returned by ``MatchTemplateManager.
+    make_backend_core_function_kwargs``: the template, the search's CTF x whitening
+    filters, the grids, and the image's lag-grid power weighting.
+    """
+
+    def __init__(self, backend_kwargs: dict[str, Any], device: torch.device | str):
+        pixel_values = backend_kwargs.get("pixel_values")
+        if pixel_values is not None and torch.as_tensor(pixel_values).numel() > 1:
+            raise NotImplementedError(
+                "The analytic null does not model a pixel size search yet."
+            )
+        self.device = device
+        image_dft = backend_kwargs["image_dft"]
+        self.image_shape = (
+            int(image_dft.shape[-2]),
+            2 * (int(image_dft.shape[-1]) - 1),
+        )
+        self.template_dft = backend_kwargs["template_dft"].to(device)
+        self.box = (
+            int(self.template_dft.shape[1]),
+            int(self.template_dft.shape[2]) * 2 - 2,
+        )
+        self.whitening = backend_kwargs["whitening_filter_template"].to(device)
+        # (1, planes, h, w // 2 + 1)
+        self.filters = backend_kwargs["ctf_filters"][:1].to(device) * self.whitening
+        mag_matrix = backend_kwargs.get("mag_matrix")
+        self.mag_matrix = None if mag_matrix is None else mag_matrix.to(device)
+        self.euler = backend_kwargs["euler_angles"].detach().cpu().double().numpy()
+        self.defocus_values = (
+            torch.as_tensor(backend_kwargs["defocus_values"])
+            .detach()
+            .cpu()
+            .double()
+            .numpy()
+            .reshape(-1)
+        )
+        self.n_planes = int(self.filters.shape[1])
+        self.weighting = PowerWeighting(image_dft, self.image_shape, self.box).to(
+            device
+        )
+
+    def project_rotations(
+        self, rotations: torch.Tensor, filters: torch.Tensor | None = None
+    ) -> torch.Tensor:
+        """Lag-grid projections (planes, n, Ly, Lx // 2 + 1) of rotation matrices.
+
+        ``filters`` (1, planes, h, w // 2 + 1) default to the search's own.
+        """
+        p = project_filtered_templates(
+            self.template_dft,
+            rotations.float().to(self.device),
+            self.filters if filters is None else filters,
+            self.mag_matrix,
+        )[0]
+        p = normalize_template_projection(p, self.box, self.image_shape)
+        return self.weighting.transform(p)
+
+    def project(self, rows: np.ndarray) -> torch.Tensor:
+        """Lag-grid projections (planes, n, Ly, Lx // 2 + 1) of ZYZ Euler rows."""
+        angles = torch.from_numpy(np.asarray(rows, np.float64)).float()
+        rot = roma.euler_to_rotmat("ZYZ", angles.to(self.device), degrees=True)
+        return self.project_rotations(rot)
+
+    def mean_template(
+        self, rng: np.random.Generator, n_mean_samples: int
+    ) -> MeanTemplate:
+        """The mean projection over ``n_mean_samples`` random orientations."""
+        sub = max(1, 16 // self.n_planes)
+        n_mean = min(n_mean_samples, len(self.euler))
+        rows = self.euler[rng.choice(len(self.euler), size=n_mean, replace=False)]
+        return estimate_mean_template(self.project, self.weighting, _batches(rows, sub))
+
+
 # pylint: disable=too-many-locals,too-many-arguments
 def predict_match_template_null(
     backend_kwargs: dict[str, Any],
@@ -176,37 +253,12 @@ def predict_match_template_null(
         Call ``.zscore_cutoff(false_positives)`` for the predicted threshold.
     """
     start = time.time()
-    pixel_values = backend_kwargs.get("pixel_values")
-    if pixel_values is not None and torch.as_tensor(pixel_values).numel() > 1:
-        raise NotImplementedError(
-            "The analytic null does not model a pixel size search yet."
-        )
     rng = np.random.default_rng(seed)
-    image_dft = backend_kwargs["image_dft"]
-    image_shape = (int(image_dft.shape[-2]), 2 * (int(image_dft.shape[-1]) - 1))
-    template_dft = backend_kwargs["template_dft"].to(device)
-    box = (int(template_dft.shape[1]), int(template_dft.shape[2]) * 2 - 2)
-    filters = (
-        backend_kwargs["ctf_filters"][:1] * backend_kwargs["whitening_filter_template"]
-    ).to(device)  # (1, planes, h, w // 2 + 1)
-    mag_matrix = backend_kwargs.get("mag_matrix")
-    if mag_matrix is not None:
-        mag_matrix = mag_matrix.to(device)
-    euler = backend_kwargs["euler_angles"].detach().cpu().double().numpy()
-    n_planes = int(filters.shape[1])
-    weighting = PowerWeighting(image_dft, image_shape, box).to(device)
-
-    def project(rows: np.ndarray) -> torch.Tensor:
-        angles = torch.from_numpy(np.asarray(rows, np.float64)).float().to(device)
-        rot = roma.euler_to_rotmat("ZYZ", angles, degrees=True)
-        p = project_filtered_templates(template_dft, rot, filters, mag_matrix)[0]
-        p = normalize_template_projection(p, box, image_shape)
-        return weighting.transform(p)
-
-    sub = max(1, 16 // n_planes)
-    n_mean = min(n_mean_samples, len(euler))
-    mean_rows = euler[rng.choice(len(euler), size=n_mean, replace=False)]
-    mean_template = estimate_mean_template(project, weighting, _batches(mean_rows, sub))
+    search = _LeopardSearch(backend_kwargs, device)
+    euler, n_planes, weighting = search.euler, search.n_planes, search.weighting
+    project = search.project
+    mean_template = search.mean_template(rng, n_mean_samples)
+    n_mean = mean_template.n_samples // n_planes
 
     def pairs() -> Iterator[tuple[np.ndarray, np.ndarray]]:
         for _ in range(n_kappa_pairs):
@@ -241,8 +293,8 @@ def predict_match_template_null(
             "engine": "leopard_em.match_template",
             "orientations": len(euler),
             "planes": n_planes,
-            "image_shape": list(image_shape),
-            "box_shape": list(box),
+            "image_shape": list(search.image_shape),
+            "box_shape": list(search.box),
             "psi_step": grid.psi_step,
             "theta_step": grid.theta_step,
             "n_mean_samples": n_mean,
