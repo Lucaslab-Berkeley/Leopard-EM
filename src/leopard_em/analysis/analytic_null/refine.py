@@ -4,7 +4,8 @@ Refinement (e.g. Leopard-EM's refine_template) re-scores each candidate of a sea
 a finer local grid around its best search point: orientation offsets composed with the
 candidate's orientation, defocus offsets about its plane, and a few pixels about its
 position. The refined z-score is the best of those scores, so a null candidate of
-height u gains G = max(window) - u >= 0.
+height u gains G = max(window) - u (>= 0 when the window holds the candidate's own
+score; an exact re-score of an approximate search can lose).
 
 Only the search's candidates are refined (its distinct peaks at or above a candidate
 threshold t_c), so the expected number of refined null peaks at or above z is
@@ -43,7 +44,7 @@ from .field import MeanTemplate, PowerWeighting
 from .lattice import AnalyticNullPrediction, crossing
 
 DEFAULT_HEIGHTS = np.round(np.arange(5.0, 9.01, 0.5), 3)
-DEFAULT_GAIN_EDGES = np.round(np.arange(0.0, 3.0001, 0.005), 4)
+DEFAULT_GAIN_EDGES = np.round(np.arange(-3.0, 3.0001, 0.005), 4)
 _JITTERS = (1e-6, 1e-5, 1e-4, 1e-3)
 
 
@@ -64,12 +65,19 @@ class RefinementWindow:
     search : torch.Tensor
         The search's grid points around the candidate: its neighbours one step along
         every search axis and its adjacent defocus planes. The candidate beat each of
-        them, and its own search point, at every position within the shift radius.
+        them, and its own search point, at every position within the condition radius.
+    own : torch.Tensor | None
+        The candidate's own search template, shape (Ly, Lx // 2 + 1), when the search
+        scores a different template from refinement's: an approximate search (e.g.
+        Panther-EM's SVD templates) refined by an exact one. The candidate's score is
+        then ``own`` at zero shift, and ``search`` holds the search's own templates
+        of its neighbours. None (default): the search scores ``window[centre]``.
     """
 
     window: torch.Tensor
     centre: int
     search: torch.Tensor
+    own: torch.Tensor | None = None
 
 
 def _survival(counts: np.ndarray) -> np.ndarray:
@@ -88,12 +96,15 @@ class RefinementGain:
     heights : np.ndarray
         Candidate heights u (search z-scores), shape (n_u,).
     gain_edges : np.ndarray
-        Gains g, shape (n_g,), from 0.
+        Gains g, shape (n_g,), increasing. A refinement that re-scores with the
+        search's own templates gains G >= 0; one that re-scores an approximate
+        search exactly can lose (G < 0).
     survival : np.ndarray
         P(G >= g | u), shape (n_u, n_g).
     accepted : np.ndarray
         Fraction of draws at each height in which the candidate beat every search
-        point in the window (the draws kept), shape (n_u,).
+        point in the window (the draws kept; windows weighted as pooled), shape
+        (n_u,).
     n_windows : int
         Sampled candidates (grid points).
     n_draws : int
@@ -116,14 +127,18 @@ class RefinementGain:
     def survival_at(
         self, height: float | np.ndarray, gain: float | np.ndarray
     ) -> np.ndarray:
-        """P(G >= gain | u = height), linear in both; 1 for gain <= 0.
+        """P(G >= gain | u = height), linear in both.
 
-        Heights outside the sampled range take the nearest sampled height.
+        1 below the tabulated gains, 0 above them. Heights outside the sampled range
+        take the nearest sampled height.
         """
         u, g = np.broadcast_arrays(np.asarray(height, float), np.asarray(gain, float))
         flat_u, flat_g = u.reshape(-1), g.reshape(-1)
         per_height = np.stack(
-            [np.interp(flat_g, self.gain_edges, s) for s in self.survival]
+            [
+                np.interp(flat_g, self.gain_edges, s, left=1.0, right=0.0)
+                for s in self.survival
+            ]
         )  # (n_u, m)
         if len(self.heights) == 1:
             out = per_height[0]
@@ -133,7 +148,7 @@ class RefinementGain:
             frac = (hu - self.heights[j]) / (self.heights[j + 1] - self.heights[j])
             cols = np.arange(flat_u.size)
             out = (1 - frac) * per_height[j, cols] + frac * per_height[j + 1, cols]
-        return np.where(flat_g <= 0, 1.0, out).reshape(u.shape)
+        return np.asarray(out).reshape(u.shape)
 
     def quantile(self, height: float, p: float) -> float:
         """The gain G with P(G < gain | u = height) = p (smallest edge reaching it)."""
@@ -202,26 +217,38 @@ class ScoreLayout:
     centre: int
 
 
-def score_layout(  # pylint: disable=too-many-locals
-    n_window: int, n_search: int, centre: int, shift_radius: int, condition_radius: int
+def score_layout(  # pylint: disable=too-many-locals,too-many-arguments
+    n_window: int,
+    n_search: int,
+    centre: int,
+    shift_radius: int,
+    condition_radius: int,
+    separate_own: bool = False,
 ) -> ScoreLayout:
-    """The scores of a window (:class:`ScoreLayout`)."""
+    """The scores of a window (:class:`ScoreLayout`).
+
+    With ``separate_own``, the candidate's own search template is projection
+    ``n_window + n_search`` (:attr:`RefinementWindow.own`): it is scored at every
+    position within the condition radius, and the candidate is it at zero shift.
+    """
     rw, rc = int(shift_radius), int(condition_radius)
     r = max(rw, rc)
+    own_index = n_window + n_search if separate_own else centre
     projection: list[int] = []
     dys: list[int] = []
     dxs: list[int] = []
     kinds: list[str] = []
     for dy in range(-r, r + 1):
         for dx in range(-r, r + 1):
-            if abs(dy) <= rw and abs(dx) <= rw:
+            in_shift = abs(dy) <= rw and abs(dx) <= rw
+            if in_shift:
                 projection += list(range(n_window))
                 kinds += ["window"] * n_window
             if abs(dy) <= rc and abs(dx) <= rc:
                 projection += list(range(n_window, n_window + n_search))
                 kinds += ["search"] * n_search
-                if abs(dy) > rw or abs(dx) > rw:
-                    projection.append(centre)
+                if separate_own or not in_shift:
+                    projection.append(own_index)
                     kinds.append("own")
             added = len(projection) - len(dys)
             dys += [dy] * added
@@ -231,16 +258,21 @@ def score_layout(  # pylint: disable=too-many-locals
     kind = np.asarray(kinds)
     in_window = kind == "window"
     at_zero = (dy_a == 0) & (dx_a == 0)
-    own = in_window & (projection_a == centre)
-    centre_index = int(np.flatnonzero(own & at_zero)[0])
-    beaten = (kind == "search") | (kind == "own") | (own & ~at_zero)
+    if separate_own:
+        candidate = (kind == "own") & at_zero
+        beaten = (kind == "search") | ((kind == "own") & ~at_zero)
+    else:
+        own_in_window = in_window & (projection_a == centre)
+        candidate = own_in_window & at_zero
+        beaten = (kind == "search") | (kind == "own") | (own_in_window & ~at_zero)
+    centre_index = int(np.flatnonzero(candidate)[0])
     return ScoreLayout(projection_a, dy_a, dx_a, in_window, beaten, centre_index)
 
 
 def window_covariance(  # pylint: disable=too-many-locals
     window: RefinementWindow,
     weighting: PowerWeighting,
-    mean_template: MeanTemplate,
+    mean_template: MeanTemplate | None,
     shift_radius: int,
     condition_radius: int | None = None,
 ) -> tuple[torch.Tensor, ScoreLayout]:
@@ -258,8 +290,10 @@ def window_covariance(  # pylint: disable=too-many-locals
         The window's projections.
     weighting : PowerWeighting
         Lag-grid power weighting of the image.
-    mean_template : MeanTemplate
-        The search's mean projection and field variance.
+    mean_template : MeanTemplate | None
+        The search's mean projection and field variance. None: the projections are
+        the scores' own templates already (mean removed, in z units), as an engine
+        whose search and refinement normalise differently supplies them.
     shift_radius : int
         Positions refinement scores, +-pixels.
     condition_radius : int | None
@@ -274,17 +308,26 @@ def window_covariance(  # pylint: disable=too-many-locals
     rw = int(shift_radius)
     rc = rw if condition_radius is None else int(condition_radius)
     device = weighting.weights.device
-    projections = torch.cat([window.window, window.search]).to(device)
+    parts = [window.window, window.search]
+    if window.own is not None:
+        parts.append(window.own[None])
+    projections = torch.cat([x.to(device) for x in parts])
     n_window, n_all = int(window.window.shape[0]), int(projections.shape[0])
-    layout = score_layout(n_window, n_all - n_window, int(window.centre), rw, rc)
-    q = (projections - mean_template.mean.to(device)).reshape(n_all, -1)
-    q = q.to(torch.complex128)
+    n_search = int(window.search.shape[0])
+    separate = window.own is not None
+    layout = score_layout(n_window, n_search, int(window.centre), rw, rc, separate)
+    if mean_template is not None:
+        projections = projections - mean_template.mean.to(device)
+    q = projections.reshape(n_all, -1).to(torch.complex128)
     q_conj = q.conj().T.contiguous()
     weights = weighting.weights.reshape(-1).double().clamp(min=0)
     ky = weighting.ky.expand(weighting.weights.shape).reshape(-1).double()
     kx = weighting.kx.expand(weighting.weights.shape).reshape(-1).double()
     # rows of the search points and the candidate's own projection, at any lag
-    rows = torch.as_tensor([int(window.centre), *range(n_window, n_all)], device=device)
+    own_row = n_all - 1 if separate else int(window.centre)
+    rows = torch.as_tensor(
+        [own_row, *range(n_window, n_window + n_search)], device=device
+    )
     row_of = {int(t): i for i, t in enumerate(rows.tolist())}
     full: dict[tuple[int, int], torch.Tensor] = {}
     partial: dict[tuple[int, int], torch.Tensor] = {}
@@ -323,7 +366,8 @@ def window_covariance(  # pylint: disable=too-many-locals
             else:
                 block = full[lag][ta][:, tb]
             cov[sa, sb] = block
-    cov /= mean_template.sigma2
+    if mean_template is not None:
+        cov /= mean_template.sigma2
     return cov, layout
 
 
@@ -331,7 +375,7 @@ def window_covariance(  # pylint: disable=too-many-locals
 def sample_refinement_gain(
     windows: Iterable[RefinementWindow],
     weighting: PowerWeighting,
-    mean_template: MeanTemplate,
+    mean_template: MeanTemplate | None,
     *,
     shift_radius: int = 1,
     condition_radius: int = 2,
@@ -350,7 +394,10 @@ def sample_refinement_gain(
     scores conditioned on the candidate's being u (mean rho u, covariance
     C - c c^T / c0); ``n_draws`` Gaussian draws, kept where the candidate beats every
     search point (and its own projection at the other positions); the gain
-    G = max(window) - u of each kept draw.
+    G = max(window) - u of each kept draw. Windows are pooled in proportion to the
+    density of their candidate's score at u (a score of variance v: phi(u / sqrt(v))
+    / sqrt(v)): search points whose scores vary more (e.g. defocus planes of higher
+    noise variance) supply more candidates at a given height.
 
     Parameters
     ----------
@@ -358,9 +405,10 @@ def sample_refinement_gain(
         One per sampled candidate (sample grid points uniformly over the search).
     weighting : PowerWeighting
         Lag-grid power weighting of the image.
-    mean_template : MeanTemplate
+    mean_template : MeanTemplate | None
         The search's mean projection and field variance
-        (:func:`.field.estimate_mean_template`).
+        (:func:`.field.estimate_mean_template`). None: the windows' projections are
+        the scores' own templates already (:func:`window_covariance`).
     shift_radius : int
         Positions refinement scores about the candidate, +-pixels. Default 1: on
         xenon_131 the window's maximum lies within +-1 px (+-2 px gives the same
@@ -372,7 +420,7 @@ def sample_refinement_gain(
     heights : np.ndarray | None
         Candidate heights u. Default 5 to 9 in steps of 0.5.
     gain_edges : np.ndarray | None
-        Gains to tabulate. Default 0 to 3 in steps of 0.005.
+        Gains to tabulate. Default -3 to 3 in steps of 0.005.
     n_draws : int
         Gaussian draws per window. Default 200,000.
     chunk_size : int
@@ -390,14 +438,15 @@ def sample_refinement_gain(
     start = time.time()
     heights = DEFAULT_HEIGHTS if heights is None else np.asarray(heights, float)
     edges = DEFAULT_GAIN_EDGES if gain_edges is None else np.asarray(gain_edges, float)
-    if edges[0] != 0.0 or np.any(np.diff(edges) <= 0):
-        raise ValueError("gain_edges must start at 0 and increase.")
+    if np.any(np.diff(edges) <= 0):
+        raise ValueError("gain_edges must increase.")
     r = int(shift_radius)
     rc = max(r, int(condition_radius))
     device = weighting.weights.device
     edges_t = torch.as_tensor(edges, device=device, dtype=torch.float32)
     counts = np.zeros((len(heights), len(edges)))
     kept = np.zeros(len(heights))
+    weight_total = np.zeros(len(heights))
     total = 0
     n_windows = 0
     jitters: list[float] = []
@@ -406,7 +455,10 @@ def sample_refinement_gain(
     for window in windows:
         n_window = int(window.window.shape[0])
         n_search = int(window.search.shape[0])
-        size = len(score_layout(n_window, n_search, int(window.centre), r, rc).dy)
+        separate = window.own is not None
+        size = len(
+            score_layout(n_window, n_search, int(window.centre), r, rc, separate).dy
+        )
         if size > max_scores:
             raise ValueError(
                 f"The refinement window has {size} scores, more than max_scores="
@@ -419,6 +471,9 @@ def sample_refinement_gain(
         c = cov[keep, c0]
         c00 = float(cov[c0, c0])
         regression = (c / c00).float()  # each score's mean is regression * u
+        # a search point whose score has variance c00 supplies candidates at height u
+        # in proportion to its density there: weight the window by it (relative to 1)
+        density = np.exp(-(heights**2) / 2 * (1 / c00 - 1)) / np.sqrt(c00)
         conditional = cov[keep][:, keep]
         del cov
         conditional.addr_(c, c, alpha=-1.0 / c00)  # C - c c^T / c0
@@ -440,6 +495,7 @@ def sample_refinement_gain(
             raise RuntimeError("The conditional window covariance is not positive.")
         factor32 = factor.float()
         del factor
+        own_in_window = bool(layout.in_window[c0])
         kept_scores = np.delete(np.arange(size), c0)
         in_window = torch.as_tensor(layout.in_window[kept_scores], device=device)
         beaten = torch.as_tensor(layout.beaten[kept_scores], device=device)
@@ -451,12 +507,16 @@ def sample_refinement_gain(
             for i, u in enumerate(heights):
                 draws = base + float(u) * regression[:, None]
                 ok = (draws[beaten] < u).all(dim=0)
-                gain = (draws[in_window].max(dim=0).values - float(u)).clamp(min=0)
+                gain = draws[in_window].max(dim=0).values - float(u)
+                if own_in_window:  # the candidate's own score (u) is in the window
+                    gain = gain.clamp(min=0)
                 gain = gain[ok]
-                kept[i] += int(ok.sum())
+                kept[i] += density[i] * int(ok.sum())
+                weight_total[i] += density[i] * chunk_size
                 if gain.numel():
+                    # below the first edge counts in the first bin (survival there 1)
                     bins = torch.bucketize(gain, edges_t, right=True) - 1
-                    counts[i] += (
+                    counts[i] += density[i] * (
                         torch.bincount(bins.clamp(min=0), minlength=len(edges))
                         .cpu()
                         .numpy()
@@ -473,7 +533,7 @@ def sample_refinement_gain(
         heights=heights,
         gain_edges=edges,
         survival=_survival(counts),
-        accepted=kept / total,
+        accepted=kept / weight_total,
         n_windows=n_windows,
         n_draws=total // n_windows,
         scores_per_window=int(max(sizes)),

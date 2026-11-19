@@ -166,6 +166,92 @@ def test_gain_matches_brute_force_conditioning():
     assert gain.accepted[0] == pytest.approx(n_keep / n_near, abs=0.01)
 
 
+def test_gain_of_an_approximate_search_matches_brute_force():
+    """The search scores its own (approximate) templates; refinement re-scores exactly.
+
+    The candidate's score is its approximate template's; the gain can be negative.
+    """
+    weighting = _white_weighting()
+    a, b = _ring_basis(4)
+    rng = np.random.default_rng(5)
+    error = torch.from_numpy(
+        gaussian_filter(rng.standard_normal((3, *BOX)), (0, 0.7, 0.7))
+    ).float()
+    error = 0.35 * (error - error.mean(dim=(-2, -1), keepdim=True)) / error.std()
+    window = _ring(np.linspace(-0.3, 0.3, 5), a, b)  # exact
+    approximate = _ring([0.0, -0.45, 0.45], a, b) + error  # own, then neighbours
+    projections = torch.cat([window, approximate[1:], approximate[:1]])
+    q = weighting.transform(projections)
+    unit = float(weighting.inner(q[2], q[2]))
+    q = q / np.sqrt(unit)
+    u = 2.0
+    gain = sample_refinement_gain(
+        [RefinementWindow(q[:5], 2, q[5:7], own=q[7])],
+        weighting,
+        None,
+        shift_radius=1,
+        condition_radius=1,
+        heights=np.array([u]),
+        n_draws=100_000,
+        seed=0,
+    )
+    layout = score_layout(
+        5, 2, 2, shift_radius=1, condition_radius=1, separate_own=True
+    )
+    cov = (
+        _real_space_covariance(projections, layout)
+        / (_real_space_covariance(projections[2:3], score_layout(1, 0, 0, 0, 0))[0, 0])
+    )
+    centre = layout.centre
+    assert layout.projection[centre] == 7
+    in_window = layout.projection < 5
+    beaten = layout.projection >= 5
+    beaten[centre] = False
+    factor = np.linalg.cholesky(cov + 1e-10 * np.eye(len(cov)))
+    g, n_near, n_keep = [], 0, 0
+    for _ in range(16):
+        draws = rng.standard_normal((500_000, len(cov))) @ factor.T
+        x0 = draws[:, centre]
+        near = np.abs(x0 - u) < 0.03
+        keep = near & (draws[:, beaten] < x0[:, None]).all(axis=1)
+        g.append(draws[keep][:, in_window].max(axis=1) - x0[keep])
+        n_near += int(near.sum())
+        n_keep += int(keep.sum())
+    g = np.concatenate(g)
+    assert n_keep > 2000
+    assert np.mean(g < 0) > 0.1  # the exact re-score can lose
+    for value in (-0.3, 0.0, 0.2):
+        assert gain.survival_at(u, value) == pytest.approx(
+            np.mean(g >= value), abs=0.03
+        )
+    assert gain.accepted[0] == pytest.approx(n_keep / n_near, abs=0.015)
+
+
+def test_windows_pool_by_their_candidates_density():
+    """A search point whose score varies more supplies more candidates at height u."""
+    weighting = _white_weighting()
+    a, b = _ring_basis(6)
+    q = weighting.transform(_ring(np.linspace(-0.3, 0.3, 5), a, b))
+    sigma2 = float(weighting.inner(q[2], q[2]))
+    mean = MeanTemplate(torch.zeros_like(q[0]), sigma2, sigma2, 0.0, 1)
+    v = 1.15
+    plain = RefinementWindow(q[:5], 2, q[5:])
+    wider = RefinementWindow(q[:5] * np.sqrt(v), 2, q[5:])
+    heights = np.array([3.0])
+    kw = {"shift_radius": 0, "condition_radius": 0, "heights": heights}
+    kw["n_draws"] = 100_000
+    g1 = sample_refinement_gain([plain], weighting, mean, **kw)
+    g2 = sample_refinement_gain([wider], weighting, mean, **kw)
+    both = sample_refinement_gain([plain, wider], weighting, mean, **kw)
+    u = heights[0]
+    w2 = np.exp(-(u**2) / 2 * (1 / v - 1)) / np.sqrt(v)
+    a1, a2 = g1.accepted[0], w2 * g2.accepted[0]
+    for g in (0.05, 0.2, 0.4):
+        mix = (a1 * g1.survival_at(u, g) + a2 * g2.survival_at(u, g)) / (a1 + a2)
+        assert both.survival_at(u, g) == pytest.approx(mix, abs=0.01)
+    assert both.accepted[0] == pytest.approx((a1 + a2) / (1 + w2), abs=0.01)
+
+
 def _search_prediction(rate):
     t = np.round(np.arange(2.0, 10.0, 0.01), 3)
     values = rate(t)

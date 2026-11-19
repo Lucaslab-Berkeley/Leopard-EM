@@ -86,12 +86,13 @@ The gain comes from the same Gaussian field, at a few sampled grid points:
 1. **The window and what the search saw.** The joint covariance of every score refinement looks at (orientation offsets × defocus offsets, within ±1 px) and of the search's own grid points around the candidate (one step along ψ, θ and φ, and the adjacent defocus planes, within ±2 px).
 2. **Condition on the candidate's score.** Given that it is *u*, each other score has mean ρ*u* and variance 1 − ρ², for its correlation ρ with the candidate.
 3. **Condition on it being the search's peak.** Of 200,000 Gaussian draws of the window, only those where the candidate beat every search point are kept.
-4. **The gain** of each kept draw is the window's maximum minus *u*.
+4. **The gain** of each kept draw is the window's maximum minus *u*. The sampled points are pooled in proportion to how many candidates each supplies at *u*: a point whose score varies more (e.g. a defocus plane with more noise) supplies more.
 
 The window is refine_template's own: its `orientation_refinement_config` offsets, composed as refine_template composes them, and its `defocus_refinement_config` range, modelled at a 40 Å step.
 Counting every local maximum of refinement's fine grid over the whole search instead, as if refinement searched everywhere, overcounts by about 2× at z 7 on xenon_131: refinement never sees maxima away from a candidate, or at pixels whose best search score fell below *t*_c.
 
 The engine-agnostic part (`leopard_em.analysis.analytic_null.refine`) takes the window's and the search points' projections from the engine, like the rest of the analytic null.
+An engine whose search scores approximate templates (Panther-EM's SVD templates, re-scored exactly by refine_template) also passes the search's own templates of the candidate and its neighbours (`RefinementWindow.own`). The candidate is then conditioned on its search score, refinement's exact window is drawn, and the gain can be negative.
 
 ## Configuration
 
@@ -194,14 +195,15 @@ The calculated curve is scaled to the copies' counted area (a 30 px border and o
 
 | | Calculated: refined from the candidates | Counted (14 copies) | Every fine-grid peak, as if refinement searched everywhere |
 |---|---|---|---|
-| Refined null peaks per micrograph at z 7.0 / 7.5 / 7.75 | 436 / 17.8 / 2.9 | 400 / 14.5 / 2.0 | 748 / 20.7 / 3.1 |
+| Refined null peaks per micrograph at z 7.0 / 7.5 / 7.75 | 437 / 18.1 / 3.0 | 400 / 14.5 / 2.0 | 748 / 20.7 / 3.1 |
 | 1-FP refined threshold | **7.89** | 7.84 counted, 7.90 smoothed | 7.89 |
 | Gain of a null candidate at z ≈ 6.5: median / p90 / p99 | +0.165 / +0.45 / +0.77 | +0.149 / +0.43 / +0.74 | |
 
 - **Thresholds:** the refined 1-FP threshold lies between the counted and smoothed measurements. The search's own is 7.52, so refinement raises it by 0.37 z.
 - **The curve below the threshold:** 1.09× the counted null at z 7.0. Counting every fine-grid peak instead gives 1.9×.
-- **Window and sampling:** 9 sampled candidates (3 per plane); seeds 0–2 give thresholds of 7.891–7.902, and rates at z 7.0 within ±1.5%. Scoring ±2 px instead of ±1 px, or conditioning at ±1, ±2 or ±3 px, moves the threshold by at most 0.005 z; an 80 Å defocus step instead of 40 Å, by 0.015 z.
+- **Window and sampling:** 9 sampled candidates (3 per plane); seeds 0–2 give thresholds of 7.893–7.898, and rates at z 7.0 within ±1.5%. Scoring ±2 px instead of ±1 px, or conditioning at ±1, ±2 or ±3 px, moves the threshold by at most 0.005 z; an 80 Å defocus step instead of 40 Å, by 0.015 z.
 - **Cost:** about 35 s per sampled candidate on an RTX 6000 Ada (7,900 scores per window), after the search prediction.
+- **Another engine:** Panther-EM's approximate (SVD) search, re-scored exactly by refine_template, goes through the same module with the search's own templates (`RefinementWindow.own`). On 20 refined Panther-EM nulls of the same micrograph it reproduces the null candidates' gain quantiles within 0.04 z, losses included (median −0.10 at z 6.9).
 
 **Phase-randomised null.** The copies are those used for the measured thresholds above. The phase randomisation reproduces them bit for bit (same algorithm and seeds).
 
