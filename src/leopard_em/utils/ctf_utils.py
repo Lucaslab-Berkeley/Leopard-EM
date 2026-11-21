@@ -79,7 +79,10 @@ def calculate_ctf_filter_stack_full_args(
     -------
     torch.Tensor
         Tensor of CTF filter values for the specified shape and parameters. Will have
-        shape (num_pixel_sizes, num_defocus_offsets, h, w // 2 + 1)
+        shape (num_pixel_sizes, num_defocus_offsets, h, w // 2 + 1). The CTF uses the
+        torch-ctf >= 0.7 sign: a positive template projection times this filter is
+        dark at underfocus, like particles in the micrograph, so templates are not
+        contrast-flipped before filtering.
     """
     # Calculate the defocus values + offsets in terms of Angstrom
     defocus = defocus_offsets + ((defocus_u + defocus_v) / 2)

@@ -61,7 +61,8 @@ dependencies = [
     "torch-fourier-shift==v0.6.0",
     "torch-motion-correction==v0.6.0",
     "torch-grid-utils==v0.6.0",
-    "torch-ctf==v0.6.0",
+    # torch-ctf 0.7 flipped the CTF sign so templates need no contrast flip
+    "torch-ctf==v0.7.0",
 ]
 
 [tool.hatch.metadata]

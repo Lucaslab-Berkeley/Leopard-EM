@@ -113,7 +113,6 @@ def do_streamed_orientation_cross_correlate(
         )
     fourier_slices = torch.fft.ifftshift(fourier_slices, dim=(-2,))
     fourier_slices[..., 0, 0] = 0 + 0j  # zero out the DC component (mean zero)
-    fourier_slices *= -1  # flip contrast
 
     # Barrier to ensure Fourier slice computation on default stream is done before
     # continuing computation in parallel on non-default streams.
@@ -278,7 +277,6 @@ def do_batched_orientation_cross_correlate(
     if requires_grad:
         fourier_slice = fourier_slice.clone()
     fourier_slice[..., 0, 0] = 0 + 0j  # zero out the DC component (mean zero)
-    fourier_slice = -1 * fourier_slice  # flip contrast
 
     # Apply the projective filters on a new batch dimension
     fourier_slice = fourier_slice[None, None, ...] * projective_filters[:, :, None, ...]
@@ -392,7 +390,6 @@ def do_batched_orientation_cross_correlate_cpu(
         )
     fourier_slice = torch.fft.ifftshift(fourier_slice, dim=(-2,))
     fourier_slice[..., 0, 0] = 0 + 0j  # zero out the DC component (mean zero)
-    fourier_slice *= -1  # flip contrast
 
     # Apply the projective filters on a new batch dimension
     fourier_slice = fourier_slice[None, None, ...] * projective_filters[:, :, None, ...]
@@ -480,7 +477,6 @@ def do_batched_orientation_frc(
         )
     fourier_slice = torch.fft.ifftshift(fourier_slice, dim=(-2,))
     fourier_slice[..., 0, 0] = 0 + 0j
-    fourier_slice *= -1
 
     fourier_slice = fourier_slice[None, None, ...] * projective_filters[:, :, None, ...]
 
@@ -627,7 +623,6 @@ def do_batched_orientation_cross_correlate_zipfft(
     )
     fourier_slice = torch.fft.ifftshift(fourier_slice, dim=(-2,))
     fourier_slice[..., 0, 0] = 0 + 0j  # zero out the DC component (mean zero)
-    fourier_slice *= -1  # flip contrast
 
     # Apply the projective filters on a new batch dimension
     fourier_slice = fourier_slice[None, None, ...] * projective_filters[:, :, None, ...]
