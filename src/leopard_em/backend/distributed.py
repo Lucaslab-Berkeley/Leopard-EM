@@ -2,10 +2,12 @@
 
 from abc import ABC, abstractmethod
 from collections.abc import Callable
+from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass
 from multiprocessing import Manager, Process
 from typing import Any
 
+import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
 
@@ -334,7 +336,9 @@ def run_multiprocess_jobs(
     Raises
     ------
     RuntimeError
-        If any child process encounters an error.
+        If any child process exits with a non-zero exit code (e.g. an uncaught
+        exception or being killed by a signal). The child's traceback, if any, is
+        printed to stderr by the child itself.
     ValueError
         If ranks is not None and its length does not match kwargs_list.
 
@@ -383,4 +387,58 @@ def run_multiprocess_jobs(
     for p in processes:
         p.join()
 
+    # A child that raised (or was killed) never writes its entry to result_dict, so
+    # without this check its share of the work would be silently dropped.
+    failed = [
+        (rank, p.exitcode)
+        for rank, p in zip(ranks, processes, strict=True)
+        if p.exitcode != 0
+    ]
+    if failed:
+        raise RuntimeError(
+            f"{len(failed)} of {len(processes)} worker process(es) failed "
+            f"(rank, exit code): {failed}. See the worker traceback(s) above."
+        )
+
     return dict(result_dict)
+
+
+def run_device_jobs(
+    target: Callable,
+    kwargs_list: list[dict[str, Any]],
+) -> dict[Any, Any]:
+    """Run one job per device, in-process when there is only a single device.
+
+    Workers typically call ``torch.cuda.set_device()``. In the in-process case that
+    call is scoped by ``torch.cuda.device`` so the caller's current CUDA device is
+    restored afterwards, including when the target raises.
+
+    Parameters
+    ----------
+    target : Callable
+        The function to run, with signature ``target(result_dict, rank, **kwargs)``.
+    kwargs_list : list[dict[str, Any]]
+        Keyword arguments for each job. If the single job's ``"device"`` entry is a
+        CUDA ``torch.device``, that device is made current while the job runs.
+
+    Returns
+    -------
+    dict[Any, Any]
+        Results written to the shared dictionary by the target(s), keyed by rank.
+    """
+    if len(kwargs_list) != 1:
+        return run_multiprocess_jobs(target=target, kwargs_list=kwargs_list)
+
+    kwargs = kwargs_list[0]
+    device = kwargs.get("device")
+    device_ctx: AbstractContextManager = (
+        torch.cuda.device(device)
+        if isinstance(device, torch.device) and device.type == "cuda"
+        else nullcontext()
+    )
+
+    results: dict[Any, Any] = {}
+    with device_ctx:
+        target(results, 0, **kwargs)
+
+    return results

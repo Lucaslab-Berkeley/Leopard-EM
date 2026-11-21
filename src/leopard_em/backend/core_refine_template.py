@@ -17,7 +17,7 @@ from leopard_em.backend.cross_correlation import (
     do_batched_orientation_cross_correlate,
     do_batched_orientation_cross_correlate_cpu,
 )
-from leopard_em.backend.distributed import run_multiprocess_jobs
+from leopard_em.backend.distributed import run_device_jobs
 from leopard_em.backend.utils import (
     EULER_ANGLE_FMT,
     combine_euler_angles,
@@ -225,7 +225,8 @@ def core_refine_template(
         mag_matrix=mag_matrix,
     )
 
-    results = run_multiprocess_jobs(
+    # Runs in-process for a single device, one spawned process per device otherwise
+    results = run_device_jobs(
         target=_core_refine_template_single_gpu,
         kwargs_list=kwargs_per_device,
     )
