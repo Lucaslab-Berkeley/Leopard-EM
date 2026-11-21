@@ -204,64 +204,71 @@ class MultipleOrientationConfig(BaseModel2DTM):
 class RefineOrientationConfig(BaseModel2DTM):
     """Serialization and validation of orientation refinement parameters.
 
-    Angles will be sampled from [-coarse_step, coarse_step] in increments of
-    'fine_step' for the orientation refinement search.
+    The refinement searches a local set of orientation offsets around each
+    particle's current orientation (from torch-so3
+    ``get_local_high_resolution_angles``). The offsets are built around the pole and
+    composed onto every particle: tilts of up to ``theta_step_coarse`` degrees in
+    every direction (a cap of view directions, sampled ``theta_step_fine`` apart),
+    times in-plane rotations in ``[-psi_step_coarse, psi_step_coarse]`` sampled
+    ``psi_step_fine`` apart. The offsets cover rotations about all three axes and
+    always include the identity.
+
+    The number of offsets grows with the square of ``theta_step_coarse /
+    theta_step_fine`` times ``psi_step_coarse / psi_step_fine``; e.g. 576 for the
+    defaults (2.0 / 0.5 and 2.0 / 0.5), 63,333 for 2.5 / 0.1 and 1.5 / 0.1. For a
+    fine search, refine twice instead: a coarse grid first, then a smaller, finer
+    grid around the result (a particle stack picks up the ``refined_*`` columns of
+    a previous refinement).
 
     Attributes
     ----------
-    orientation_sampling_method : str
-        Method for sampling orientations. Default is 'Hopf Fibration'.
-        Currently only 'Hopf Fibration' is supported.
-    template_symmetry : str
-        Symmetry group of the template. Default is 'C1'.
-        Currently only 'C1' is supported.
     phi_step_coarse : float
-        Angular step size for phi in degrees for previous, coarse search.
-        This corresponds to the 'OrientationSearchConfig.phi_step' value
-        for the match template program. Must be greater than or equal to 0.
+        Unused; kept so existing configurations load. The tilt directions always
+        cover the full circle.
     phi_step_fine : float
-        Angular step size for phi in degrees for current, fine search.
-        Must be greater than or equal to 0.
+        Unused; kept so existing configurations load.
     theta_step_coarse : float
-        Angular step size for theta in degrees for previous, coarse
-        search. This corresponds to the
-        'OrientationSearchConfig.theta_step' value for the match template
-        program. Must be greater than or equal to 0.
+        How far the tilts reach from the particle's orientation, in degrees: the
+        radius of the cap of view directions. Must be greater than or equal to 0.
+        Default 2.0.
     theta_step_fine : float
-        Angular step size for theta in degrees for current, fine search.
-        Must be greater than or equal to 0.
+        Spacing of the tilts, in degrees. Must be greater than or equal to 0.
+        Default 0.5.
     psi_step_coarse : float
-        Angular step size for psi in degrees for previous, coarse search.
-        This corresponds to the 'OrientationSearchConfig.psi_step' value
-        for the match template program. Must be greater than or equal to 0.
+        Range of in-plane rotations, ``[-psi_step_coarse, psi_step_coarse]`` in
+        degrees. Must be greater than or equal to 0. Default 2.0.
     psi_step_fine : float
-        Angular step size for psi in degrees for current, fine search.
-        Must be greater than or equal to 0.
+        Spacing of the in-plane rotations, in degrees. Must be greater than or
+        equal to 0. Keep ``psi_step_coarse`` a whole multiple of it, so that an
+        in-plane offset of 0 is searched. Default 0.5.
+    base_grid_method : Literal["uniform", "healpix", "cartesian"]
+        How the cap of tilts is sampled: rings ``theta_step_fine`` apart
+        ("uniform"), HEALPix pixel centres plus the pole ("healpix"), or a square
+        lattice of tilts ("cartesian"). Default "uniform".
 
     """
 
     enabled: bool = True
     phi_step_coarse: Annotated[float, Field(..., ge=0.0)] = 2.5
     phi_step_fine: Annotated[float, Field(..., ge=0.0)] = 0.25
-    theta_step_coarse: Annotated[float, Field(..., ge=0.0)] = 2.5
-    theta_step_fine: Annotated[float, Field(..., ge=0.0)] = 0.25
-    psi_step_coarse: Annotated[float, Field(..., ge=0.0)] = 1.5
-    psi_step_fine: Annotated[float, Field(..., ge=0.0)] = 0.1
-    base_grid_method: Literal["uniform", "healpix", "basic"] = "uniform"
+    theta_step_coarse: Annotated[float, Field(..., ge=0.0)] = 2.0
+    theta_step_fine: Annotated[float, Field(..., ge=0.0)] = 0.5
+    psi_step_coarse: Annotated[float, Field(..., ge=0.0)] = 2.0
+    psi_step_fine: Annotated[float, Field(..., ge=0.0)] = 0.5
+    base_grid_method: Literal["uniform", "healpix", "cartesian"] = "uniform"
 
     @property
     def euler_angles_offsets(self) -> torch.Tensor:
         """Return the Euler angle offsets to search over.
-
-        Note that this method uses a uniform grid search which approximates SO(3) space
-        well when the angular ranges are small (e.g. ±2.5 degrees).
 
         Returns
         -------
         torch.Tensor
             A tensor of shape (N, 3) where N is the number of orientations to
             search over. The columns represent the phi, theta, and psi angles,
-            respectively, in the 'ZYZ' convention.
+            respectively, in the 'ZYZ' convention: each offset is a tilt of theta
+            toward phi, Rz(phi) Ry(theta) Rz(-phi), followed by an in-plane
+            rotation.
         """
         if not self.enabled:
             return torch.zeros((1, 3))
@@ -322,7 +329,7 @@ class ConstrainedOrientationConfig(BaseModel2DTM):
     theta_max: float = 180.0
     psi_min: float = 0.0
     psi_max: float = 360.0
-    base_grid_method: Literal["uniform", "healpix", "basic", "roll"] = "uniform"
+    base_grid_method: Literal["uniform", "healpix", "cartesian", "roll"] = "uniform"
 
     search_roll_axis: bool = True
     roll_axis: tuple[float, float] | None = Field(default=[0, 1])

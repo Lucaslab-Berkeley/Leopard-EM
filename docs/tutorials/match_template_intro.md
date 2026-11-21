@@ -659,10 +659,10 @@ defocus_refinement_config:
   defocus_step: 20.0   # in Angstroms
 orientation_refinement_config:
   enabled: true
-  psi_step_coarse:     1.5  # in degrees
-  psi_step_fine:       0.1  # in degrees
-  theta_step_coarse:   2.5  # in degrees
-  theta_step_fine:     0.1  # in degrees
+  psi_step_coarse:     2.0  # in degrees
+  psi_step_fine:       0.5  # in degrees
+  theta_step_coarse:   2.0  # in degrees
+  theta_step_fine:     0.5  # in degrees
 pixel_size_refinement_config:
   enabled: false
 preprocessing_filters:
