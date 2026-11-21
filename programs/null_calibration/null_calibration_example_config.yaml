@@ -1,0 +1,51 @@
+# Null calibration of a match_template configuration. The micrograph, template and
+# every search setting come from the match_template YAML, unchanged.
+match_template_config_path: /path/to/match-template-configuration.yaml
+output_directory: /path/to/null-calibration-output
+
+# One phase-randomised copy of the micrograph per seed: 5 copies give the 1-FP
+# threshold to about +-0.05 z, 10-20 to +-0.03. Use different seeds for different
+# micrographs. An empty list ([]) skips the phase-randomised null.
+seeds: [1, 2, 3, 4, 5]
+
+# Targets, in false positives per micrograph
+false_positives: [1.0, 5.0]
+
+# Null peaks are collected down to this z-score (below the thresholds sought)
+peak_floor: 6.0
+
+# Peak calling: use the same values for the real micrograph
+mask_radius: 10.0
+border: 0
+exclude_mask_path: null
+
+# Also export each null copy's result maps and a particle CSV of its peaks, e.g. to
+# refine the null candidates the same way as the real ones
+write_null_particles: false
+
+# Analytic prediction of the null (no search; under a minute on a GPU, ~30 min on a CPU)
+analytic:
+  enabled: true
+  n_mean_samples: 3000
+  n_kappa_pairs: 256
+  n_lattice_samples: 32
+  batch_size: 4
+  seed: 0
+  device: cpu
+  # Refined null (with refine_template_config_path below): ~35 s per candidate on a GPU
+  refine:
+    n_candidates: 8      # sampled null candidates, spread over the defocus planes
+    n_draws: 200000      # Gaussian draws per candidate
+    shift_radius: 1      # positions refinement scores, +-px
+    condition_radius: 2  # positions where the candidate beat the search's points, +-px
+    defocus_step: 40.0   # modelled defocus step, A (the refine's own if coarser)
+
+# Optional: false-discovery-rate cuts (targets q) of the real micrograph's distinct
+# peaks under each null; needs the match_template result (its scaled_mip_path)
+false_discovery_rates: []
+
+# Optional: also predict the threshold on refined z-scores, for candidates at or above
+# refine_candidate_threshold refined with this refine_template configuration (only its
+# orientation, defocus and pixel size refinement settings are read)
+refine_template_config_path: null
+refine_candidate_threshold: null

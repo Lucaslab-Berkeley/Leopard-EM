@@ -322,6 +322,62 @@ def do_batched_orientation_cross_correlate(
 
 
 # pylint: disable=E1102
+def project_filtered_templates(
+    template_dft: torch.Tensor,
+    rotation_matrices: torch.Tensor,
+    projective_filters: torch.Tensor,
+    mag_matrix: torch.Tensor | None = None,
+) -> torch.Tensor:
+    """Filtered real-space template projections, as the search correlates them.
+
+    Central slices of the template, with the magnification transform (if any), the DC
+    component removed, the contrast flipped and the projective filters applied, then
+    inverse transformed. These are the projections before
+    :func:`~leopard_em.backend.utils.normalize_template_projection`.
+
+    Parameters
+    ----------
+    template_dft : torch.Tensor
+        RFFT of the template volume to take Fourier slices from, shape
+        (l, h, w // 2 + 1).
+    rotation_matrices : torch.Tensor
+        Rotation matrices, shape (orientations, 3, 3).
+    projective_filters : torch.Tensor
+        Filters (CTF x whitening) of shape (..., h, w // 2 + 1); RFFT, not fftshifted.
+    mag_matrix : torch.Tensor | None, optional
+        Anisotropic magnification matrix of shape (2, 2). Default None.
+
+    Returns
+    -------
+    torch.Tensor
+        Real-space projections of shape (..., orientations, h, w), centered.
+    """
+    fourier_slice = extract_central_slices_rfft_3d(
+        volume_rfft=template_dft,
+        rotation_matrices=rotation_matrices,
+    )
+    # Apply anisotropic magnification transform if provided
+    # pylint: disable=duplicate-code
+    if mag_matrix is not None:
+        rfft_shape = (template_dft.shape[1], template_dft.shape[2])
+        stack_shape = (rotation_matrices.shape[0],)
+        fourier_slice = transform_slice_2d(
+            projection_image_dfts=fourier_slice,
+            rfft_shape=rfft_shape,
+            stack_shape=stack_shape,
+            transform_matrix=mag_matrix,
+        )
+    fourier_slice = torch.fft.ifftshift(fourier_slice, dim=(-2,))
+    fourier_slice[..., 0, 0] = 0 + 0j  # zero out the DC component (mean zero)
+    fourier_slice *= -1  # flip contrast
+
+    # Apply the projective filters on a new orientation dimension
+    fourier_slice = fourier_slice * projective_filters[..., None, :, :]
+
+    projections = torch.fft.irfftn(fourier_slice, dim=(-2, -1))
+    return torch.fft.ifftshift(projections, dim=(-2, -1))
+
+
 def do_batched_orientation_cross_correlate_cpu(
     image_dft: torch.Tensor,
     template_dft: torch.Tensor,
@@ -374,32 +430,10 @@ def do_batched_orientation_cross_correlate_cpu(
 
     projection_shape_real = (template_dft.shape[1], template_dft.shape[2] * 2 - 2)
 
-    # Extract central slice(s) from the template volume
-    fourier_slice = extract_central_slices_rfft_3d(
-        volume_rfft=template_dft,
-        rotation_matrices=rotation_matrices,
+    # Filtered real-space projections, before normalization
+    projections = project_filtered_templates(
+        template_dft, rotation_matrices, projective_filters, mag_matrix
     )
-    # Apply anisotropic magnification transform if provided
-    # pylint: disable=duplicate-code
-    if mag_matrix is not None:
-        rfft_shape = (template_dft.shape[1], template_dft.shape[2])
-        stack_shape = (rotation_matrices.shape[0],)
-        fourier_slice = transform_slice_2d(
-            projection_image_dfts=fourier_slice,
-            rfft_shape=rfft_shape,
-            stack_shape=stack_shape,
-            transform_matrix=mag_matrix,
-        )
-    fourier_slice = torch.fft.ifftshift(fourier_slice, dim=(-2,))
-    fourier_slice[..., 0, 0] = 0 + 0j  # zero out the DC component (mean zero)
-    fourier_slice *= -1  # flip contrast
-
-    # Apply the projective filters on a new batch dimension
-    fourier_slice = fourier_slice[None, None, ...] * projective_filters[:, :, None, ...]
-
-    # Inverse Fourier transform into real space and normalize
-    projections = torch.fft.irfftn(fourier_slice, dim=(-2, -1))
-    projections = torch.fft.ifftshift(projections, dim=(-2, -1))
 
     if apply_normalization:
         projections = normalize_template_projection(

@@ -41,6 +41,7 @@ dependencies = [
     "einops",
     "numpy",
     "pandas",
+    "scipy",
     "mrcfile",
     "pydantic",
     "pyyaml",

@@ -76,6 +76,14 @@ The required inputs for `inspect_peaks`/`frame_inspection` are:
 * The csv file of particle locations and orientations output from the `match_template` or `refine_template` program, and
 * (for `frame_inspection` only) The original (unaligned or aligned) movie stack, plus a deformation field or per-particle shifts describing motion across frames.
 
+## Null Calibration
+
+The `null_calibration` program sets the z-score threshold of a match_template configuration for a target number of false positives per micrograph.
+It searches phase-randomised copies of the micrograph with the same configuration, or predicts their null peak rate analytically, instead of assuming independent trials.
+The [null calibration program details](null_calibration.md) has further information.
+
+The required input is a match_template configuration YAML.
+
 ## Optimize B-Factor script
 
 In addition to the four larger programs, we have a script, [optimize_b_factor.py](https://github.com/Lucaslab-Berkeley/Leopard-EM/blob/main/programs/optimize_b_factor.py), which varies the B-factor applied across a model to maximize one of four SNR metrics. This *ad hoc* B-factor can help account for increased sample structural heterogeneity which is not captured in the input model, or it can help select for particles which closely match the reference template model.
