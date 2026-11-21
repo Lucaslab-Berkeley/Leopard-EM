@@ -88,6 +88,11 @@ class ConstrainedSearchManager(BaseModel2DTM):
         Filters to apply to the particle images.
     computational_config : ComputationalConfigRefine
         What computational resources to allocate for the program.
+    apply_global_filtering : bool
+        If True, apply filtering to the full micrograph before particle extraction.
+        If False, filters are calculated and applied to the cropped particle images.
+        Must be False when the reference particle stack's stored image stack is used.
+        Default is True.
     template_volume : ExcludedTensor
         The template volume tensor (excluded from serialization).
     false_positives : float
@@ -122,6 +127,7 @@ class ConstrainedSearchManager(BaseModel2DTM):
     orientation_refinement_config: ConstrainedOrientationConfig
     preprocessing_filters: PreprocessingFilters
     computational_config: ComputationalConfigRefine
+    apply_global_filtering: bool = True
 
     # Excluded tensors
     template_volume: ExcludedTensor
@@ -166,8 +172,7 @@ class ConstrainedSearchManager(BaseModel2DTM):
         # Extract and preprocess images and filters
         stored_images, apply_global_filtering = resolve_particle_image_source(
             particle_stack=part_stk,
-            apply_global_filtering=True,
-            warn_on_filter_switch=False,
+            apply_global_filtering=self.apply_global_filtering,
         )
         (
             particle_images_dft,
