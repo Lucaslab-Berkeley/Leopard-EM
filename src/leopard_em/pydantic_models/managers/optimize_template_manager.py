@@ -113,6 +113,7 @@ class OptimizeTemplateManager(BaseModel2DTM):
             pixel_size_offsets=pixel_size_offsets,
             apply_global_filtering=self.apply_global_filtering,
             device_list=self.computational_config.gpu_devices,
+            pad_factor=self.computational_config.template_pad_factor,
         )
 
     def run_optimize_template(

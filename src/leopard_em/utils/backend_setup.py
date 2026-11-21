@@ -9,7 +9,10 @@ from torch_motion_correction.deformation_field import DeformationField
 
 from leopard_em.pydantic_models.formats import LARGE_STD_PADDING, local_stat_padding
 from leopard_em.utils.ctf_utils import _setup_ctf_kwargs_from_particle_stack
-from leopard_em.utils.fourier_slice import volume_to_rfft_fourier_slice
+from leopard_em.utils.fourier_slice import (
+    DEFAULT_FOURIER_PAD_FACTOR,
+    volume_to_rfft_fourier_slice,
+)
 from leopard_em.utils.image_processing import apply_image_filtering
 
 # Using the TYPE_CHECKING statement to avoid circular imports
@@ -36,6 +39,8 @@ def _process_particle_images_for_filters(
     full_image_shape: tuple[int, int] | None = None,
     extracted_box_shape: tuple[int, int] | None = None,
     fixed_normalization_factor: torch.Tensor | None = None,
+    *,
+    pad_factor: float = DEFAULT_FOURIER_PAD_FACTOR,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Process particle images and compute filters.
 
@@ -68,6 +73,10 @@ def _process_particle_images_for_filters(
     fixed_normalization_factor : torch.Tensor | None
         Optional precomputed per-particle normalization factors to reuse for
         each frame (old-style frame normalization).
+    pad_factor : float, optional
+        Zero-padding factor applied to the template volume before its 3D FFT, by
+        default ``DEFAULT_FOURIER_PAD_FACTOR``. See
+        :func:`leopard_em.utils.fourier_slice.volume_to_rfft_fourier_slice`.
 
     Returns
     -------
@@ -138,7 +147,7 @@ def _process_particle_images_for_filters(
                 ),
                 device=device,
             )
-    template_dft = volume_to_rfft_fourier_slice(template)
+    template_dft = volume_to_rfft_fourier_slice(template, pad_factor=pad_factor)
 
     return (
         particle_images_dft,
@@ -159,11 +168,15 @@ def setup_frame_filters_particle_stack(
     fixed_normalization_factor: torch.Tensor | None = None,
     full_image_shape: tuple[int, int] | None = None,
     extracted_box_shape: tuple[int, int] | None = None,
+    *,
+    pad_factor: float = DEFAULT_FOURIER_PAD_FACTOR,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Prepare backend image/template inputs for a per-frame particle stack.
 
     The frame-correlation path already extracts particles for a single movie frame,
     so this helper only handles particle-local filtering and template DFT setup.
+    ``pad_factor`` is the template zero-padding factor passed to
+    :func:`leopard_em.utils.fourier_slice.volume_to_rfft_fourier_slice`.
     """
     return _process_particle_images_for_filters(
         particle_stack=particle_stack,
@@ -176,6 +189,7 @@ def setup_frame_filters_particle_stack(
         full_image_shape=full_image_shape,
         extracted_box_shape=extracted_box_shape,
         fixed_normalization_factor=fixed_normalization_factor,
+        pad_factor=pad_factor,
     )
 
 
@@ -194,6 +208,8 @@ def _setup_images_filters_from_micrographs(
     fluence_per_frame: float,
     image_stack: torch.Tensor | None,
     particle_indices: list[pd.Index] | None,
+    *,
+    pad_factor: float = DEFAULT_FOURIER_PAD_FACTOR,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Setup images and filters when extracting from micrographs.
 
@@ -224,6 +240,10 @@ def _setup_images_filters_from_micrographs(
         The image stack tensor.
     particle_indices: list[pd.Index] | None
         The particle indices to process.
+    pad_factor : float, optional
+        Zero-padding factor applied to the template volume before its 3D FFT, by
+        default ``DEFAULT_FOURIER_PAD_FACTOR``. See
+        :func:`leopard_em.utils.fourier_slice.volume_to_rfft_fourier_slice`.
 
     Returns
     -------
@@ -318,6 +338,7 @@ def _setup_images_filters_from_micrographs(
         apply_global_filtering=apply_global_filtering,
         fixed_image_filters=None,
         fixed_projective_filters=projective_filters,
+        pad_factor=pad_factor,
     )
 
 
@@ -328,6 +349,8 @@ def _setup_images_filters_from_particles(
     template: torch.Tensor,
     apply_global_filtering: bool,
     image_stack: torch.Tensor,
+    *,
+    pad_factor: float = DEFAULT_FOURIER_PAD_FACTOR,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Setup images and filters when images are already particles.
 
@@ -347,6 +370,10 @@ def _setup_images_filters_from_particles(
         were extracted or filtered, and there is no micrograph to filter globally.
     image_stack: torch.Tensor
         The image stack tensor (must be provided).
+    pad_factor : float, optional
+        Zero-padding factor applied to the template volume before its 3D FFT, by
+        default ``DEFAULT_FOURIER_PAD_FACTOR``. See
+        :func:`leopard_em.utils.fourier_slice.volume_to_rfft_fourier_slice`.
 
     Returns
     -------
@@ -382,6 +409,7 @@ def _setup_images_filters_from_particles(
         apply_global_filtering=False,
         fixed_image_filters=None,
         fixed_projective_filters=None,
+        pad_factor=pad_factor,
     )
 
 
@@ -400,6 +428,8 @@ def setup_images_filters_particle_stack(
     image_stack: torch.Tensor | None = None,
     particle_indices: list[pd.Index] | None = None,
     images_are_particles: bool = False,
+    *,
+    pad_factor: float = DEFAULT_FOURIER_PAD_FACTOR,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Extract and preprocess particle images and calculate filters.
 
@@ -436,6 +466,10 @@ def setup_images_filters_particle_stack(
         The particle indices to process.
     images_are_particles: bool
         Whether the images are particles or not. Defaults to False.
+    pad_factor : float, optional
+        Zero-padding factor applied to the template volume before its 3D FFT, by
+        default ``DEFAULT_FOURIER_PAD_FACTOR``. See
+        :func:`leopard_em.utils.fourier_slice.volume_to_rfft_fourier_slice`.
 
     Returns
     -------
@@ -456,6 +490,7 @@ def setup_images_filters_particle_stack(
             template=template,
             apply_global_filtering=apply_global_filtering,
             image_stack=image_stack,
+            pad_factor=pad_factor,
         )
     return _setup_images_filters_from_micrographs(
         particle_stack=particle_stack,
@@ -469,6 +504,7 @@ def setup_images_filters_particle_stack(
         fluence_per_frame=fluence_per_frame,
         image_stack=image_stack,
         particle_indices=particle_indices,
+        pad_factor=pad_factor,
     )
 
 
@@ -796,6 +832,8 @@ def setup_particle_backend_kwargs(
     std_stack: torch.Tensor | None = None,
     particle_indices: list[pd.Index] | None = None,
     images_are_particles: bool = False,
+    *,
+    pad_factor: float = DEFAULT_FOURIER_PAD_FACTOR,
 ) -> dict[str, Any]:
     """Create common kwargs dictionary for template backend functions.
 
@@ -844,6 +882,10 @@ def setup_particle_backend_kwargs(
         The particle indices to process.
     images_are_particles: bool
         Whether the images are particles or not. Defaults to False.
+    pad_factor : float, optional
+        Zero-padding factor applied to the template volume before its 3D FFT, by
+        default ``DEFAULT_FOURIER_PAD_FACTOR``. See
+        :func:`leopard_em.utils.fourier_slice.volume_to_rfft_fourier_slice`.
 
     Returns
     -------
@@ -906,6 +948,7 @@ def setup_particle_backend_kwargs(
         image_stack=image_stack,
         particle_indices=particle_indices,
         images_are_particles=images_are_particles,
+        pad_factor=pad_factor,
     )
 
     return {

@@ -31,6 +31,7 @@ from leopard_em.backend.process_results import (
     scale_mip,
 )
 from leopard_em.backend.utils import do_iteration_and_correlation_table_updates
+from leopard_em.utils.fourier_slice import projection_shape_from_filters
 
 DEFAULT_STATISTIC_DTYPE = torch.float32
 CORRELATION_TABLE_THRESHOLD = 6.25  # approx 85,000 entries at 20.8 million search size
@@ -180,8 +181,10 @@ def core_match_template(
     template_dft : torch.Tensor
         Real-fourier transform (RFFT) of the template volume to take Fourier
         slices from. Has shape (l, h, w // 2 + 1) with the last dimension being the
-        half-dimension for real-FFT transformation. NOTE: The original template volume
-        should be a cubic volume, i.e. h == w == l.
+        half-dimension for real-FFT transformation. May be zero-padded relative to
+        the template size (see 'volume_to_rfft_fourier_slice'); the template size is
+        taken from the filters. NOTE: The original template volume should be a cubic
+        volume, i.e. h == w == l.
     ctf_filters : torch.Tensor
         Stack of CTF filters at different pixel size (Cs) and  defocus values to use in
         the search. Has shape (num_Cs, num_defocus, h, w // 2 + 1) where num_Cs are the
@@ -546,10 +549,9 @@ def _core_match_template_single_gpu(
     # Doing it before would copy the (large) host tensor once per worker process.
     image_dft, image_shape_real = _prepare_image_dft(image_dft, backend)
 
-    projection_shape_real = (
-        template_dft.shape[1],
-        template_dft.shape[2] * 2 - 2,  # adj. for RFFT
-    )
+    # NOTE: 'template_dft' may be zero-padded, so take the projection (template) shape
+    # from the projective filters, which are always at the template size.
+    projection_shape_real = projection_shape_from_filters(projective_filters)
     valid_correlation_shape = _resolve_valid_correlation_shape(
         (
             image_shape_real[0] - projection_shape_real[0] + 1,

@@ -21,6 +21,7 @@ from leopard_em.utils.ctf_utils import (
     calculate_ctf_filter_stack_full_args,
     move_ctf_kwargs_tensors_to_device,
 )
+from leopard_em.utils.fourier_slice import projection_shape_from_filters
 
 
 # NOTE: Disabling pylint for too many arguments because we are taking a data-oriented
@@ -147,10 +148,9 @@ def core_differentiable_refine(
 
     # Shape information for offset calculations
     _, img_h, img_w = particle_stack_dft.shape
-    _, template_h, template_w = template_dft.shape
-    # account for RFFT
+    # account for RFFT ('template_dft' may be padded, so use the filter shape)
     img_w = 2 * (img_w - 1)
-    template_w = 2 * (template_w - 1)
+    template_h, template_w = projection_shape_from_filters(projective_filters)
 
     # Concatenate results from all devices
     refined_cross_correlation = torch.cat(
@@ -295,11 +295,7 @@ def _core_refine_template_single_gpu(
     ### Setup constants and progress bar ###
     ########################################
 
-    num_particles, _, img_w = particle_stack_dft.shape
-    _, _, template_w = template_dft.shape
-    # account for RFFT
-    img_w = 2 * (img_w - 1)
-    template_w = 2 * (template_w - 1)
+    num_particles = particle_stack_dft.shape[0]
 
     # tqdm progress bar
     pbar_iter = tqdm.tqdm(
@@ -507,10 +503,9 @@ def _core_refine_template_single_thread(
         gradients, except angle_idx which is an integer index.
     """
     img_h, img_w = particle_image_dft.shape
-    _, template_h, template_w = template_dft.shape
-    # account for RFFT
+    # account for RFFT ('template_dft' may be padded, so use the filter shape)
     img_w = 2 * (img_w - 1)
-    template_w = 2 * (template_w - 1)
+    template_h, template_w = projection_shape_from_filters(projective_filter)
     # valid crop shape
     crop_h = img_h - template_h + 1
     crop_w = img_w - template_w + 1
