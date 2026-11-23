@@ -472,7 +472,7 @@ def test_construct_image_stack_from_movie_preserves_summed_output_shape(monkeypa
     dose_weight_calls = []
 
     def fake_dose_weight_movie_to_micrograph(
-        movie_fft, pixel_size, pre_exposure, fluence_per_frame, voltage
+        movie_fft, pixel_size, pre_exposure, fluence_per_frame, voltage, image_shape
     ):
         dose_weight_calls.append((pixel_size, pre_exposure, fluence_per_frame, voltage))
         return torch.fft.irfftn(  # pylint: disable=not-callable

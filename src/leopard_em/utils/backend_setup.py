@@ -280,7 +280,7 @@ def _setup_images_filters_from_micrographs(
             extracted_box_shape=(box_h + 1, box_w + 1),
         )
         micrograph_images = torch.fft.irfftn(  # pylint: disable=not-callable
-            micrograph_images_dft, dim=(-2, -1)
+            micrograph_images_dft, s=(img_h, img_w), dim=(-2, -1)
         )
 
     # Extract particle images

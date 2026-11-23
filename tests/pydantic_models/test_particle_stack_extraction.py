@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 import torch
+from torch_fourier_filter.dose_weight import dose_weight_movie
 
 from leopard_em.pydantic_models.data_structures.particle_stack import ParticleStack
 from leopard_em.pydantic_models.data_structures.particle_stack import _movie as movie
@@ -90,12 +91,46 @@ def test_check_motion_source():
     movie.check_motion_source(None, shifts, require_motion_source=True)
 
 
+@pytest.mark.parametrize("box", [(6, 6), (6, 7), (5, 7)])
+def test_dose_weight_particle_movies_odd_and_even(box):
+    """Dose weighting uses the real box shape and keeps it, odd or even."""
+    frames = torch.randn(2, 3, *box, generator=torch.Generator().manual_seed(0))
+    rfft = torch.fft.rfftn(frames, dim=(-2, -1))
+    pixel_sizes = torch.tensor([1.0, 1.5])
+    images = movie.dose_weight_particle_movies(
+        rfft,
+        extracted_box_size=box,
+        rows=[0, 1],
+        pixel_sizes=pixel_sizes,
+        voltages=np.array([300.0, 300.0]),
+        pre_exposure=0.0,
+        fluence_per_frame=5.0,
+    )
+
+    assert images.shape == (2, *box)
+    for i in range(2):
+        weighted = dose_weight_movie(
+            movie_dft=rfft[i],
+            image_shape=box,
+            pixel_size=float(pixel_sizes[i]),
+            pre_exposure=0.0,
+            dose_per_frame=5.0,
+            voltage=300.0,
+            crit_exposure_bfactor=-1,
+            rfft=True,
+            fftshift=False,
+        )
+        expected = torch.fft.irfft2(weighted, s=box).sum(0)
+        torch.testing.assert_close(images[i], expected)
+
+
 def test_dose_weight_particle_movies_uses_stack_rows(monkeypatch):
     calls = []
 
     def _fake_dose_weight(
-        movie_fft, pixel_size, pre_exposure, fluence_per_frame, voltage
+        movie_fft, pixel_size, pre_exposure, fluence_per_frame, voltage, image_shape
     ):
+        assert image_shape == (4, 6)
         calls.append((pixel_size, voltage, pre_exposure, fluence_per_frame))
         return torch.full((4, 6), pixel_size)
 

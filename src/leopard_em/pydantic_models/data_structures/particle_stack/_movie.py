@@ -356,6 +356,7 @@ def dose_weight_particle_movies(
             pre_exposure=pre_exposure,
             fluence_per_frame=fluence_per_frame,
             voltage=voltages[row],
+            image_shape=extracted_box_size,
         )
         aligned_particle_images[particle_index] = dw_sum
 

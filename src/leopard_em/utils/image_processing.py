@@ -73,7 +73,7 @@ def get_image_normalization_factor(
     bandpass_filter : torch.Tensor
         Bandpass filter used to estimate effective Fourier dimensionality.
     full_image_shape : tuple[int, int]
-        Shape ``(H_full, W_full)`` of the source image used for extraction.
+        Real-space shape ``(H_full, W_full)`` of the images in ``image_rfft``.
     extracted_box_shape : tuple[int, int]
         Shape ``(H_box, W_box)`` of extracted particle boxes.
 
@@ -82,12 +82,24 @@ def get_image_normalization_factor(
     torch.Tensor
         Multiplicative normalization factor broadcastable to ``image_rfft``.
     """
+    img_h, img_w = full_image_shape
+    if image_rfft.shape[-1] != img_w // 2 + 1:
+        raise ValueError(
+            f"'image_rfft' has {image_rfft.shape[-1]} columns, but an image of width "
+            f"{img_w} ('full_image_shape' {tuple(full_image_shape)}) has an RFFT "
+            f"with {img_w // 2 + 1}."
+        )
+
+    # RFFT columns whose conjugate mirrors are not stored, so they count twice: all
+    # but the zero-frequency column, and for an even width also the Nyquist column.
+    mirrored = slice(1, -1) if img_w % 2 == 0 else slice(1, None)
+
     # Normalize image variance after filtering via Parseval-conjugate accounting.
     filtered = image_rfft * cumulative_fourier_filters
     squared_image_rfft = torch.abs(filtered) ** 2
     squared_sum = torch.sum(squared_image_rfft, dim=(-2, -1), keepdim=True)
     squared_sum += torch.sum(
-        squared_image_rfft[..., :, 1:-1], dim=(-2, -1), keepdim=True
+        squared_image_rfft[..., :, mirrored], dim=(-2, -1), keepdim=True
     )
 
     # NOTE: For two Gaussian random variables in d-dimensional space --  A and B --
@@ -102,12 +114,11 @@ def get_image_normalization_factor(
     # we need to multiply tby the effective number of pixels that are non-zero.
     # Below, we calculate the dimensionality of our cross-correlation and divide
     # by the square root of that number to normalize the image.
-    dimensionality = bandpass_filter.sum() + bandpass_filter[:, 1:-1].sum()
+    dimensionality = bandpass_filter.sum() + bandpass_filter[..., mirrored].sum()
     normalization_factor = (dimensionality**0.5) / torch.sqrt(squared_sum)
 
     # NOTE: We need to rescale based on the relative area of the extracted box
     # to the full image.
-    img_h, img_w = full_image_shape
     box_h, box_w = extracted_box_shape
     normalization_factor = normalization_factor * (
         ((img_h * img_w) / ((box_h) * (box_w))) ** 0.5
@@ -188,6 +199,8 @@ def dose_weight_movie_to_micrograph(
     pre_exposure: float,
     fluence_per_frame: float,
     voltage: float,
+    *,
+    image_shape: tuple[int, int],
 ) -> torch.Tensor:
     """Dose weight a movie to create a micrograph.
 
@@ -203,20 +216,20 @@ def dose_weight_movie_to_micrograph(
         The dose per frame in electrons per Angstrom squared.
     voltage : float
         The voltage in kV.
+    image_shape : tuple[int, int]
+        Real-space shape ``(h, w)`` of each frame.
 
     Returns
     -------
     torch.Tensor
         The dose weighted movie. Shape (h, w).
     """
-    # get the height and width from the last two dimensions
-    frame_shape = (movie_fft.shape[-2], movie_fft.shape[-1] * 2 - 2)
     # mean zero
     # movie_fft[..., 0, 0] = 0.0 + 0.0j
     # apply dose weight
     movie_dw_dft = dose_weight_movie(
         movie_dft=movie_fft,
-        image_shape=frame_shape,
+        image_shape=image_shape,
         pixel_size=pixel_size,
         pre_exposure=pre_exposure,
         dose_per_frame=fluence_per_frame,
@@ -226,6 +239,6 @@ def dose_weight_movie_to_micrograph(
         fftshift=False,
     )
     # inverse FFT
-    movie_dw = torch.fft.irfft2(movie_dw_dft, s=frame_shape, dim=(-2, -1))  # pylint: disable=not-callable
+    movie_dw = torch.fft.irfft2(movie_dw_dft, s=image_shape, dim=(-2, -1))  # pylint: disable=not-callable
     image_dw = torch.sum(movie_dw, dim=0)
     return image_dw
