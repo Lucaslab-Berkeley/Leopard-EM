@@ -94,6 +94,7 @@ def _process_particle_images_for_filters(
                     preprocessing_filters,
                     output_shape=particle_images_dft.shape[-2:],
                     images_dft=raw_particle_dft,
+                    image_shape=particle_images.shape[-2:],
                 ).to(device)
 
         particle_images_dft = apply_image_filtering(
@@ -113,6 +114,8 @@ def _process_particle_images_for_filters(
                     preprocessing_filters,
                     output_shape=(template.shape[-2], template.shape[-1] // 2 + 1),
                     images_dft=raw_particle_dft,
+                    image_shape=particle_images.shape[-2:],
+                    output_image_shape=template.shape[-2:],
                 ).to(device)
     else:
         particle_images_dft = torch.fft.rfftn(particle_images, dim=(-2, -1))  # pylint: disable=not-callable
@@ -266,6 +269,8 @@ def _setup_images_filters_from_micrographs(
                 output_shape=(template.shape[-2], template.shape[-1] // 2 + 1),
                 images_dft=micrograph_images_dft.detach(),
                 indices=micrograph_indexes,
+                image_shape=(img_h, img_w),
+                output_image_shape=template.shape[-2:],
             ).to(device)
         micrograph_images_dft = apply_image_filtering(
             particle_stack,

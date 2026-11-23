@@ -164,6 +164,7 @@ def apply_image_filtering(
             preprocessing_filters,
             output_shape=images_dft.shape[-2:],
             images_dft=images_dft.detach(),
+            image_shape=full_image_shape,
         ).to(device)
     else:
         filter_stack = precomputed_filter_stack.to(device)

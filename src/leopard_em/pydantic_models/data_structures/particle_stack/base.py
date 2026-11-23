@@ -650,6 +650,9 @@ class _ParticleStackBase(BaseModel2DTM):
         preprocess_filters: PreprocessingFilters,
         output_shape: tuple[int, int],
         images_dft: torch.Tensor,
+        *,
+        image_shape: tuple[int, ...],
+        output_image_shape: tuple[int, ...] | None = None,
     ) -> torch.Tensor:
         """Get stack of Fourier filters from filter config and reference images.
 
@@ -666,6 +669,10 @@ class _ParticleStackBase(BaseModel2DTM):
         images_dft : torch.Tensor
             A tensor of images with shape (N, H, W) where N is the number of images
             (micrographs or particles) and (H, W) is the image size. in Fourier space.
+        image_shape : tuple[int, ...]
+            Real-space shape of the images in ``images_dft``.
+        output_image_shape : tuple[int, ...] | None, optional
+            Real-space shape matching ``output_shape``. Defaults to ``image_shape``.
 
         Returns
         -------
@@ -673,7 +680,12 @@ class _ParticleStackBase(BaseModel2DTM):
             The stack of filters with shape (N, h, w) where N is the number of images
             and (h, w) is the output shape.
         """
-        return preprocess_filters.get_combined_filter_stack(images_dft, output_shape)
+        return preprocess_filters.get_combined_filter_stack(
+            images_dft,
+            output_shape,
+            image_shape=image_shape,
+            output_image_shape=output_image_shape,
+        )
 
     def construct_projective_filters(
         self,
@@ -681,6 +693,9 @@ class _ParticleStackBase(BaseModel2DTM):
         output_shape: tuple[int, int],
         images_dft: torch.Tensor,
         indices: list[pd.Index],
+        *,
+        image_shape: tuple[int, ...],
+        output_image_shape: tuple[int, ...] | None = None,
     ) -> torch.Tensor:
         """Get stack of Fourier filters from filter config and reference micrographs.
 
@@ -698,6 +713,10 @@ class _ParticleStackBase(BaseModel2DTM):
             A tensor of micrograph images in Fourier space with shape (N, H, W).
         indices : list[pd.Index]
             Row positions of the particles from each corresponding micrograph.
+        image_shape : tuple[int, ...]
+            Real-space shape of the micrographs in ``images_dft``.
+        output_image_shape : tuple[int, ...] | None, optional
+            Real-space shape matching ``output_shape``. Defaults to ``image_shape``.
 
         Returns
         -------
@@ -705,7 +724,10 @@ class _ParticleStackBase(BaseModel2DTM):
             Filter stack of shape ``(M, h, w)`` where M is the number of particles.
         """
         image_filters = preprocess_filters.get_combined_filter_stack(
-            images_dft, output_shape
+            images_dft,
+            output_shape,
+            image_shape=image_shape,
+            output_image_shape=output_image_shape,
         )
         return scatter_by_group(image_filters, indices, self.num_particles)
 

@@ -1,5 +1,6 @@
 """Tests for the correlation filter models"""
 
+import pytest
 import torch
 
 from leopard_em.pydantic_models.config import (
@@ -24,16 +25,41 @@ def test_whitening_filter_config_default():
     assert config.do_power_spectrum is True
 
 
-def test_whitening_filter_config_calculate():
+@pytest.mark.parametrize("image_shape", [(10, 18), (10, 19)])
+def test_whitening_filter_config_calculate(image_shape):
     """
     Test the calculate_whitening_filter method of WhiteningFilterConfig.
 
     Verifies that the filter tensor has the same shape as the input reference image.
     """
     config = WhiteningFilterConfig()
-    ref_img_rfft = torch.randn(10, 10, dtype=torch.float32)
-    filter_tensor = config.calculate_whitening_filter(ref_img_rfft)
+    ref_img_rfft = torch.fft.rfft2(torch.randn(image_shape))
+    filter_tensor = config.calculate_whitening_filter(
+        ref_img_rfft, image_shape=image_shape
+    )
     assert filter_tensor.shape == ref_img_rfft.shape
+
+
+@pytest.mark.parametrize("output_image_shape", [(8, 8), (9, 9)])
+def test_whitening_filter_config_output_grid(output_image_shape):
+    """The filter is evaluated on the real-space output grid, odd or even."""
+    config = WhiteningFilterConfig()
+    image_shape = (32, 31)
+    ref_img_rfft = torch.fft.rfft2(torch.randn(image_shape))
+    output_shape = (output_image_shape[0], output_image_shape[1] // 2 + 1)
+    filter_tensor = config.calculate_whitening_filter(
+        ref_img_rfft,
+        output_shape,
+        image_shape=image_shape,
+        output_image_shape=output_image_shape,
+    )
+    assert filter_tensor.shape == output_shape
+
+    # The output grid defaults to the reference image's, which does not match here
+    with pytest.raises(ValueError):
+        config.calculate_whitening_filter(
+            ref_img_rfft, output_shape, image_shape=image_shape
+        )
 
 
 def test_phase_randomization_filter_config_default():
@@ -140,7 +166,9 @@ def test_preprocessing_filters_combined_filter():
     config = PreprocessingFilters()
     ref_img_rfft = torch.randn(10, 10, dtype=torch.float32)
     output_shape = (10, 10)
-    combined_filter = config.get_combined_filter(ref_img_rfft, output_shape)
+    combined_filter = config.get_combined_filter(
+        ref_img_rfft, output_shape, image_shape=(10, 18)
+    )
     assert combined_filter.shape == output_shape
 
 
@@ -152,15 +180,18 @@ def test_preprocessing_filters_combined_filter_stack_uses_each_image():
             return torch.full(output_shape, float(ref_img_rfft.real.mean()))
 
     images_dft = torch.stack([torch.full((4, 3), 1.0), torch.full((4, 3), 3.0)])
-    filters = _MeanFilters().get_combined_filter_stack(images_dft, (2, 2))
+    filters = _MeanFilters().get_combined_filter_stack(
+        images_dft, (2, 2), image_shape=(4, 4)
+    )
     assert filters.shape == (2, 2, 2)
     assert filters[:, 0, 0].tolist() == [1.0, 3.0]
 
     # The real filters give the same result per image as the single-image method
     real = PreprocessingFilters()
     images_dft = torch.fft.rfft2(torch.randn(2, 16, 16))
-    stack = real.get_combined_filter_stack(images_dft, (16, 9))
+    stack = real.get_combined_filter_stack(images_dft, (16, 9), image_shape=(16, 16))
     for i in range(2):
         torch.testing.assert_close(
-            stack[i], real.get_combined_filter(images_dft[i], (16, 9))
+            stack[i],
+            real.get_combined_filter(images_dft[i], (16, 9), image_shape=(16, 16)),
         )

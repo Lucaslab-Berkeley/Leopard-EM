@@ -424,6 +424,8 @@ class FrameInspectionManager(PeakInspectionManager):
                 output_shape=template_output_shape,
                 images_dft=summed_movie_dft.detach(),
                 indices=[df_index],
+                image_shape=summed_movie_image.shape[-2:],
+                output_image_shape=template.shape[-2:],
             ).to(template.device)
             summed_particle_images = self.particle_stack.construct_image_stack(
                 images=summed_movie_image,
@@ -444,6 +446,8 @@ class FrameInspectionManager(PeakInspectionManager):
                 output_shape=particle_rfft_shape,
                 images_dft=summed_movie_dft.detach(),
                 indices=[df_index],
+                image_shape=summed_movie_image.shape[-2:],
+                output_image_shape=summed_particle_images.shape[-2:],
             ).to(template.device)
             bandpass_filter = (
                 self.preprocessing_filters.bandpass_filter.calculate_bandpass_filter(
@@ -479,11 +483,14 @@ class FrameInspectionManager(PeakInspectionManager):
             self.preprocessing_filters,
             output_shape=particle_rfft_shape,
             images_dft=summed_particle_images_dft.detach(),
+            image_shape=summed_particle_images.shape[-2:],
         ).to(template.device)
         fixed_projective_filters = self.particle_stack.construct_image_filters(
             self.preprocessing_filters,
             output_shape=template_output_shape,
             images_dft=summed_particle_images_dft.detach(),
+            image_shape=summed_particle_images.shape[-2:],
+            output_image_shape=template.shape[-2:],
         ).to(template.device)
         bandpass_filter = (
             self.preprocessing_filters.bandpass_filter.calculate_bandpass_filter(
