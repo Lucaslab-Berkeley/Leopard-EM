@@ -329,7 +329,7 @@ class FrameInspectionManager(PeakInspectionManager):
         frame_particle_stack: torch.Tensor,
         template: torch.Tensor,
         fixed_filters: FixedFrameFilters,
-    ) -> dict[str, torch.Tensor]:
+    ) -> dict[str, Any]:
         """Build backend kwargs that vary per frame (or summed stack).
 
         Parameters
@@ -343,9 +343,9 @@ class FrameInspectionManager(PeakInspectionManager):
 
         Returns
         -------
-        dict[str, torch.Tensor]
-            Frame-local backend kwargs containing particle/image/template DFT tensors
-            and projective filters.
+        dict[str, Any]
+            Frame-local backend kwargs containing particle/image/template DFT tensors,
+            projective filters and the real-space particle image shape.
         """
         particle_images_dft, template_dft, projective_filters = (
             setup_frame_filters_particle_stack(
@@ -365,6 +365,7 @@ class FrameInspectionManager(PeakInspectionManager):
             "particle_stack_dft": particle_images_dft,
             "template_dft": template_dft,
             "projective_filters": projective_filters,
+            "image_shape_real": tuple(frame_particle_stack.shape[-2:]),
         }
 
     def _setup_fixed_frame_normalization_filters(  # pylint: disable=too-many-locals

@@ -913,9 +913,17 @@ def setup_particle_backend_kwargs(
         images_are_particles=images_are_particles,
     )
 
+    # Real-space shape of the particle images (the RFFT does not tell odd from even)
+    if images_are_particles and image_stack is not None:
+        image_shape_real = (int(image_stack.shape[-2]), int(image_stack.shape[-1]))
+    else:
+        box_h, box_w = particle_stack.extracted_box_size
+        image_shape_real = (int(box_h), int(box_w))
+
     return {
         **static_kwargs,
         "particle_stack_dft": particle_images_dft,
         "template_dft": template_dft,
         "projective_filters": projective_filters,
+        "image_shape_real": image_shape_real,
     }

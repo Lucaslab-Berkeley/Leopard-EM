@@ -14,6 +14,7 @@ import tqdm
 from torch_fourier_slice import extract_central_slices_rfft_3d, transform_slice_2d
 
 from leopard_em.backend.cross_correlation import (
+    _image_shape_from_rfft,
     do_batched_orientation_cross_correlate,
     do_batched_orientation_cross_correlate_cpu,
 )
@@ -145,6 +146,7 @@ def core_refine_template(
     batch_size: int = 32,
     num_cuda_streams: int = 1,
     mag_matrix: torch.Tensor | None = None,
+    image_shape_real: tuple[int, int] | None = None,
 ) -> dict[str, torch.Tensor]:
     """Core function to refine orientations and defoci of a set of particles.
 
@@ -192,6 +194,9 @@ def core_refine_template(
     mag_matrix : torch.Tensor | None, optional
         Anisotropic magnification matrix of shape (2, 2). If None,
         no magnification transform is applied. Default is None.
+    image_shape_real : tuple[int, int] | None, optional
+        Real-space shape ``(H, W)`` of the particle images, needed for an odd
+        width. Default is None, which assumes an even width.
 
     Returns
     -------
@@ -201,6 +206,8 @@ def core_refine_template(
     # Convert single device to list for consistent handling
     if isinstance(device, torch.device):
         device = [device]
+
+    image_shape_real = _image_shape_from_rfft(particle_stack_dft, image_shape_real)
 
     ###########################################
     ### Split particle stack across devices ###
@@ -224,6 +231,7 @@ def core_refine_template(
         devices=device,
         num_cuda_streams=num_cuda_streams,
         mag_matrix=mag_matrix,
+        image_shape_real=image_shape_real,
     )
 
     # Runs in-process for a single device, one spawned process per device otherwise
@@ -238,10 +246,8 @@ def core_refine_template(
             torch.cuda.synchronize(dev)
 
     # Shape information for offset calculations
-    _, img_h, img_w = particle_stack_dft.shape
+    img_h, img_w = image_shape_real
     template_h, template_w = template_projection_shape(template_dft)
-    # account for RFFT
-    img_w = 2 * (img_w - 1)
 
     ordered_results = [results[k] for k in sorted(results.keys(), key=int)]
 
@@ -320,6 +326,7 @@ def construct_multi_gpu_refine_template_kwargs(
     devices: list[torch.device],
     num_cuda_streams: int,
     mag_matrix: torch.Tensor | None = None,
+    image_shape_real: tuple[int, int] | None = None,
 ) -> list[dict]:
     """Split particle stack between requested devices.
 
@@ -360,6 +367,9 @@ def construct_multi_gpu_refine_template_kwargs(
     mag_matrix : torch.Tensor | None, optional
         Anisotropic magnification matrix of shape (2, 2). If None,
         no magnification transform is applied. Default is None.
+    image_shape_real : tuple[int, int] | None, optional
+        Real-space shape ``(H, W)`` of the particle images, needed for an odd
+        width. Default is None, which assumes an even width.
 
     Returns
     -------
@@ -424,6 +434,7 @@ def construct_multi_gpu_refine_template_kwargs(
             "num_cuda_streams": num_cuda_streams,
             "device": device,
             "mag_matrix": mag_matrix.cpu() if mag_matrix is not None else None,
+            "image_shape_real": image_shape_real,
         }
 
         kwargs_per_device.append(kwargs)
@@ -454,6 +465,7 @@ def _core_refine_template_single_gpu(
     device: torch.device,
     num_cuda_streams: int = 1,
     mag_matrix: torch.Tensor | None = None,
+    image_shape_real: tuple[int, int] | None = None,
 ) -> None:
     """Run refine template on a subset of particles on a single GPU.
 
@@ -500,6 +512,9 @@ def _core_refine_template_single_gpu(
     mag_matrix : torch.Tensor | None, optional
         Anisotropic magnification matrix of shape (2, 2). If None,
         no magnification transform is applied. Default is None.
+    image_shape_real : tuple[int, int] | None, optional
+        Real-space shape ``(H, W)`` of the particle images, needed for an odd
+        width. Default is None, which assumes an even width.
     """
     if device.type == "cuda":
         torch.cuda.set_device(device)
@@ -561,6 +576,7 @@ def _core_refine_template_single_gpu(
                 projective_filter=refine_stack.projective_filters[i],
                 batch_size=batch_size,
                 mag_matrix=refine_stack.mag_matrix,
+                image_shape_real=image_shape_real,
             )
             refined_statistics.append(refined_stats)
 
@@ -656,6 +672,7 @@ def _iter_refine_particle_correlation_batches(
     projective_filter: torch.Tensor,
     batch_size: int = 32,
     mag_matrix: torch.Tensor | None = None,
+    image_shape_real: tuple[int, int] | None = None,
     apply_projection_normalization: bool = True,
 ) -> Iterator[tuple[int, torch.Tensor, torch.Tensor, int, int]]:
     """Yield batched local correlations for one particle using refine semantics.
@@ -665,9 +682,8 @@ def _iter_refine_particle_correlation_batches(
     Only correlations are computed here, z-score normalization must happen externally to
     this function.
     """
-    img_h, img_w = particle_image_dft.shape
+    img_h, img_w = _image_shape_from_rfft(particle_image_dft, image_shape_real)
     template_h, template_w = template_projection_shape(template_dft)
-    img_w = 2 * (img_w - 1)
     crop_h = img_h - template_h + 1
     crop_w = img_w - template_w + 1
 
@@ -713,6 +729,7 @@ def _iter_refine_particle_correlation_batches(
                 projective_filters=combined_projective_filter,
                 apply_normalization=apply_projection_normalization,
                 mag_matrix=mag_matrix,
+                image_shape_real=image_shape_real,
             )
         else:
             cross_correlation = do_batched_orientation_cross_correlate_cpu(
@@ -722,6 +739,7 @@ def _iter_refine_particle_correlation_batches(
                 projective_filters=combined_projective_filter,
                 apply_normalization=apply_projection_normalization,
                 mag_matrix=mag_matrix,
+                image_shape_real=image_shape_real,
             )
 
         cross_correlation = cross_correlation[..., :crop_h, :crop_w]
@@ -816,6 +834,7 @@ def _core_refine_template_single_thread(
     projective_filter: torch.Tensor,
     batch_size: int = 32,
     mag_matrix: torch.Tensor | None = None,
+    image_shape_real: tuple[int, int] | None = None,
 ) -> dict[str, float | int]:
     """Run the single-threaded core refine template function.
 
@@ -855,6 +874,9 @@ def _core_refine_template_single_thread(
     mag_matrix : torch.Tensor | None, optional
         Anisotropic magnification matrix of shape (2, 2). If None,
         no magnification transform is applied. Default is None.
+    image_shape_real : tuple[int, int] | None, optional
+        Real-space shape ``(H, W)`` of the particle images, needed for an odd
+        width. Default is None, which assumes an even width.
 
     Returns
     -------
@@ -875,6 +897,7 @@ def _core_refine_template_single_thread(
         projective_filter=projective_filter,
         batch_size=batch_size,
         mag_matrix=mag_matrix,
+        image_shape_real=image_shape_real,
     )
 
     return _reduce_refine_best_zscore(
@@ -895,6 +918,7 @@ def cross_correlate_particle_stack(
     mode: Literal["valid", "same"] = "valid",
     batch_size: int = 1024,
     mag_matrix: torch.Tensor | None = None,
+    image_shape_real: tuple[int, int] | None = None,
 ) -> torch.Tensor:
     """Cross-correlate a stack of particle images against a template.
 
@@ -926,6 +950,9 @@ def cross_correlate_particle_stack(
     mag_matrix : torch.Tensor | None, optional
         Anisotropic magnification matrix of shape (2, 2). If None,
         no magnification transform is applied. Default is None.
+    image_shape_real : tuple[int, int] | None, optional
+        Real-space shape ``(H, W)`` of the particle images, needed for an odd
+        width. Default is None, which assumes an even width.
 
     Returns
     -------
@@ -941,10 +968,9 @@ def cross_correlate_particle_stack(
     """
     # Helpful constants for later use
     device = particle_stack_dft.device
-    num_particles, image_h, image_w = particle_stack_dft.shape
+    num_particles = particle_stack_dft.shape[0]
+    image_h, image_w = _image_shape_from_rfft(particle_stack_dft, image_shape_real)
     template_h, template_w = template_projection_shape(template_dft)
-    # account for RFFT
-    image_w = 2 * (image_w - 1)
 
     if batch_size == -1:
         batch_size = num_particles
@@ -1003,7 +1029,9 @@ def cross_correlate_particle_stack(
             projections, dim=(-2, -1), s=(image_h, image_w)
         )
         projections_dft = batch_particles_dft * projections_dft.conj()
-        cross_correlation = torch.fft.irfftn(projections_dft, dim=(-2, -1))
+        cross_correlation = torch.fft.irfftn(
+            projections_dft, s=(image_h, image_w), dim=(-2, -1)
+        )
 
         # Handle the output shape
         cross_correlation = handle_correlation_mode(

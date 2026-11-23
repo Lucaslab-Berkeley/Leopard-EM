@@ -95,6 +95,11 @@ def test_no_shape_requested_when_not_padded():
     assert _manager(enabled=False)._unpadded_valid_shape() is None
 
 
+def test_image_shape_real_is_the_shape_handed_to_the_backend():
+    assert _manager(enabled=True)._image_shape_real() == PADDED_SHAPE
+    assert _manager(enabled=False)._image_shape_real() == IMAGE_SHAPE
+
+
 def test_no_shape_requested_before_kwargs_are_built():
     manager = _manager(enabled=True)
     manager._fft_padding_plan = None
@@ -146,6 +151,7 @@ def test_run_match_template_requests_the_unpadded_valid_shape(monkeypatch):
     manager = _manager(enabled=True)
     manager.run_match_template(do_result_export=False)
     assert captured["unpadded_valid_shape"] == VALID_SHAPE
+    assert captured["image_shape_real"] == PADDED_SHAPE
 
 
 def test_run_match_template_distributed_requests_the_unpadded_valid_shape(monkeypatch):
@@ -158,6 +164,7 @@ def test_run_match_template_distributed_requests_the_unpadded_valid_shape(monkey
         world_size=1, rank=0, local_rank=0, do_result_export=False
     )
     assert captured["unpadded_valid_shape"] == VALID_SHAPE
+    assert captured["image_shape_real"] == PADDED_SHAPE
 
 
 @pytest.mark.parametrize(

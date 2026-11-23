@@ -374,6 +374,7 @@ class MatchTemplateManager(BaseModel2DTM):
             backend=self._resolved_backend(),
             compute_correlation_table=compute_correlation_table,
             unpadded_valid_shape=self._unpadded_valid_shape(),
+            image_shape_real=self._image_shape_real(),
         )
 
         # Populate the MatchTemplateResult via a private helper
@@ -449,6 +450,7 @@ class MatchTemplateManager(BaseModel2DTM):
             self._resolved_backend(),
             compute_correlation_table=compute_correlation_table,
             unpadded_valid_shape=self._unpadded_valid_shape(),
+            image_shape_real=self._image_shape_real(),
             **core_kwargs,
         )
 
@@ -489,6 +491,20 @@ class MatchTemplateManager(BaseModel2DTM):
         if plan is None or not plan.is_padded:
             return None
         return plan.unpadded_valid_shape
+
+    def _image_shape_real(self) -> tuple[int, int] | None:
+        """Real-space shape of the (padded) image handed to the backend.
+
+        Returns
+        -------
+        Optional[tuple[int, int]]
+            The padded shape, which is the original shape when no padding was applied,
+            or None when the backend kwargs were built on a different rank.
+        """
+        plan = self._fft_padding_plan
+        if plan is None:
+            return None
+        return plan.padded_shape
 
     def _populate_match_template_result(
         self,

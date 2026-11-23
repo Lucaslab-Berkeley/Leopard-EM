@@ -14,6 +14,7 @@ from leopard_em.backend.core_refine_template import (
     construct_multi_gpu_refine_template_kwargs,
 )
 from leopard_em.backend.cross_correlation import (
+    _image_shape_from_rfft,
     do_batched_orientation_cross_correlate,
 )
 from leopard_em.backend.utils import (
@@ -50,6 +51,7 @@ def core_differentiable_refine(
     batch_size: int = 32,
     num_cuda_streams: int = 1,
     mag_matrix: torch.Tensor | None = None,
+    image_shape_real: tuple[int, int] | None = None,
 ) -> dict[str, torch.Tensor]:
     """Core function to refine orientations and defoci of a set of particles.
 
@@ -97,6 +99,9 @@ def core_differentiable_refine(
     mag_matrix : torch.Tensor | None, optional
         Anisotropic magnification matrix of shape (2, 2). If None,
         no magnification transform is applied. Default is None.
+    image_shape_real : tuple[int, int] | None, optional
+        Real-space shape ``(H, W)`` of the particle images, needed for an odd
+        width. Default is None, which assumes an even width.
 
     Returns
     -------
@@ -115,6 +120,8 @@ def core_differentiable_refine(
                 f"Differentiable refinement can only be run on GPU devices. "
                 f"Got device type: {dev.type}. Please use a CUDA device."
             )
+
+    image_shape_real = _image_shape_from_rfft(particle_stack_dft, image_shape_real)
 
     ###########################################
     ### Split particle stack across devices ###
@@ -138,6 +145,7 @@ def core_differentiable_refine(
         devices=device,
         num_cuda_streams=num_cuda_streams,
         mag_matrix=mag_matrix,
+        image_shape_real=image_shape_real,
     )
 
     results = {}
@@ -150,10 +158,8 @@ def core_differentiable_refine(
         results[device_id] = result_dict[device_id]
 
     # Shape information for offset calculations
-    _, img_h, img_w = particle_stack_dft.shape
+    img_h, img_w = image_shape_real
     template_h, template_w = template_projection_shape(template_dft)
-    # account for RFFT
-    img_w = 2 * (img_w - 1)
 
     # Concatenate results from all devices
     refined_cross_correlation = torch.cat(
@@ -225,6 +231,7 @@ def _core_refine_template_single_gpu(
     device: torch.device,
     num_cuda_streams: int = 1,
     mag_matrix: torch.Tensor | None = None,
+    image_shape_real: tuple[int, int] | None = None,
 ) -> None:
     """Run refine template on a subset of particles on a single GPU.
 
@@ -271,6 +278,9 @@ def _core_refine_template_single_gpu(
     mag_matrix : torch.Tensor | None, optional
         Anisotropic magnification matrix of shape (2, 2). If None,
         no magnification transform is applied. Default is None.
+    image_shape_real : tuple[int, int] | None, optional
+        Real-space shape ``(H, W)`` of the particle images, needed for an odd
+        width. Default is None, which assumes an even width.
     """
     streams = [torch.cuda.Stream(device=device) for _ in range(num_cuda_streams)]
 
@@ -342,6 +352,7 @@ def _core_refine_template_single_gpu(
                 batch_size=batch_size,
                 device_id=device_id,
                 mag_matrix=mag_matrix,
+                image_shape_real=image_shape_real,
             )
             refined_statistics.append(refined_stats)
 
@@ -455,6 +466,7 @@ def _core_refine_template_single_thread(
     batch_size: int = 32,
     device_id: int = 0,
     mag_matrix: torch.Tensor | None = None,
+    image_shape_real: tuple[int, int] | None = None,
 ) -> dict[str, float | int]:
     """Run the single-threaded core refine template function.
 
@@ -498,6 +510,9 @@ def _core_refine_template_single_thread(
     mag_matrix : torch.Tensor | None, optional
         Anisotropic magnification matrix of shape (2, 2). If None,
         no magnification transform is applied. Default is None.
+    image_shape_real : tuple[int, int] | None, optional
+        Real-space shape ``(H, W)`` of the particle images, needed for an odd
+        width. Default is None, which assumes an even width.
 
     Returns
     -------
@@ -505,10 +520,8 @@ def _core_refine_template_single_thread(
         The refined statistics for the particle. Most values are tensors to preserve
         gradients, except angle_idx which is an integer index.
     """
-    img_h, img_w = particle_image_dft.shape
+    img_h, img_w = _image_shape_from_rfft(particle_image_dft, image_shape_real)
     template_h, template_w = template_projection_shape(template_dft)
-    # account for RFFT
-    img_w = 2 * (img_w - 1)
     # valid crop shape
     crop_h = img_h - template_h + 1
     crop_w = img_w - template_w + 1
@@ -601,6 +614,7 @@ def _core_refine_template_single_thread(
             projective_filters=combined_projective_filter,
             requires_grad=True,
             mag_matrix=mag_matrix,
+            image_shape_real=image_shape_real,
         )
 
         cross_correlation = cross_correlation[..., :crop_h, :crop_w]  # valid crop

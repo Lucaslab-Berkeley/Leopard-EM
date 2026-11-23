@@ -16,6 +16,7 @@ import torch
 import tqdm
 
 from leopard_em.backend.cross_correlation import (
+    _image_shape_from_rfft,
     do_batched_orientation_cross_correlate,
     do_batched_orientation_cross_correlate_zipfft,
     do_streamed_orientation_cross_correlate,
@@ -168,6 +169,7 @@ def core_match_template(
     mag_matrix: torch.Tensor | None = None,
     compute_correlation_table: bool = True,
     unpadded_valid_shape: tuple[int, int] | None = None,
+    image_shape_real: tuple[int, int] | None = None,
 ) -> dict[str, torch.Tensor | dict | int]:
     """Core function for performing the whole-orientation search.
 
@@ -234,6 +236,9 @@ def core_match_template(
         implied by the image and template. Used when the image was padded up to a
         fast FFT size so that results match an unpadded search exactly. Must not be
         larger than the implied shape. Default is None (use the implied shape).
+    image_shape_real : tuple[int, int], optional
+        Real-space shape ``(H, W)`` of the image, needed for an odd width since the
+        RFFT does not tell. Default is None, which assumes an even width.
 
     Returns
     -------
@@ -345,6 +350,7 @@ def core_match_template(
             "mag_matrix": mag_matrix,
             "compute_correlation_table": compute_correlation_table,
             "unpadded_valid_shape": unpadded_valid_shape,
+            "image_shape_real": image_shape_real,
         }
 
         kwargs_per_device.append(kwargs)
@@ -410,10 +416,16 @@ def _check_backend_supports_mag_matrix(
 
 
 def _prepare_image_dft(
-    image_dft: torch.Tensor, backend: str
+    image_dft: torch.Tensor,
+    backend: str,
+    image_shape_real: tuple[int, int] | None = None,
 ) -> tuple[torch.Tensor, tuple[int, int]]:
-    """Put the image DFT in the layout ``backend`` wants, with its true real shape."""
-    image_shape_real = (int(image_dft.shape[-2]), 2 * (int(image_dft.shape[-1]) - 1))
+    """Put the image DFT in the layout ``backend`` wants, with its true real shape.
+
+    ``image_shape_real`` is checked against the RFFT; without it, an even width is
+    assumed.
+    """
+    image_shape_real = _image_shape_from_rfft(image_dft, image_shape_real)
 
     if backend == "zipfft":
         # zipFFT reads a contiguous (W // 2 + 1, H) buffer.
@@ -462,6 +474,7 @@ def _core_match_template_single_gpu(
     mag_matrix: torch.Tensor | None = None,
     compute_correlation_table: bool = True,
     unpadded_valid_shape: tuple[int, int] | None = None,
+    image_shape_real: tuple[int, int] | None = None,
 ) -> tuple[
     torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, tensordict.TensorDict
 ]:
@@ -514,6 +527,9 @@ def _core_match_template_single_gpu(
         Shape of the valid correlation region to accumulate, overriding the shape
         implied by the image and template. Used when the image was padded up to a
         fast FFT size. Must not be larger than the implied shape. Default is None.
+    image_shape_real : tuple[int, int], optional
+        Real-space shape ``(H, W)`` of the image. Default is None, which assumes an
+        even width.
 
     Returns
     -------
@@ -547,7 +563,9 @@ def _core_match_template_single_gpu(
 
     # NOTE: done after the H2D copy above so the zipFFT transpose runs on the device.
     # Doing it before would copy the (large) host tensor once per worker process.
-    image_dft, image_shape_real = _prepare_image_dft(image_dft, backend)
+    image_dft, image_shape_real = _prepare_image_dft(
+        image_dft, backend, image_shape_real
+    )
 
     projection_shape_real = template_projection_shape(template_dft)
     valid_correlation_shape = _resolve_valid_correlation_shape(

@@ -33,10 +33,10 @@ from leopard_em.pydantic_models.managers.match_template_manager import (
     MatchTemplateManager,
 )
 
-# 118 and 122 both pad up to 128 under the default [2, 3] factors, and both the input
-# and the padded size are even (an odd padded size would break the backend's
-# 2 * (w_rfft - 1) real-width reconstruction).
+# 118 and 122 both pad up to 128 under the default [2, 3] factors. The odd
+# ODD_IMAGE_SHAPE pads up to the same size.
 IMAGE_SHAPE = (118, 122)
+ODD_IMAGE_SHAPE = (117, 121)
 PADDED_SHAPE = (128, 128)
 TEMPLATE_SIZE = 16
 NUM_ORIENTATIONS = 24
@@ -110,6 +110,7 @@ def _correlate(manager, rotation_matrices):
         template_dft=kwargs["template_dft"],
         rotation_matrices=rotation_matrices,
         projective_filters=projective_filters,
+        image_shape_real=manager._image_shape_real(),
     )
     valid_h, valid_w = manager._fft_padding_plan.unpadded_valid_shape
     return correlation[..., :valid_h, :valid_w].reshape(-1, valid_h, valid_w)
@@ -128,9 +129,9 @@ def _ignore_padding_warnings():
         yield
 
 
-def _run_pair(volume, optics_group, filters):
+def _run_pair(volume, optics_group, filters, image_shape=IMAGE_SHAPE):
     """Correlate the same image with padding disabled and enabled."""
-    image = _colored_noise(IMAGE_SHAPE, SPECTRAL_DYNAMIC_RANGE, seed=7)
+    image = _colored_noise(image_shape, SPECTRAL_DYNAMIC_RANGE, seed=7)
     torch.manual_seed(0)
     rotation_matrices = roma.random_rotmat(size=NUM_ORIENTATIONS)
 
@@ -190,15 +191,17 @@ def test_disabled_padding_leaves_image_untouched(template_volume, optics_group):
     assert not manager._fft_padding_plan.is_padded
 
 
+@pytest.mark.parametrize("image_shape", [IMAGE_SHAPE, ODD_IMAGE_SHAPE])
 def test_correlations_match_exactly_without_fourier_filters(
-    template_volume, optics_group
+    template_volume, optics_group, image_shape
 ):
     """Without filters the padded run must reproduce the unpadded one to float error.
 
     This isolates the shape/index algebra and the normalization scalar from any
-    resampling of the whitening profile.
+    resampling of the whitening profile. With an odd image, the unpadded run is on an
+    odd-width grid and the padded one on an even-width grid.
     """
-    out = _run_pair(template_volume, optics_group, FILTERS_OFF)
+    out = _run_pair(template_volume, optics_group, FILTERS_OFF, image_shape)
     unpadded, _ = out[False]
     padded, _ = out[True]
 
@@ -210,8 +213,11 @@ def test_correlations_match_exactly_without_fourier_filters(
     assert residual.item() < 1e-4
 
 
-def test_z_scores_match_without_fourier_filters(template_volume, optics_group):
-    out = _run_pair(template_volume, optics_group, FILTERS_OFF)
+@pytest.mark.parametrize("image_shape", [IMAGE_SHAPE, ODD_IMAGE_SHAPE])
+def test_z_scores_match_without_fourier_filters(
+    template_volume, optics_group, image_shape
+):
+    out = _run_pair(template_volume, optics_group, FILTERS_OFF, image_shape)
     _, z_unpadded = _z_score(out[False][0])
     _, z_padded = _z_score(out[True][0])
     assert torch.allclose(z_padded, z_unpadded, atol=1e-3)

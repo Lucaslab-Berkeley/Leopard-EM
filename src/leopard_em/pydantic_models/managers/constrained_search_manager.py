@@ -249,6 +249,11 @@ class ConstrainedSearchManager(BaseModel2DTM):
             "ctf_kwargs": ctf_kwargs,
             "projective_filters": projective_filters,
             "device": device_list,  # Pass all devices to core_refine_template
+            "image_shape_real": (
+                tuple(stored_images.shape[-2:])
+                if stored_images is not None
+                else tuple(part_stk.extracted_box_size)
+            ),
         }
 
     def _constrained_correlation_map_paths(self) -> dict[str, str]:

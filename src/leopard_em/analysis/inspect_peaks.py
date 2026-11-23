@@ -46,6 +46,7 @@ def core_inspect_template(
     batch_size: int = 32,
     num_cuda_streams: int = 1,
     mag_matrix: torch.Tensor | None = None,
+    image_shape_real: tuple[int, int] | None = None,
     apply_projection_normalization: bool = True,
     output_mode: Literal["cross_correlation", "frc"] = "cross_correlation",
 ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
@@ -87,6 +88,9 @@ def core_inspect_template(
         CUDA streams per device worker.
     mag_matrix : torch.Tensor | None, optional
         Optional anisotropic magnification matrix.
+    image_shape_real : tuple[int, int] | None, optional
+        Real-space shape ``(H, W)`` of the particle images, needed for an odd
+        width. Default is None, which assumes an even width.
     apply_projection_normalization : bool, optional
         Whether to normalize each projection before scoring.
     output_mode : Literal["cross_correlation", "frc"], optional
@@ -122,6 +126,7 @@ def core_inspect_template(
         devices=device,
         num_cuda_streams=num_cuda_streams,
         mag_matrix=mag_matrix,
+        image_shape_real=image_shape_real,
     )
     for kwargs in kwargs_per_device:
         kwargs["apply_projection_normalization"] = apply_projection_normalization
@@ -180,6 +185,7 @@ def _core_inspect_template_single_gpu(
     device: torch.device,
     num_cuda_streams: int = 1,
     mag_matrix: torch.Tensor | None = None,
+    image_shape_real: tuple[int, int] | None = None,
     apply_projection_normalization: bool = True,
     output_mode: Literal["cross_correlation", "frc"] = "cross_correlation",
 ) -> None:
@@ -227,6 +233,9 @@ def _core_inspect_template_single_gpu(
         CUDA streams per worker.
     mag_matrix : torch.Tensor | None, optional
         Optional anisotropic magnification matrix.
+    image_shape_real : tuple[int, int] | None, optional
+        Real-space shape ``(H, W)`` of the particle images, needed for an odd
+        width. Default is None, which assumes an even width.
     apply_projection_normalization : bool, optional
         Whether to normalize each projection before scoring.
     output_mode : Literal["cross_correlation", "frc"], optional
@@ -286,6 +295,7 @@ def _core_inspect_template_single_gpu(
                 projective_filter=refine_stack.projective_filters[i],
                 batch_size=batch_size,
                 mag_matrix=refine_stack.mag_matrix,
+                image_shape_real=image_shape_real,
                 apply_projection_normalization=apply_projection_normalization,
                 output_mode=output_mode,
             )
@@ -330,6 +340,7 @@ def _core_inspect_template_single_thread(
     projective_filter: torch.Tensor,
     batch_size: int = 32,
     mag_matrix: torch.Tensor | None = None,
+    image_shape_real: tuple[int, int] | None = None,
     apply_projection_normalization: bool = True,
     output_mode: Literal["cross_correlation", "frc"] = "cross_correlation",
 ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
@@ -367,6 +378,9 @@ def _core_inspect_template_single_thread(
         Number of orientation offsets processed per batch.
     mag_matrix : torch.Tensor | None, optional
         Optional anisotropic magnification matrix.
+    image_shape_real : tuple[int, int] | None, optional
+        Real-space shape ``(H, W)`` of the particle images, needed for an odd
+        width. Default is None, which assumes an even width.
     apply_projection_normalization : bool, optional
         Whether to normalize each projection before scoring.
     output_mode : Literal["cross_correlation", "frc"], optional
@@ -398,6 +412,7 @@ def _core_inspect_template_single_thread(
             projective_filter=projective_filter,
             batch_size=batch_size,
             mag_matrix=mag_matrix,
+            image_shape_real=image_shape_real,
             apply_projection_normalization=apply_projection_normalization,
         )
         return _reduce_refine_all_frc(
@@ -419,6 +434,7 @@ def _core_inspect_template_single_thread(
         projective_filter=projective_filter,
         batch_size=batch_size,
         mag_matrix=mag_matrix,
+        image_shape_real=image_shape_real,
         apply_projection_normalization=apply_projection_normalization,
     )
 
@@ -442,6 +458,7 @@ def _iter_refine_particle_frc_batches(
     projective_filter: torch.Tensor,
     batch_size: int = 32,
     mag_matrix: torch.Tensor | None = None,
+    image_shape_real: tuple[int, int] | None = None,
     apply_projection_normalization: bool = True,
 ) -> Iterator[tuple[int, torch.Tensor, torch.Tensor, torch.Tensor]]:
     """Yield FRC batches for a single particle over orientation offsets.
@@ -478,6 +495,9 @@ def _iter_refine_particle_frc_batches(
         Worker/device index for tqdm positioning.
     mag_matrix : torch.Tensor | None, optional
         Optional anisotropic magnification matrix.
+    image_shape_real : tuple[int, int] | None, optional
+        Real-space shape ``(H, W)`` of the particle images, needed for an odd
+        width. Default is None, which assumes an even width.
     apply_projection_normalization : bool, optional
         Whether to normalize each projection before scoring.
 
@@ -528,6 +548,7 @@ def _iter_refine_particle_frc_batches(
             projective_filters=combined_projective_filter,
             apply_normalization=apply_projection_normalization,
             mag_matrix=mag_matrix,
+            image_shape_real=image_shape_real,
         )
         yield (
             start_idx,
