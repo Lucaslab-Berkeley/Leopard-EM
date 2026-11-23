@@ -451,7 +451,8 @@ class FrameInspectionManager(PeakInspectionManager):
             ).to(template.device)
             bandpass_filter = (
                 self.preprocessing_filters.bandpass_filter.calculate_bandpass_filter(
-                    summed_particle_images_dft.shape[-2:]
+                    summed_particle_images_dft.shape[-2:],
+                    image_shape=summed_particle_images.shape[-2:],
                 ).to(template.device)
             )
             normalization_factor = get_image_normalization_factor(
@@ -494,7 +495,8 @@ class FrameInspectionManager(PeakInspectionManager):
         ).to(template.device)
         bandpass_filter = (
             self.preprocessing_filters.bandpass_filter.calculate_bandpass_filter(
-                summed_particle_images_dft.shape[-2:]
+                summed_particle_images_dft.shape[-2:],
+                image_shape=summed_particle_images.shape[-2:],
             ).to(template.device)
         )
         normalization_factor = get_image_normalization_factor(

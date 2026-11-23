@@ -148,7 +148,7 @@ class PhaseRandomizationFilterConfig(BaseModel2DTM):
     cuton: Annotated[float, Field(ge=0.0)] | None = None
 
     def calculate_phase_randomization_filter(
-        self, ref_img_rfft: torch.Tensor
+        self, ref_img_rfft: torch.Tensor, *, image_shape: tuple[int, ...]
     ) -> torch.Tensor:
         """Helper function for phase randomization filter based on the reference image.
 
@@ -158,6 +158,8 @@ class PhaseRandomizationFilterConfig(BaseModel2DTM):
             The image to phase randomization.
             This should be RFFT'd and unshifted
             (zero-frequency component at the top-left corner).
+        image_shape : tuple[int, ...]
+            Real-space shape of the reference image.
         """
         output_shape = ref_img_rfft.shape
 
@@ -165,12 +167,9 @@ class PhaseRandomizationFilterConfig(BaseModel2DTM):
         if not self.enabled:
             return torch.ones(output_shape, dtype=torch.float32)
 
-        # Fix for underlying shape bug in torch_fourier_filter
-        output_shape = output_shape[:-1] + (2 * (output_shape[-1] - 1),)
-
         return phase_randomize(
             dft=ref_img_rfft,
-            image_shape=output_shape,
+            image_shape=image_shape,
             rfft=True,
             fftshift=False,
             cuton=self.cuton,
@@ -246,7 +245,9 @@ class BandpassFilterConfig(BaseModel2DTM):
             **kwargs,
         )
 
-    def calculate_bandpass_filter(self, output_shape: tuple[int, ...]) -> torch.Tensor:
+    def calculate_bandpass_filter(
+        self, output_shape: tuple[int, ...], *, image_shape: tuple[int, ...]
+    ) -> torch.Tensor:
         """Helper function for bandpass filter based on the desired output shape.
 
         Note that the output will be in terms of an RFFT'd and unshifted (zero-frequency
@@ -258,6 +259,8 @@ class BandpassFilterConfig(BaseModel2DTM):
             Desired output shape of the bandpass filter in Fourier space. This is the
             filter shape in Fourier space *not* real space (like in the
             torch_fourier_filter package).
+        image_shape : tuple[int, ...]
+            Real-space shape of the grid the filter is for, matching 'output_shape'.
 
         Returns
         -------
@@ -273,14 +276,13 @@ class BandpassFilterConfig(BaseModel2DTM):
         high = self.high_freq_cutoff if self.high_freq_cutoff is not None else 1.0
         falloff = self.falloff if self.falloff is not None else 0.0
 
-        # Convert to real-space shape for function call
-        output_shape = output_shape[:-1] + (2 * (output_shape[-1] - 1),)
-
         return bandpass_filter(
             low=low,
             high=high,
             falloff=falloff,
-            image_shape=output_shape,
+            image_shape=image_shape_from_dft_shape(
+                output_shape, rfft=True, image_shape=image_shape
+            ),
             rfft=True,
             fftshift=False,
         )
@@ -303,7 +305,7 @@ class ArbitraryCurveFilterConfig(BaseModel2DTM):
     amplitudes: list[float] | None = None
 
     def calculate_arbitrary_curve_filter(
-        self, output_shape: tuple[int, ...]
+        self, output_shape: tuple[int, ...], *, image_shape: tuple[int, ...]
     ) -> torch.Tensor:
         """Calculates the curve filter for the desired output shape.
 
@@ -313,6 +315,8 @@ class ArbitraryCurveFilterConfig(BaseModel2DTM):
             Desired output shape of the curve filter in Fourier space. This is the
             filter shape in Fourier space *not* real space (like in the
             torch_fourier_filter package).
+        image_shape : tuple[int, ...]
+            Real-space shape of the grid the filter is for, matching 'output_shape'.
 
         Returns
         -------
@@ -328,11 +332,10 @@ class ArbitraryCurveFilterConfig(BaseModel2DTM):
                 "When enabled, both 'frequencies' and 'amplitudes' must be provided."
             )
 
-        # Convert to real-space shape for function call
-        output_shape = output_shape[:-1] + (2 * (output_shape[-1] - 1),)
-
         freq_grid = fftfreq_grid(
-            image_shape=output_shape,
+            image_shape=image_shape_from_dft_shape(
+                output_shape, rfft=True, image_shape=image_shape
+            ),
             rfft=True,
             fftshift=False,
             norm=True,
@@ -476,11 +479,13 @@ class PreprocessingFilters(BaseModel2DTM):
             image_shape=image_shape,
             output_image_shape=output_image_shape,
         ).to(device)
+        if output_image_shape is None:
+            output_image_shape = image_shape
         bandpass_filter_tensor = bf_config.calculate_bandpass_filter(
-            output_shape=output_shape
+            output_shape=output_shape, image_shape=output_image_shape
         ).to(device)
         arbitrary_curve_filter_tensor = ac_config.calculate_arbitrary_curve_filter(
-            output_shape=output_shape
+            output_shape=output_shape, image_shape=output_image_shape
         ).to(device)
 
         combined_filter = (

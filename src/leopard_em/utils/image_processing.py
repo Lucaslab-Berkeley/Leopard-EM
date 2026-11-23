@@ -156,7 +156,7 @@ def apply_image_filtering(
     with torch.no_grad():
         bandpass_filter = (
             preprocessing_filters.bandpass_filter.calculate_bandpass_filter(
-                images_dft.shape[-2:]
+                images_dft.shape[-2:], image_shape=full_image_shape
             ).to(device)
         )
     if precomputed_filter_stack is None:

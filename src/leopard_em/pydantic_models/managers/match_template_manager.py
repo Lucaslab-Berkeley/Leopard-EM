@@ -216,7 +216,7 @@ class MatchTemplateManager(BaseModel2DTM):
         #       after padding, so that the padded search reproduces the unpadded one.
         bp_config = self.preprocessing_filters.bandpass_filter
         bandpass_original = bp_config.calculate_bandpass_filter(
-            image_dft_original.shape
+            image_dft_original.shape, image_shape=padding_plan.original_shape
         )
         cumulative_original = self.preprocessing_filters.get_combined_filter(
             ref_img_rfft=image_dft_original,
@@ -272,7 +272,9 @@ class MatchTemplateManager(BaseModel2DTM):
 
         # Get the bandpass filter individually
         bp_config = self.preprocessing_filters.bandpass_filter
-        bandpass_filter = bp_config.calculate_bandpass_filter(image_dft.shape)
+        bandpass_filter = bp_config.calculate_bandpass_filter(
+            image_dft.shape, image_shape=padding_plan.padded_shape
+        )
 
         # Calculate the cumulative filters for both the image and the template.
         # NOTE: We don't want to do random fourier masking on the image, so skip the
