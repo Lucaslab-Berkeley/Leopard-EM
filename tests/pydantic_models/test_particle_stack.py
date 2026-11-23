@@ -472,7 +472,7 @@ def test_construct_image_stack_from_movie_preserves_summed_output_shape(monkeypa
     dose_weight_calls = []
 
     def fake_dose_weight_movie_to_micrograph(
-        movie_fft, pixel_size, pre_exposure, fluence_per_frame, voltage
+        movie_fft, pixel_size, pre_exposure, fluence_per_frame, voltage, image_shape
     ):
         dose_weight_calls.append((pixel_size, pre_exposure, fluence_per_frame, voltage))
         return torch.fft.irfftn(  # pylint: disable=not-callable
@@ -766,17 +766,26 @@ def test_construct_projective_filters_assigns_rows_by_position(tmp_path):
         output_shape=(2, 2),
         images_dft=images_dft.to(torch.complex64),
         indices=[pd.Index([0, 2]), pd.Index([1, 3])],
+        image_shape=(4, 4),
     )
     assert filters[:, 0, 0].tolist() == [1.0, 2.0, 1.0, 2.0]
 
     # Labels (particle_id strings) or out-of-range positions are rejected
     with pytest.raises(TypeError, match="integer row positions"):
         ps.construct_projective_filters(
-            _ConstantFilter(), (2, 2), images_dft[:1], [pd.Index(["p_00000"])]
+            _ConstantFilter(),
+            (2, 2),
+            images_dft[:1],
+            [pd.Index(["p_00000"])],
+            image_shape=(4, 4),
         )
     with pytest.raises(IndexError, match="out of range"):
         ps.construct_projective_filters(
-            _ConstantFilter(), (2, 2), images_dft[:1], [pd.Index([4])]
+            _ConstantFilter(),
+            (2, 2),
+            images_dft[:1],
+            [pd.Index([4])],
+            image_shape=(4, 4),
         )
 
 

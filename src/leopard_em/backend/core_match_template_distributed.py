@@ -398,6 +398,7 @@ def core_match_template_distributed(
     backend: str = "streamed",
     compute_correlation_table: bool = True,
     unpadded_valid_shape: tuple[int, int] | None = None,
+    image_shape_real: tuple[int, int] | None = None,
     **kwargs: dict,
 ) -> dict[str, torch.Tensor]:
     """Distributed multi-node core function for the match template program.
@@ -429,6 +430,10 @@ def core_match_template_distributed(
         implied by the image and template. Used when the image was padded up to a
         fast FFT size. Only read on rank zero; broadcast to all other ranks.
         Default is None.
+    image_shape_real : tuple[int, int], optional
+        Real-space shape ``(H, W)`` of the image, needed for an odd width. Only read on
+        rank zero; broadcast to all other ranks. Default is None, which assumes an
+        even width.
     **kwargs : dict[str, torch.Tensor]
         Additional keyword arguments passed to the single-GPU core function. For the
         zeroth rank this should be a dictionary of Tensor objects with the following
@@ -477,12 +482,12 @@ def core_match_template_distributed(
         pixel_values,
     ) = _extract_and_broadcast_tensors(device, rank, kwargs)
 
-    # Broadcast the (optional) unpadded valid shape from rank zero.
-    valid_shape_list: list[tuple[int, int] | None] = [
-        unpadded_valid_shape if rank == 0 else None
-    ]
-    dist.broadcast_object_list(valid_shape_list, src=0)
-    unpadded_valid_shape = valid_shape_list[0]
+    # Broadcast the (optional) unpadded valid shape and real image shape from rank 0.
+    shape_list: list[tuple[int, int] | None] = (
+        [unpadded_valid_shape, image_shape_real] if rank == 0 else [None, None]
+    )
+    dist.broadcast_object_list(shape_list, src=0)
+    unpadded_valid_shape, image_shape_real = shape_list
 
     # Broadcast backend from rank zero; only rank zero does fallback checking for zipfft
     backend_list: list[str] = [backend]
@@ -536,6 +541,7 @@ def core_match_template_distributed(
         device=device,
         compute_correlation_table=compute_correlation_table,
         unpadded_valid_shape=unpadded_valid_shape,
+        image_shape_real=image_shape_real,
     )
     dist.barrier()
 

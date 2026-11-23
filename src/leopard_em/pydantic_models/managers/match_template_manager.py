@@ -216,12 +216,13 @@ class MatchTemplateManager(BaseModel2DTM):
         #       after padding, so that the padded search reproduces the unpadded one.
         bp_config = self.preprocessing_filters.bandpass_filter
         bandpass_original = bp_config.calculate_bandpass_filter(
-            image_dft_original.shape
+            image_dft_original.shape, image_shape=padding_plan.original_shape
         )
         cumulative_original = self.preprocessing_filters.get_combined_filter(
             ref_img_rfft=image_dft_original,
             output_shape=image_dft_original.shape,
             apply_random_dropout=False,
+            image_shape=padding_plan.original_shape,
         )
         normalization_factor = get_image_normalization_factor(
             image_rfft=image_dft_original,
@@ -271,7 +272,9 @@ class MatchTemplateManager(BaseModel2DTM):
 
         # Get the bandpass filter individually
         bp_config = self.preprocessing_filters.bandpass_filter
-        bandpass_filter = bp_config.calculate_bandpass_filter(image_dft.shape)
+        bandpass_filter = bp_config.calculate_bandpass_filter(
+            image_dft.shape, image_shape=padding_plan.padded_shape
+        )
 
         # Calculate the cumulative filters for both the image and the template.
         # NOTE: We don't want to do random fourier masking on the image, so skip the
@@ -282,6 +285,8 @@ class MatchTemplateManager(BaseModel2DTM):
             ref_img_rfft=image_dft_original,
             output_shape=image_dft.shape,
             apply_random_dropout=False,
+            image_shape=padding_plan.original_shape,
+            output_image_shape=padding_plan.padded_shape,
         )
 
         # NOTE: Here, manually accounting for the RFFT in output shape since we have not
@@ -290,6 +295,8 @@ class MatchTemplateManager(BaseModel2DTM):
             ref_img_rfft=image_dft_original,
             output_shape=(template.shape[-2], template.shape[-1] // 2 + 1),
             apply_random_dropout=True,
+            image_shape=padding_plan.original_shape,
+            output_image_shape=template.shape[-2:],
         )
 
         # Apply the pre-processing and normalization
@@ -367,6 +374,7 @@ class MatchTemplateManager(BaseModel2DTM):
             backend=self._resolved_backend(),
             compute_correlation_table=compute_correlation_table,
             unpadded_valid_shape=self._unpadded_valid_shape(),
+            image_shape_real=self._image_shape_real(),
         )
 
         # Populate the MatchTemplateResult via a private helper
@@ -442,6 +450,7 @@ class MatchTemplateManager(BaseModel2DTM):
             self._resolved_backend(),
             compute_correlation_table=compute_correlation_table,
             unpadded_valid_shape=self._unpadded_valid_shape(),
+            image_shape_real=self._image_shape_real(),
             **core_kwargs,
         )
 
@@ -482,6 +491,20 @@ class MatchTemplateManager(BaseModel2DTM):
         if plan is None or not plan.is_padded:
             return None
         return plan.unpadded_valid_shape
+
+    def _image_shape_real(self) -> tuple[int, int] | None:
+        """Real-space shape of the (padded) image handed to the backend.
+
+        Returns
+        -------
+        Optional[tuple[int, int]]
+            The padded shape, which is the original shape when no padding was applied,
+            or None when the backend kwargs were built on a different rank.
+        """
+        plan = self._fft_padding_plan
+        if plan is None:
+            return None
+        return plan.padded_shape
 
     def _populate_match_template_result(
         self,

@@ -94,6 +94,7 @@ def _process_particle_images_for_filters(
                     preprocessing_filters,
                     output_shape=particle_images_dft.shape[-2:],
                     images_dft=raw_particle_dft,
+                    image_shape=particle_images.shape[-2:],
                 ).to(device)
 
         particle_images_dft = apply_image_filtering(
@@ -113,6 +114,8 @@ def _process_particle_images_for_filters(
                     preprocessing_filters,
                     output_shape=(template.shape[-2], template.shape[-1] // 2 + 1),
                     images_dft=raw_particle_dft,
+                    image_shape=particle_images.shape[-2:],
+                    output_image_shape=template.shape[-2:],
                 ).to(device)
     else:
         particle_images_dft = torch.fft.rfftn(particle_images, dim=(-2, -1))  # pylint: disable=not-callable
@@ -266,6 +269,8 @@ def _setup_images_filters_from_micrographs(
                 output_shape=(template.shape[-2], template.shape[-1] // 2 + 1),
                 images_dft=micrograph_images_dft.detach(),
                 indices=micrograph_indexes,
+                image_shape=(img_h, img_w),
+                output_image_shape=template.shape[-2:],
             ).to(device)
         micrograph_images_dft = apply_image_filtering(
             particle_stack,
@@ -275,7 +280,7 @@ def _setup_images_filters_from_micrographs(
             extracted_box_shape=(box_h + 1, box_w + 1),
         )
         micrograph_images = torch.fft.irfftn(  # pylint: disable=not-callable
-            micrograph_images_dft, dim=(-2, -1)
+            micrograph_images_dft, s=(img_h, img_w), dim=(-2, -1)
         )
 
     # Extract particle images
@@ -908,9 +913,17 @@ def setup_particle_backend_kwargs(
         images_are_particles=images_are_particles,
     )
 
+    # Real-space shape of the particle images (the RFFT does not tell odd from even)
+    if images_are_particles and image_stack is not None:
+        image_shape_real = (int(image_stack.shape[-2]), int(image_stack.shape[-1]))
+    else:
+        box_h, box_w = particle_stack.extracted_box_size
+        image_shape_real = (int(box_h), int(box_w))
+
     return {
         **static_kwargs,
         "particle_stack_dft": particle_images_dft,
         "template_dft": template_dft,
         "projective_filters": projective_filters,
+        "image_shape_real": image_shape_real,
     }

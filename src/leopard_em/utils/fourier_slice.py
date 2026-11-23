@@ -4,6 +4,7 @@ import roma
 import torch
 from torch_fourier_slice import extract_central_slices_rfft_3d
 from torch_fourier_slice.volume_utils import separable_sinc2_correction
+from torch_grid_utils import image_shape_from_dft_shape
 
 
 def volume_to_rfft_fourier_slice(volume: torch.Tensor) -> torch.Tensor:
@@ -24,11 +25,10 @@ def volume_to_rfft_fourier_slice(volume: torch.Tensor) -> torch.Tensor:
     sinc2 = separable_sinc2_correction(volume.shape, device=volume.device)
     volume = volume / sinc2
 
-    # NOTE: There is an extra FFTshift step before the RFFT since, for some reason,
-    # omitting this step will cause a 180 degree phase shift on odd (i, j, k)
-    # structure factors in the Fourier domain. This just requires an extra
-    # IFFTshift after converting a slice back to real-space (handled already).
-    volume = torch.fft.fftshift(volume, dim=(0, 1, 2))  # pylint: disable=E1102
+    # NOTE: The volume center (index n // 2) is moved to the origin before the RFFT,
+    # otherwise odd (i, j, k) structure factors pick up a 180 degree phase shift.
+    # Projections are fftshifted back after the inverse transform.
+    volume = torch.fft.ifftshift(volume, dim=(0, 1, 2))  # pylint: disable=E1102
     volume_rfft = torch.fft.rfftn(volume, dim=(0, 1, 2))  # pylint: disable=E1102
     volume_rfft = torch.fft.fftshift(volume_rfft, dim=(0, 1))  # pylint: disable=E1102
 
@@ -51,12 +51,16 @@ def _rfft_slices_to_real_projections(
     torch.Tensor
         The real-space projections.
     """
+    # Slices of a cubic volume are square, so the width is the height
+    shape = image_shape_from_dft_shape(
+        fourier_slices.shape[-2:], rfft=True, assume_square=True
+    )
     # pylint: disable=not-callable
-    fourier_slices = torch.fft.fftshift(fourier_slices, dim=(-2,))
+    fourier_slices = torch.fft.ifftshift(fourier_slices, dim=(-2,))
     # pylint: disable=not-callable
-    projections = torch.fft.irfftn(fourier_slices, dim=(-2, -1))
+    projections = torch.fft.irfftn(fourier_slices, s=shape, dim=(-2, -1))
     # pylint: disable=not-callable
-    projections = torch.fft.ifftshift(projections, dim=(-2, -1))
+    projections = torch.fft.fftshift(projections, dim=(-2, -1))
     return projections
 
 

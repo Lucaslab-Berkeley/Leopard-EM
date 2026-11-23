@@ -9,6 +9,7 @@ from typing import Any, TypeVar
 import roma
 import tensordict
 import torch
+from torch_grid_utils import image_shape_from_dft_shape
 
 # Suppress the specific deprecation warnings from PyTorch internals
 warnings.filterwarnings(
@@ -22,6 +23,28 @@ F = TypeVar("F", bound=Callable[..., Any])
 # This is assuming the Euler angles are in the ZYZ intrinsic format
 # AND that the angles are ordered in (phi, theta, psi)
 EULER_ANGLE_FMT = "ZYZ"
+
+
+def template_projection_shape(template_dft: torch.Tensor) -> tuple[int, int]:
+    """Real-space ``(h, w)`` of projections of a cubic template, from its RFFT.
+
+    An RFFT does not tell if the real-space width was even or odd, but the template is
+    cubic, so the width is the length of the full dimension before the RFFT one.
+
+    Parameters
+    ----------
+    template_dft : torch.Tensor
+        RFFT of the cubic template volume, shape ``(d, d, d // 2 + 1)``.
+
+    Returns
+    -------
+    tuple[int, int]
+        Real-space shape ``(d, d)`` of the template projections.
+    """
+    h, w = image_shape_from_dft_shape(
+        template_dft.shape[-2:], rfft=True, assume_square=True
+    )
+    return (h, w)
 
 
 def combine_euler_angles(angle_a: torch.Tensor, angle_b: torch.Tensor) -> torch.Tensor:

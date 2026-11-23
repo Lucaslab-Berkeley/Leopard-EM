@@ -329,7 +329,7 @@ class FrameInspectionManager(PeakInspectionManager):
         frame_particle_stack: torch.Tensor,
         template: torch.Tensor,
         fixed_filters: FixedFrameFilters,
-    ) -> dict[str, torch.Tensor]:
+    ) -> dict[str, Any]:
         """Build backend kwargs that vary per frame (or summed stack).
 
         Parameters
@@ -343,9 +343,9 @@ class FrameInspectionManager(PeakInspectionManager):
 
         Returns
         -------
-        dict[str, torch.Tensor]
-            Frame-local backend kwargs containing particle/image/template DFT tensors
-            and projective filters.
+        dict[str, Any]
+            Frame-local backend kwargs containing particle/image/template DFT tensors,
+            projective filters and the real-space particle image shape.
         """
         particle_images_dft, template_dft, projective_filters = (
             setup_frame_filters_particle_stack(
@@ -365,6 +365,7 @@ class FrameInspectionManager(PeakInspectionManager):
             "particle_stack_dft": particle_images_dft,
             "template_dft": template_dft,
             "projective_filters": projective_filters,
+            "image_shape_real": tuple(frame_particle_stack.shape[-2:]),
         }
 
     def _setup_fixed_frame_normalization_filters(  # pylint: disable=too-many-locals
@@ -424,6 +425,8 @@ class FrameInspectionManager(PeakInspectionManager):
                 output_shape=template_output_shape,
                 images_dft=summed_movie_dft.detach(),
                 indices=[df_index],
+                image_shape=summed_movie_image.shape[-2:],
+                output_image_shape=template.shape[-2:],
             ).to(template.device)
             summed_particle_images = self.particle_stack.construct_image_stack(
                 images=summed_movie_image,
@@ -444,10 +447,13 @@ class FrameInspectionManager(PeakInspectionManager):
                 output_shape=particle_rfft_shape,
                 images_dft=summed_movie_dft.detach(),
                 indices=[df_index],
+                image_shape=summed_movie_image.shape[-2:],
+                output_image_shape=summed_particle_images.shape[-2:],
             ).to(template.device)
             bandpass_filter = (
                 self.preprocessing_filters.bandpass_filter.calculate_bandpass_filter(
-                    summed_particle_images_dft.shape[-2:]
+                    summed_particle_images_dft.shape[-2:],
+                    image_shape=summed_particle_images.shape[-2:],
                 ).to(template.device)
             )
             normalization_factor = get_image_normalization_factor(
@@ -479,15 +485,19 @@ class FrameInspectionManager(PeakInspectionManager):
             self.preprocessing_filters,
             output_shape=particle_rfft_shape,
             images_dft=summed_particle_images_dft.detach(),
+            image_shape=summed_particle_images.shape[-2:],
         ).to(template.device)
         fixed_projective_filters = self.particle_stack.construct_image_filters(
             self.preprocessing_filters,
             output_shape=template_output_shape,
             images_dft=summed_particle_images_dft.detach(),
+            image_shape=summed_particle_images.shape[-2:],
+            output_image_shape=template.shape[-2:],
         ).to(template.device)
         bandpass_filter = (
             self.preprocessing_filters.bandpass_filter.calculate_bandpass_filter(
-                summed_particle_images_dft.shape[-2:]
+                summed_particle_images_dft.shape[-2:],
+                image_shape=summed_particle_images.shape[-2:],
             ).to(template.device)
         )
         normalization_factor = get_image_normalization_factor(

@@ -3,10 +3,12 @@
 import torch
 from torch_fourier_shell_correlation import fsc
 from torch_fourier_slice import extract_central_slices_rfft_3d, transform_slice_2d
+from torch_grid_utils import image_shape_from_dft_shape
 
 from leopard_em.backend.utils import (
     normalize_template_projection,
     normalize_template_projection_compiled,
+    template_projection_shape,
 )
 from leopard_em.utils.zipfft_support import (
     zipfft,
@@ -15,11 +17,20 @@ from leopard_em.utils.zipfft_support import (
 )
 
 
-def _image_shape_from_rfft(image_dft: torch.Tensor) -> tuple[int, int]:
-    """Real-space ``(H, W)`` implied by an untransposed ``(H, W // 2 + 1)`` RFFT.
+def _image_shape_from_rfft(
+    image_dft: torch.Tensor, image_shape_real: tuple[int, int] | None = None
+) -> tuple[int, int]:
+    """Real-space ``(H, W)`` of an untransposed ``(H, W // 2 + 1)`` RFFT.
 
-    Assumes an even real-space width, which every Leopard-EM padding path guarantees.
+    An RFFT does not tell if the real-space width was even or odd, so pass the real
+    shape as ``image_shape_real``; it is checked against the RFFT and returned. Without
+    it, an even width is assumed, for callers that predate the argument.
     """
+    if image_shape_real is not None:
+        h, w = image_shape_from_dft_shape(
+            image_dft.shape[-2:], rfft=True, image_shape=image_shape_real
+        )
+        return (h, w)
     return (int(image_dft.shape[-2]), 2 * (int(image_dft.shape[-1]) - 1))
 
 
@@ -69,9 +80,8 @@ def do_streamed_orientation_cross_correlate(
         Anisotropic magnification matrix of shape (2, 2). If None,
         no magnification transform is applied. Default is None.
     image_shape_real : tuple[int, int] | None, optional
-        True real-space shape ``(H, W)`` of the image. When None, it is inferred from
-        ``image_dft`` assuming an untransposed ``(H, W // 2 + 1)`` RFFT layout.
-        Default is None.
+        True real-space shape ``(H, W)`` of the image; needed for an odd width. When
+        None, an even width is assumed. Default is None.
 
     Returns
     -------
@@ -80,11 +90,10 @@ def do_streamed_orientation_cross_correlate(
         orientation and defocus value. Will have shape
         (num_Cs, num_defocus, num_orientations, H, W).
     """
-    if image_shape_real is None:
-        image_shape_real = _image_shape_from_rfft(image_dft)
+    image_shape_real = _image_shape_from_rfft(image_dft, image_shape_real)
 
     # Accounting for RFFT shape
-    projection_shape_real = (template_dft.shape[1], template_dft.shape[2] * 2 - 2)
+    projection_shape_real = template_projection_shape(template_dft)
 
     num_orientations = rotation_matrices.shape[0]
     num_Cs = projective_filters.shape[0]  # pylint: disable=invalid-name
@@ -137,8 +146,10 @@ def do_streamed_orientation_cross_correlate(
                 with torch.cuda.stream(stream):
                     # Apply the projective filter and do template normalization
                     fourier_slice_filtered = fourier_slice * projective_filters[k, j]
-                    projection = torch.fft.irfft2(fourier_slice_filtered)
-                    projection = torch.fft.ifftshift(projection, dim=(-2, -1))
+                    projection = torch.fft.irfft2(
+                        fourier_slice_filtered, s=projection_shape_real
+                    )
+                    projection = torch.fft.fftshift(projection, dim=(-2, -1))
 
                     if apply_normalization:
                         projection = normalize_template_projection_compiled(
@@ -226,9 +237,8 @@ def do_batched_orientation_cross_correlate(
         Anisotropic magnification matrix of shape (2, 2). If None,
         no magnification transform is applied. Default is None.
     image_shape_real : tuple[int, int] | None, optional
-        True real-space shape ``(H, W)`` of the image. When None, it is inferred from
-        ``image_dft`` assuming an untransposed ``(H, W // 2 + 1)`` RFFT layout.
-        Default is None.
+        True real-space shape ``(H, W)`` of the image; needed for an odd width. When
+        None, an even width is assumed. Default is None.
 
     Returns
     -------
@@ -238,10 +248,9 @@ def do_batched_orientation_cross_correlate(
         (num_Cs, num_defocus, num_orientations, H, W).
     """
     # Accounting for RFFT shape
-    if image_shape_real is None:
-        image_shape_real = _image_shape_from_rfft(image_dft)
+    image_shape_real = _image_shape_from_rfft(image_dft, image_shape_real)
 
-    projection_shape_real = (template_dft.shape[1], template_dft.shape[2] * 2 - 2)
+    projection_shape_real = template_projection_shape(template_dft)
 
     num_Cs = projective_filters.shape[0]  # pylint: disable=invalid-name
     num_defocus = projective_filters.shape[1]
@@ -284,8 +293,8 @@ def do_batched_orientation_cross_correlate(
     fourier_slice = fourier_slice[None, None, ...] * projective_filters[:, :, None, ...]
 
     # Inverse Fourier transform into real space and normalize
-    projections = torch.fft.irfftn(fourier_slice, dim=(-2, -1))
-    projections = torch.fft.ifftshift(projections, dim=(-2, -1))
+    projections = torch.fft.irfftn(fourier_slice, s=projection_shape_real, dim=(-2, -1))
+    projections = torch.fft.fftshift(projections, dim=(-2, -1))
 
     if apply_normalization:
         projections = normalize_template_projection_compiled(
@@ -310,12 +319,15 @@ def do_batched_orientation_cross_correlate(
             if requires_grad:
                 # Don't use out= parameter to preserve autograd
                 cross_correlation[k, j, ...] = torch.fft.irfftn(
-                    projections_dft, dim=(-2, -1)
+                    projections_dft, s=image_shape_real, dim=(-2, -1)
                 )
             else:
                 # Use out= parameter for memory efficiency
                 torch.fft.irfftn(
-                    projections_dft, dim=(-2, -1), out=cross_correlation[k, j, ...]
+                    projections_dft,
+                    s=image_shape_real,
+                    dim=(-2, -1),
+                    out=cross_correlation[k, j, ...],
                 )
 
     return cross_correlation
@@ -359,9 +371,8 @@ def do_batched_orientation_cross_correlate_cpu(
         Anisotropic magnification matrix of shape (2, 2). If None,
         no magnification transform is applied. Default is None.
     image_shape_real : tuple[int, int] | None, optional
-        True real-space shape ``(H, W)`` of the image. When None, it is inferred from
-        ``image_dft`` assuming an untransposed ``(H, W // 2 + 1)`` RFFT layout.
-        Default is None.
+        True real-space shape ``(H, W)`` of the image; needed for an odd width. When
+        None, an even width is assumed. Default is None.
 
     Returns
     -------
@@ -369,10 +380,9 @@ def do_batched_orientation_cross_correlate_cpu(
         Cross-correlation for the batch of orientations and defocus values.s
     """
     # Accounting for RFFT shape
-    if image_shape_real is None:
-        image_shape_real = _image_shape_from_rfft(image_dft)
+    image_shape_real = _image_shape_from_rfft(image_dft, image_shape_real)
 
-    projection_shape_real = (template_dft.shape[1], template_dft.shape[2] * 2 - 2)
+    projection_shape_real = template_projection_shape(template_dft)
 
     # Extract central slice(s) from the template volume
     fourier_slice = extract_central_slices_rfft_3d(
@@ -398,8 +408,8 @@ def do_batched_orientation_cross_correlate_cpu(
     fourier_slice = fourier_slice[None, None, ...] * projective_filters[:, :, None, ...]
 
     # Inverse Fourier transform into real space and normalize
-    projections = torch.fft.irfftn(fourier_slice, dim=(-2, -1))
-    projections = torch.fft.ifftshift(projections, dim=(-2, -1))
+    projections = torch.fft.irfftn(fourier_slice, s=projection_shape_real, dim=(-2, -1))
+    projections = torch.fft.fftshift(projections, dim=(-2, -1))
 
     if apply_normalization:
         projections = normalize_template_projection(
@@ -414,7 +424,9 @@ def do_batched_orientation_cross_correlate_cpu(
 
     # Cross correlation step by element-wise multiplication
     projections_dft = image_dft[None, None, None, ...] * projections_dft.conj()
-    cross_correlation = torch.fft.irfftn(projections_dft, dim=(-2, -1))
+    cross_correlation = torch.fft.irfftn(
+        projections_dft, s=image_shape_real, dim=(-2, -1)
+    )
 
     return cross_correlation
 
@@ -446,9 +458,8 @@ def do_batched_orientation_frc(
     mag_matrix : torch.Tensor | None, optional
         Optional anisotropic magnification matrix.
     image_shape_real : tuple[int, int] | None, optional
-        True real-space shape ``(H, W)`` of the image. When None, it is inferred from
-        ``image_dft`` assuming an untransposed ``(H, W // 2 + 1)`` RFFT layout.
-        Default is None.
+        True real-space shape ``(H, W)`` of the image; needed for an odd width. When
+        None, an even width is assumed. Default is None.
 
     Returns
     -------
@@ -456,10 +467,9 @@ def do_batched_orientation_frc(
         - frc_values: shape (num_Cs, num_defocus, num_orientations, num_freq_bins)
         - frequency_bins: shape (num_freq_bins,)
     """
-    if image_shape_real is None:
-        image_shape_real = _image_shape_from_rfft(image_dft)
+    image_shape_real = _image_shape_from_rfft(image_dft, image_shape_real)
 
-    projection_shape_real = (template_dft.shape[1], template_dft.shape[2] * 2 - 2)
+    projection_shape_real = template_projection_shape(template_dft)
 
     num_orientations = rotation_matrices.shape[0]
     num_cs = projective_filters.shape[0]
@@ -484,8 +494,8 @@ def do_batched_orientation_frc(
 
     fourier_slice = fourier_slice[None, None, ...] * projective_filters[:, :, None, ...]
 
-    projections = torch.fft.irfftn(fourier_slice, dim=(-2, -1))
-    projections = torch.fft.ifftshift(projections, dim=(-2, -1))
+    projections = torch.fft.irfftn(fourier_slice, s=projection_shape_real, dim=(-2, -1))
+    projections = torch.fft.fftshift(projections, dim=(-2, -1))
 
     if apply_normalization:
         if image_dft.device.type == "cuda":
@@ -584,7 +594,7 @@ def do_batched_orientation_cross_correlate_zipfft(
         )
 
     # Accounting for RFFT shape
-    projection_shape_real = (template_dft.shape[1], template_dft.shape[2] * 2 - 2)
+    projection_shape_real = template_projection_shape(template_dft)
 
     # 'image_shape_real' is the true (H, W)
     # 'transposed_dft_shape' is the layout the zipFFT reads
@@ -633,8 +643,8 @@ def do_batched_orientation_cross_correlate_zipfft(
     fourier_slice = fourier_slice[None, None, ...] * projective_filters[:, :, None, ...]
 
     # Inverse Fourier transform into real space and normalize
-    projections = torch.fft.irfftn(fourier_slice, dim=(-2, -1))
-    projections = torch.fft.ifftshift(projections, dim=(-2, -1))
+    projections = torch.fft.irfftn(fourier_slice, s=projection_shape_real, dim=(-2, -1))
+    projections = torch.fft.fftshift(projections, dim=(-2, -1))
     projections = normalize_template_projection_compiled(
         projections,
         projection_shape_real,

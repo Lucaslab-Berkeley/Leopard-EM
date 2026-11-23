@@ -28,7 +28,7 @@ def handle_correlation_mode(
     """
     # Crop the result to the valid bounds
     if mode == "valid":
-        slices = [slice(0, _out_s) for _out_s in out_shape]
+        slices = tuple(slice(0, _out_s) for _out_s in out_shape)
         cross_correlation = cross_correlation[slices]
     elif mode == "same":
         pass
