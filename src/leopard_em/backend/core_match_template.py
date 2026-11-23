@@ -30,7 +30,10 @@ from leopard_em.backend.process_results import (
     process_correlation_table,
     scale_mip,
 )
-from leopard_em.backend.utils import do_iteration_and_correlation_table_updates
+from leopard_em.backend.utils import (
+    do_iteration_and_correlation_table_updates,
+    template_projection_shape,
+)
 
 DEFAULT_STATISTIC_DTYPE = torch.float32
 CORRELATION_TABLE_THRESHOLD = 6.25  # approx 85,000 entries at 20.8 million search size
@@ -546,10 +549,7 @@ def _core_match_template_single_gpu(
     # Doing it before would copy the (large) host tensor once per worker process.
     image_dft, image_shape_real = _prepare_image_dft(image_dft, backend)
 
-    projection_shape_real = (
-        template_dft.shape[1],
-        template_dft.shape[2] * 2 - 2,  # adj. for RFFT
-    )
+    projection_shape_real = template_projection_shape(template_dft)
     valid_correlation_shape = _resolve_valid_correlation_shape(
         (
             image_shape_real[0] - projection_shape_real[0] + 1,

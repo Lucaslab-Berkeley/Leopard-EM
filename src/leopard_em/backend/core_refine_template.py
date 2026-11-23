@@ -22,6 +22,7 @@ from leopard_em.backend.utils import (
     EULER_ANGLE_FMT,
     combine_euler_angles,
     normalize_template_projection,
+    template_projection_shape,
 )
 from leopard_em.utils.cross_correlation import handle_correlation_mode
 from leopard_em.utils.ctf_utils import (
@@ -238,10 +239,9 @@ def core_refine_template(
 
     # Shape information for offset calculations
     _, img_h, img_w = particle_stack_dft.shape
-    _, template_h, template_w = template_dft.shape
+    template_h, template_w = template_projection_shape(template_dft)
     # account for RFFT
     img_w = 2 * (img_w - 1)
-    template_w = 2 * (template_w - 1)
 
     ordered_results = [results[k] for k in sorted(results.keys(), key=int)]
 
@@ -666,9 +666,8 @@ def _iter_refine_particle_correlation_batches(
     this function.
     """
     img_h, img_w = particle_image_dft.shape
-    _, template_h, template_w = template_dft.shape
+    template_h, template_w = template_projection_shape(template_dft)
     img_w = 2 * (img_w - 1)
-    template_w = 2 * (template_w - 1)
     crop_h = img_h - template_h + 1
     crop_w = img_w - template_w + 1
 
@@ -943,10 +942,9 @@ def cross_correlate_particle_stack(
     # Helpful constants for later use
     device = particle_stack_dft.device
     num_particles, image_h, image_w = particle_stack_dft.shape
-    _, template_h, template_w = template_dft.shape
+    template_h, template_w = template_projection_shape(template_dft)
     # account for RFFT
     image_w = 2 * (image_w - 1)
-    template_w = 2 * (template_w - 1)
 
     if batch_size == -1:
         batch_size = num_particles
@@ -978,7 +976,7 @@ def cross_correlate_particle_stack(
         # Apply anisotropic magnification transform if provided
         # pylint: disable=duplicate-code
         if mag_matrix is not None:
-            rfft_shape = (template_h, template_w)
+            rfft_shape = (template_dft.shape[-2], template_dft.shape[-1])
             stack_shape = (batch_rotation_matrices.shape[0],)
             fourier_slice = transform_slice_2d(
                 projection_image_dfts=fourier_slice,
@@ -992,8 +990,10 @@ def cross_correlate_particle_stack(
         fourier_slice *= batch_projective_filters
 
         # Inverse Fourier transform and normalize the projection
-        projections = torch.fft.irfftn(fourier_slice, dim=(-2, -1))
-        projections = torch.fft.ifftshift(projections, dim=(-2, -1))
+        projections = torch.fft.irfftn(
+            fourier_slice, s=(template_h, template_w), dim=(-2, -1)
+        )
+        projections = torch.fft.fftshift(projections, dim=(-2, -1))
         projections = normalize_template_projection(
             projections, (template_h, template_w), (image_h, image_w)
         )

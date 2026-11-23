@@ -7,6 +7,7 @@ from torch_fourier_slice import extract_central_slices_rfft_3d, transform_slice_
 from leopard_em.backend.utils import (
     normalize_template_projection,
     normalize_template_projection_compiled,
+    template_projection_shape,
 )
 from leopard_em.utils.zipfft_support import (
     zipfft,
@@ -84,7 +85,7 @@ def do_streamed_orientation_cross_correlate(
         image_shape_real = _image_shape_from_rfft(image_dft)
 
     # Accounting for RFFT shape
-    projection_shape_real = (template_dft.shape[1], template_dft.shape[2] * 2 - 2)
+    projection_shape_real = template_projection_shape(template_dft)
 
     num_orientations = rotation_matrices.shape[0]
     num_Cs = projective_filters.shape[0]  # pylint: disable=invalid-name
@@ -137,8 +138,10 @@ def do_streamed_orientation_cross_correlate(
                 with torch.cuda.stream(stream):
                     # Apply the projective filter and do template normalization
                     fourier_slice_filtered = fourier_slice * projective_filters[k, j]
-                    projection = torch.fft.irfft2(fourier_slice_filtered)
-                    projection = torch.fft.ifftshift(projection, dim=(-2, -1))
+                    projection = torch.fft.irfft2(
+                        fourier_slice_filtered, s=projection_shape_real
+                    )
+                    projection = torch.fft.fftshift(projection, dim=(-2, -1))
 
                     if apply_normalization:
                         projection = normalize_template_projection_compiled(
@@ -241,7 +244,7 @@ def do_batched_orientation_cross_correlate(
     if image_shape_real is None:
         image_shape_real = _image_shape_from_rfft(image_dft)
 
-    projection_shape_real = (template_dft.shape[1], template_dft.shape[2] * 2 - 2)
+    projection_shape_real = template_projection_shape(template_dft)
 
     num_Cs = projective_filters.shape[0]  # pylint: disable=invalid-name
     num_defocus = projective_filters.shape[1]
@@ -284,8 +287,8 @@ def do_batched_orientation_cross_correlate(
     fourier_slice = fourier_slice[None, None, ...] * projective_filters[:, :, None, ...]
 
     # Inverse Fourier transform into real space and normalize
-    projections = torch.fft.irfftn(fourier_slice, dim=(-2, -1))
-    projections = torch.fft.ifftshift(projections, dim=(-2, -1))
+    projections = torch.fft.irfftn(fourier_slice, s=projection_shape_real, dim=(-2, -1))
+    projections = torch.fft.fftshift(projections, dim=(-2, -1))
 
     if apply_normalization:
         projections = normalize_template_projection_compiled(
@@ -372,7 +375,7 @@ def do_batched_orientation_cross_correlate_cpu(
     if image_shape_real is None:
         image_shape_real = _image_shape_from_rfft(image_dft)
 
-    projection_shape_real = (template_dft.shape[1], template_dft.shape[2] * 2 - 2)
+    projection_shape_real = template_projection_shape(template_dft)
 
     # Extract central slice(s) from the template volume
     fourier_slice = extract_central_slices_rfft_3d(
@@ -398,8 +401,8 @@ def do_batched_orientation_cross_correlate_cpu(
     fourier_slice = fourier_slice[None, None, ...] * projective_filters[:, :, None, ...]
 
     # Inverse Fourier transform into real space and normalize
-    projections = torch.fft.irfftn(fourier_slice, dim=(-2, -1))
-    projections = torch.fft.ifftshift(projections, dim=(-2, -1))
+    projections = torch.fft.irfftn(fourier_slice, s=projection_shape_real, dim=(-2, -1))
+    projections = torch.fft.fftshift(projections, dim=(-2, -1))
 
     if apply_normalization:
         projections = normalize_template_projection(
@@ -459,7 +462,7 @@ def do_batched_orientation_frc(
     if image_shape_real is None:
         image_shape_real = _image_shape_from_rfft(image_dft)
 
-    projection_shape_real = (template_dft.shape[1], template_dft.shape[2] * 2 - 2)
+    projection_shape_real = template_projection_shape(template_dft)
 
     num_orientations = rotation_matrices.shape[0]
     num_cs = projective_filters.shape[0]
@@ -484,8 +487,8 @@ def do_batched_orientation_frc(
 
     fourier_slice = fourier_slice[None, None, ...] * projective_filters[:, :, None, ...]
 
-    projections = torch.fft.irfftn(fourier_slice, dim=(-2, -1))
-    projections = torch.fft.ifftshift(projections, dim=(-2, -1))
+    projections = torch.fft.irfftn(fourier_slice, s=projection_shape_real, dim=(-2, -1))
+    projections = torch.fft.fftshift(projections, dim=(-2, -1))
 
     if apply_normalization:
         if image_dft.device.type == "cuda":
@@ -584,7 +587,7 @@ def do_batched_orientation_cross_correlate_zipfft(
         )
 
     # Accounting for RFFT shape
-    projection_shape_real = (template_dft.shape[1], template_dft.shape[2] * 2 - 2)
+    projection_shape_real = template_projection_shape(template_dft)
 
     # 'image_shape_real' is the true (H, W)
     # 'transposed_dft_shape' is the layout the zipFFT reads
@@ -633,8 +636,8 @@ def do_batched_orientation_cross_correlate_zipfft(
     fourier_slice = fourier_slice[None, None, ...] * projective_filters[:, :, None, ...]
 
     # Inverse Fourier transform into real space and normalize
-    projections = torch.fft.irfftn(fourier_slice, dim=(-2, -1))
-    projections = torch.fft.ifftshift(projections, dim=(-2, -1))
+    projections = torch.fft.irfftn(fourier_slice, s=projection_shape_real, dim=(-2, -1))
+    projections = torch.fft.fftshift(projections, dim=(-2, -1))
     projections = normalize_template_projection_compiled(
         projections,
         projection_shape_real,
