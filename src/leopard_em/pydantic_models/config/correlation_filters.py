@@ -1,5 +1,6 @@
 """Set of classes for configuring correlation filters in 2DTM."""
 
+import inspect
 from typing import Annotated, Any
 
 import torch
@@ -11,6 +12,13 @@ from torch_fourier_filter.utils import curve_1dim_to_ndim
 from torch_fourier_filter.whitening import whitening_filter
 
 from leopard_em.pydantic_models.custom_types import BaseModel2DTM
+
+# torch-fourier-filter >= 0.7 needs the real-space shape of an rfft input, since real
+# widths 2k and 2k + 1 both give k + 1 columns. Older releases have no 'image_shape'
+# argument and always assume an even width.
+_WHITENING_TAKES_IMAGE_SHAPE = (
+    "image_shape" in inspect.signature(whitening_filter).parameters
+)
 
 
 class WhiteningFilterConfig(BaseModel2DTM):
@@ -36,7 +44,7 @@ class WhiteningFilterConfig(BaseModel2DTM):
 
     Methods
     -------
-    calculate_whitening_filter(ref_img_rfft, output_shape, output_rfft, output_fftshift)
+    calculate_whitening_filter(ref_img_rfft, output_shape, ..., image_shape)
         Helper function for the whitening filter based on the input reference image and
         held configuration parameters.
     """
@@ -52,6 +60,7 @@ class WhiteningFilterConfig(BaseModel2DTM):
         output_shape: tuple[int, ...] | None = None,
         output_rfft: bool = True,
         output_fftshift: bool = False,
+        image_shape: tuple[int, ...] | None = None,
     ) -> torch.Tensor:
         """Helper function for the whitening filter based on the input reference image.
 
@@ -77,6 +86,13 @@ class WhiteningFilterConfig(BaseModel2DTM):
             If True, filter corresponds to a Fourier transform followed
             by an fftshift. Default is None, which is the same as the 'fftshift'
             parameter.
+        image_shape : Optional[tuple[int, ...]]
+            Real-space shape of the reference image along its last two dimensions.
+            Needed for odd widths, since an RFFT does not tell if the real-space width
+            was even or odd. Also used as the real-space shape of the output when the
+            output has the same Fourier-space shape as the reference. Default is None,
+            which assumes an even width. Ignored by torch-fourier-filter releases
+            before 0.7, which always assume an even width for the reference.
 
         Returns
         -------
@@ -91,8 +107,28 @@ class WhiteningFilterConfig(BaseModel2DTM):
         if not self.enabled:
             return torch.ones(output_shape, dtype=torch.float32)
 
-        # Convert to real-space shape for function call
-        output_shape = output_shape[:-1] + (2 * (output_shape[-1] - 1),)
+        rfft_shape = tuple(ref_img_rfft.shape[-2:])
+        if image_shape is None:
+            image_shape = (rfft_shape[0], 2 * (rfft_shape[1] - 1))
+        image_shape = tuple(int(s) for s in image_shape[-2:])
+        if (image_shape[0], image_shape[1] // 2 + 1) != rfft_shape:
+            raise ValueError(
+                f"Real-space image shape {image_shape} does not match the reference "
+                f"RFFT shape {rfft_shape}."
+            )
+
+        # Convert to real-space shape for function call. Only the reference's own
+        # grid has a known real-space width; otherwise assume an even width. Older
+        # torch-fourier-filter releases bin the reference as if its width were even,
+        # so keep the output on the same even-width frequency grid for those.
+        kwargs: dict[str, Any] = {}
+        output_shape = tuple(output_shape)
+        if _WHITENING_TAKES_IMAGE_SHAPE:
+            kwargs["image_shape"] = image_shape
+        if _WHITENING_TAKES_IMAGE_SHAPE and output_shape[-2:] == rfft_shape:
+            output_shape = output_shape[:-2] + image_shape
+        else:
+            output_shape = output_shape[:-1] + (2 * (output_shape[-1] - 1),)
 
         return whitening_filter(
             image_dft=ref_img_rfft,
@@ -105,6 +141,7 @@ class WhiteningFilterConfig(BaseModel2DTM):
             output_shape=output_shape,
             output_rfft=output_rfft,
             output_fftshift=output_fftshift,
+            **kwargs,
         )
 
 
@@ -417,6 +454,7 @@ class PreprocessingFilters(BaseModel2DTM):
         ref_img_rfft: torch.Tensor,
         output_shape: tuple[int, ...],
         apply_random_dropout: bool = False,
+        image_shape: tuple[int, ...] | None = None,
     ) -> torch.Tensor:
         """Combine all filters into a single filter.
 
@@ -432,6 +470,10 @@ class PreprocessingFilters(BaseModel2DTM):
             Whether to include the random Fourier dropout mask in the combined filter.
             Pass ``True`` to include dropout (e.g. for the template side of
             match-template). Defaults to ``False``.
+        image_shape : tuple[int, ...] | None, optional
+            Real-space shape of the reference image, passed on to the whitening filter
+            (see ``WhiteningFilterConfig.calculate_whitening_filter``). Defaults to
+            ``None``, which assumes an even width.
 
         Returns
         -------
@@ -448,7 +490,9 @@ class PreprocessingFilters(BaseModel2DTM):
         # Calculate each of the filters in turn
         device = ref_img_rfft.device
         whitening_filter_tensor = wf_config.calculate_whitening_filter(
-            ref_img_rfft=ref_img_rfft, output_shape=output_shape
+            ref_img_rfft=ref_img_rfft,
+            output_shape=output_shape,
+            image_shape=image_shape,
         ).to(device)
         bandpass_filter_tensor = bf_config.calculate_bandpass_filter(
             output_shape=output_shape
@@ -475,6 +519,7 @@ class PreprocessingFilters(BaseModel2DTM):
         self,
         images_dft: torch.Tensor,
         output_shape: tuple[int, ...],
+        image_shape: tuple[int, ...] | None = None,
     ) -> torch.Tensor:
         """Combined filter for each image in a batch, using that image as reference.
 
@@ -485,6 +530,9 @@ class PreprocessingFilters(BaseModel2DTM):
             shape ``(N, H, W)``.
         output_shape : tuple[int, ...]
             Desired Fourier-space shape of each filter (see ``get_combined_filter``).
+        image_shape : tuple[int, ...] | None, optional
+            Real-space ``(H, W)`` shape of each image. Defaults to ``None``, which
+            assumes an even width.
 
         Returns
         -------
@@ -498,6 +546,8 @@ class PreprocessingFilters(BaseModel2DTM):
         )
         for i in range(num_images):
             filter_stack[i] = self.get_combined_filter(
-                ref_img_rfft=images_dft[i], output_shape=output_shape
+                ref_img_rfft=images_dft[i],
+                output_shape=output_shape,
+                image_shape=image_shape,
             )
         return filter_stack

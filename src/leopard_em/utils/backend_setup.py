@@ -81,6 +81,10 @@ def _process_particle_images_for_filters(
     box_h, box_w = particle_stack.extracted_box_size
     filter_full_shape = full_image_shape or (box_h, box_w)
     filter_extracted_shape = extracted_box_shape or (box_h, box_w)
+    particle_image_shape = (
+        int(particle_images.shape[-2]),
+        int(particle_images.shape[-1]),
+    )
 
     if not apply_global_filtering:
         particle_images_dft = torch.fft.rfftn(particle_images, dim=(-2, -1))  # pylint: disable=not-callable
@@ -94,6 +98,7 @@ def _process_particle_images_for_filters(
                     preprocessing_filters,
                     output_shape=particle_images_dft.shape[-2:],
                     images_dft=raw_particle_dft,
+                    image_shape=particle_image_shape,
                 ).to(device)
 
         particle_images_dft = apply_image_filtering(
@@ -104,6 +109,7 @@ def _process_particle_images_for_filters(
             extracted_box_shape=filter_extracted_shape,
             precomputed_filter_stack=image_filters,
             precomputed_normalization_factor=fixed_normalization_factor,
+            image_shape=particle_image_shape,
         )
 
         projective_filters = fixed_projective_filters
@@ -113,6 +119,7 @@ def _process_particle_images_for_filters(
                     preprocessing_filters,
                     output_shape=(template.shape[-2], template.shape[-1] // 2 + 1),
                     images_dft=raw_particle_dft,
+                    image_shape=particle_image_shape,
                 ).to(device)
     else:
         particle_images_dft = torch.fft.rfftn(particle_images, dim=(-2, -1))  # pylint: disable=not-callable
@@ -126,6 +133,7 @@ def _process_particle_images_for_filters(
                 extracted_box_shape=filter_extracted_shape,
                 precomputed_filter_stack=fixed_image_filters,
                 precomputed_normalization_factor=fixed_normalization_factor,
+                image_shape=particle_image_shape,
             )
 
         projective_filters = fixed_projective_filters
@@ -266,6 +274,7 @@ def _setup_images_filters_from_micrographs(
                 output_shape=(template.shape[-2], template.shape[-1] // 2 + 1),
                 images_dft=micrograph_images_dft.detach(),
                 indices=micrograph_indexes,
+                image_shape=(img_h, img_w),
             ).to(device)
         micrograph_images_dft = apply_image_filtering(
             particle_stack,
@@ -273,6 +282,7 @@ def _setup_images_filters_from_micrographs(
             micrograph_images_dft,
             full_image_shape=(img_h, img_w),
             extracted_box_shape=(box_h + 1, box_w + 1),
+            image_shape=(img_h, img_w),
         )
         micrograph_images = torch.fft.irfftn(  # pylint: disable=not-callable
             micrograph_images_dft, dim=(-2, -1)

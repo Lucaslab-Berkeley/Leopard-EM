@@ -222,6 +222,7 @@ class MatchTemplateManager(BaseModel2DTM):
             ref_img_rfft=image_dft_original,
             output_shape=image_dft_original.shape,
             apply_random_dropout=False,
+            image_shape=padding_plan.original_shape,
         )
         normalization_factor = get_image_normalization_factor(
             image_rfft=image_dft_original,
@@ -282,6 +283,7 @@ class MatchTemplateManager(BaseModel2DTM):
             ref_img_rfft=image_dft_original,
             output_shape=image_dft.shape,
             apply_random_dropout=False,
+            image_shape=padding_plan.original_shape,
         )
 
         # NOTE: Here, manually accounting for the RFFT in output shape since we have not
@@ -290,6 +292,7 @@ class MatchTemplateManager(BaseModel2DTM):
             ref_img_rfft=image_dft_original,
             output_shape=(template.shape[-2], template.shape[-1] // 2 + 1),
             apply_random_dropout=True,
+            image_shape=padding_plan.original_shape,
         )
 
         # Apply the pre-processing and normalization
