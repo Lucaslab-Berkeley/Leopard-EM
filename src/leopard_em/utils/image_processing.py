@@ -123,6 +123,7 @@ def apply_image_filtering(
     extracted_box_shape: tuple[int, int],
     precomputed_filter_stack: torch.Tensor | None = None,
     precomputed_normalization_factor: torch.Tensor | None = None,
+    image_shape: tuple[int, int] | None = None,
 ) -> torch.Tensor:
     """Apply filtering and normalization to a set of Fourier images.
 
@@ -144,6 +145,9 @@ def apply_image_filtering(
     precomputed_normalization_factor : torch.Tensor | None
         Optional fixed per-particle normalization factors (old-style frame
         normalization). If provided, apply these directly after filtering.
+    image_shape : tuple[int, int] | None
+        Real-space (H, W) shape of the images in ``images_dft``, used for the
+        whitening filter. Default is None, which assumes an even width.
 
     Returns
     -------
@@ -164,6 +168,7 @@ def apply_image_filtering(
             preprocessing_filters,
             output_shape=images_dft.shape[-2:],
             images_dft=images_dft.detach(),
+            image_shape=image_shape,
         ).to(device)
     else:
         filter_stack = precomputed_filter_stack.to(device)

@@ -1,6 +1,8 @@
 """Tests for the correlation filter models"""
 
+import pytest
 import torch
+from torch_fourier_filter.whitening import whitening_filter
 
 from leopard_em.pydantic_models.config import (
     ArbitraryCurveFilterConfig,
@@ -9,6 +11,17 @@ from leopard_em.pydantic_models.config import (
     PreprocessingFilters,
     WhiteningFilterConfig,
 )
+from leopard_em.pydantic_models.config.correlation_filters import (
+    _WHITENING_TAKES_IMAGE_SHAPE,
+)
+
+ODD_AND_EVEN_SHAPES = [(32, 32), (32, 33), (33, 33), (33, 32)]
+
+
+def _random_image_rfft(image_shape: tuple[int, int]) -> torch.Tensor:
+    generator = torch.Generator().manual_seed(0)
+    image = torch.randn(image_shape, generator=generator)
+    return torch.fft.rfft2(image)  # pylint: disable=not-callable
 
 
 def test_whitening_filter_config_default():
@@ -34,6 +47,84 @@ def test_whitening_filter_config_calculate():
     ref_img_rfft = torch.randn(10, 10, dtype=torch.float32)
     filter_tensor = config.calculate_whitening_filter(ref_img_rfft)
     assert filter_tensor.shape == ref_img_rfft.shape
+
+
+@pytest.mark.parametrize("image_shape", ODD_AND_EVEN_SHAPES)
+def test_whitening_filter_odd_and_even_image_shapes(image_shape):
+    """Whitening an odd- or even-sized image gives a filter of the right shape."""
+    config = WhiteningFilterConfig()
+    image_rfft = _random_image_rfft(image_shape)
+    rfft_shape = (image_shape[0], image_shape[1] // 2 + 1)
+
+    filter_tensor = config.calculate_whitening_filter(
+        image_rfft, image_shape=image_shape
+    )
+    assert filter_tensor.shape == rfft_shape
+    assert torch.isfinite(filter_tensor).all()
+
+    # Filters for another grid (e.g. the template's) have that grid's shape
+    filter_tensor = config.calculate_whitening_filter(
+        image_rfft, output_shape=(16, 9), image_shape=image_shape
+    )
+    assert filter_tensor.shape == (16, 9)
+
+    filters = PreprocessingFilters()
+    combined = filters.get_combined_filter(
+        image_rfft, rfft_shape, image_shape=image_shape
+    )
+    assert combined.shape == rfft_shape
+    stack = filters.get_combined_filter_stack(
+        torch.stack([image_rfft, 2 * image_rfft]), rfft_shape, image_shape=image_shape
+    )
+    assert stack.shape == (2, *rfft_shape)
+
+
+@pytest.mark.skipif(
+    not _WHITENING_TAKES_IMAGE_SHAPE,
+    reason="torch-fourier-filter before 0.7 has no 'image_shape' argument",
+)
+@pytest.mark.parametrize("image_shape", [(32, 33), (33, 33)])
+def test_whitening_filter_odd_width_matches_torch_fourier_filter(image_shape):
+    """An odd-width image is whitened on its own real-space frequency grid."""
+    config = WhiteningFilterConfig()
+    image_rfft = _random_image_rfft(image_shape)
+    expected = whitening_filter(  # pylint: disable=unexpected-keyword-arg
+        image_rfft,
+        rfft=True,
+        max_freq=config.max_freq,
+        num_freq_bins=config.num_freq_bins,
+        do_power_spectrum=config.do_power_spectrum,
+        image_shape=image_shape,
+    )
+    torch.testing.assert_close(
+        config.calculate_whitening_filter(image_rfft, image_shape=image_shape),
+        expected,
+    )
+
+
+def test_whitening_filter_even_width_unchanged_by_image_shape():
+    """Passing an even image shape gives the same filter as the default."""
+    config = WhiteningFilterConfig()
+    image_rfft = _random_image_rfft((32, 32))
+    for output_shape in (None, (16, 9)):
+        torch.testing.assert_close(
+            config.calculate_whitening_filter(
+                image_rfft, output_shape=output_shape, image_shape=(32, 32)
+            ),
+            config.calculate_whitening_filter(image_rfft, output_shape=output_shape),
+            rtol=0,
+            atol=0,
+        )
+
+
+def test_whitening_filter_rejects_mismatched_image_shape():
+    """An image shape that does not give the reference's RFFT shape raises."""
+    config = WhiteningFilterConfig()
+    image_rfft = _random_image_rfft((32, 33))
+    with pytest.raises(ValueError, match="does not match"):
+        config.calculate_whitening_filter(image_rfft, image_shape=(32, 35))
+    with pytest.raises(ValueError, match="does not match"):
+        config.calculate_whitening_filter(image_rfft, image_shape=(31, 33))
 
 
 def test_phase_randomization_filter_config_default():

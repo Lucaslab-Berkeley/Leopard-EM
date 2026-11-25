@@ -780,6 +780,54 @@ def test_construct_projective_filters_assigns_rows_by_position(tmp_path):
         )
 
 
+def test_construct_filters_whiten_odd_images_with_their_shape(tmp_path):
+    """Odd-sized micrographs and particles are whitened with their real shape."""
+    df = make_minimal_df(num_rows=3)
+    ps = ParticleStackHDF5(
+        hdf5_path=str(tmp_path / "particles.h5"),
+        extracted_box_size=(21, 21),
+        original_template_size=(16, 16),
+        skip_df_load=True,
+    )
+    ps._set_dataframe(df)
+    filters = PreprocessingFilters()
+    generator = torch.Generator().manual_seed(0)
+
+    # Projective filters from odd-sized micrographs, on the template's grid
+    micrographs = torch.randn(2, 45, 47, generator=generator)
+    micrographs_dft = torch.fft.rfft2(micrographs)  # pylint: disable=not-callable
+    projective = ps.construct_projective_filters(
+        filters,
+        output_shape=(16, 9),
+        images_dft=micrographs_dft,
+        indices=[pd.Index([0, 2]), pd.Index([1])],
+        image_shape=(45, 47),
+    )
+    assert projective.shape == (3, 16, 9)
+    for row, micrograph in ((0, 0), (1, 1), (2, 0)):
+        torch.testing.assert_close(
+            projective[row],
+            filters.get_combined_filter(
+                micrographs_dft[micrograph], (16, 9), image_shape=(45, 47)
+            ),
+        )
+
+    # Image filters from odd-sized particles, on the particles' own grid
+    particles = torch.randn(3, 21, 21, generator=generator)
+    particles_dft = torch.fft.rfft2(particles)  # pylint: disable=not-callable
+    image_filters = ps.construct_image_filters(
+        filters,
+        output_shape=(21, 11),
+        images_dft=particles_dft,
+        image_shape=(21, 21),
+    )
+    assert image_filters.shape == (3, 21, 11)
+    torch.testing.assert_close(
+        image_filters[1],
+        filters.get_combined_filter(particles_dft[1], (21, 11), image_shape=(21, 21)),
+    )
+
+
 def test_load_images_grouped_by_column_rejects_missing_paths():
     """Particles without an image path raise instead of silently getting zeros."""
     df = make_minimal_df(num_rows=2)

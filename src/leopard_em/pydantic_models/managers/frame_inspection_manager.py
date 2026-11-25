@@ -418,12 +418,17 @@ class FrameInspectionManager(PeakInspectionManager):
                 summed_movie_image, dim=(-2, -1)
             )
             summed_movie_dft[..., 0, 0] = 0.0 + 0.0j
+            movie_image_shape = (
+                int(summed_movie_image.shape[-2]),
+                int(summed_movie_image.shape[-1]),
+            )
             df_index = self.particle_stack.get_dataframe_copy().index
             fixed_projective_filters = self.particle_stack.construct_projective_filters(
                 self.preprocessing_filters,
                 output_shape=template_output_shape,
                 images_dft=summed_movie_dft.detach(),
                 indices=[df_index],
+                image_shape=movie_image_shape,
             ).to(template.device)
             summed_particle_images = self.particle_stack.construct_image_stack(
                 images=summed_movie_image,
@@ -444,6 +449,7 @@ class FrameInspectionManager(PeakInspectionManager):
                 output_shape=particle_rfft_shape,
                 images_dft=summed_movie_dft.detach(),
                 indices=[df_index],
+                image_shape=movie_image_shape,
             ).to(template.device)
             bandpass_filter = (
                 self.preprocessing_filters.bandpass_filter.calculate_bandpass_filter(
@@ -475,15 +481,21 @@ class FrameInspectionManager(PeakInspectionManager):
         )
         summed_particle_images_dft[..., 0, 0] = 0.0 + 0.0j
         particle_rfft_shape = summed_particle_images_dft.shape[-2:]
+        particle_image_shape = (
+            int(summed_particle_images.shape[-2]),
+            int(summed_particle_images.shape[-1]),
+        )
         fixed_image_filters = self.particle_stack.construct_image_filters(
             self.preprocessing_filters,
             output_shape=particle_rfft_shape,
             images_dft=summed_particle_images_dft.detach(),
+            image_shape=particle_image_shape,
         ).to(template.device)
         fixed_projective_filters = self.particle_stack.construct_image_filters(
             self.preprocessing_filters,
             output_shape=template_output_shape,
             images_dft=summed_particle_images_dft.detach(),
+            image_shape=particle_image_shape,
         ).to(template.device)
         bandpass_filter = (
             self.preprocessing_filters.bandpass_filter.calculate_bandpass_filter(
