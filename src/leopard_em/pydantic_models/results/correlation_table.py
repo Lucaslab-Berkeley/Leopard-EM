@@ -126,6 +126,19 @@ class CorrelationTable(BaseModel2DTM):
         variance: `scale_mip` square-roots it in place. A z-score is therefore
         `(correlation_value - correlation_mean) / correlation_variance`, dividing
         directly rather than by a square root.
+    pixel_size : float | None
+        Micrograph pixel size of the search, Angstroms.
+    template_shape : list[int] | None
+        Shape of the template volume, voxels.
+    micrograph_shape : list[int] | None
+        Shape of the searched micrograph, pixels.
+
+        These three make the table self-describing. ``x`` / ``y`` are correlation-map
+        coordinates: the micrograph position of a detection is ``x + half`` with
+        ``half = template_shape[-1] // 2`` (see ``template_half_width``). Without them
+        every analysis had to assume a pixel size and template box, and a table read
+        with the wrong pair is misplaced silently. ``None`` for tables written before
+        they were recorded.
 
     Methods
     -------
@@ -154,6 +167,18 @@ class CorrelationTable(BaseModel2DTM):
     correlation_value: list[float]
     correlation_mean: list[float]
     correlation_variance: list[float]
+
+    # Search geometry; None only for tables written before it was recorded.
+    pixel_size: float | None = None
+    template_shape: list[int] | None = None
+    micrograph_shape: list[int] | None = None
+
+    @property
+    def template_half_width(self) -> int | None:
+        """Offset from table ``x``/``y`` to micrograph coordinates, pixels."""
+        if self.template_shape is None:
+            return None
+        return int(self.template_shape[-1]) // 2
 
     def to_dataframe(self) -> pd.DataFrame:
         """Convert per-detection data to a DataFrame.
@@ -325,7 +350,8 @@ class CorrelationTable(BaseModel2DTM):
         Layout::
 
             /metadata              (attrs: correlation_threshold, num_observations,
-                                    format_version)
+                                    format_version, and when known pixel_size,
+                                    template_shape, micrograph_shape)
             /search_space/
                 defocus_offsets    float32 1-D
                 phi_theta_angles   float32 (n, 2)
@@ -349,6 +375,16 @@ class CorrelationTable(BaseModel2DTM):
             meta.attrs["correlation_threshold"] = self.correlation_threshold
             meta.attrs["num_observations"] = self.num_observations
             meta.attrs["format_version"] = CORRELATION_TABLE_FORMAT_VERSION
+            if self.pixel_size is not None:
+                meta.attrs["pixel_size"] = float(self.pixel_size)
+            if self.template_shape is not None:
+                meta.attrs["template_shape"] = np.asarray(
+                    self.template_shape, dtype=np.int64
+                )
+            if self.micrograph_shape is not None:
+                meta.attrs["micrograph_shape"] = np.asarray(
+                    self.micrograph_shape, dtype=np.int64
+                )
 
             search_space = f.create_group("search_space")
             if self.euler_angles is not None:
@@ -435,6 +471,7 @@ class CorrelationTable(BaseModel2DTM):
             correlation_value = f["detections/correlation_value"][:].tolist()
             correlation_mean = f["detections/correlation_mean"][:].tolist()
             correlation_variance = f["detections/correlation_variance"][:].tolist()
+        geometry = correlation_table_geometry(file_path)
 
         return cls(
             correlation_threshold=correlation_threshold,
@@ -449,6 +486,9 @@ class CorrelationTable(BaseModel2DTM):
             correlation_value=correlation_value,
             correlation_mean=correlation_mean,
             correlation_variance=correlation_variance,
+            pixel_size=geometry["pixel_size"],
+            template_shape=geometry["template_shape"],
+            micrograph_shape=geometry["micrograph_shape"],
         )
 
     @classmethod
@@ -525,6 +565,35 @@ class CorrelationTable(BaseModel2DTM):
             correlation_mean=det_mean,
             correlation_variance=det_variance,
         )
+
+
+def correlation_table_geometry(file_path: str) -> dict:
+    """The search geometry a correlation table records, without reading detections.
+
+    Returns ``pixel_size`` (Angstroms), ``template_shape``, ``micrograph_shape`` and
+    ``template_half_width`` -- the offset from table ``x``/``y`` to micrograph
+    coordinates. Each is ``None`` for a table written before geometry was recorded;
+    callers must then supply it from the search's own config, never from a default.
+    """
+    with h5py.File(file_path, "r") as handle:
+        attrs = handle["metadata"].attrs if "metadata" in handle else {}
+        pixel_size = float(attrs["pixel_size"]) if "pixel_size" in attrs else None
+        template = (
+            [int(v) for v in attrs["template_shape"]]
+            if "template_shape" in attrs
+            else None
+        )
+        micrograph = (
+            [int(v) for v in attrs["micrograph_shape"]]
+            if "micrograph_shape" in attrs
+            else None
+        )
+    return {
+        "pixel_size": pixel_size,
+        "template_shape": template,
+        "micrograph_shape": micrograph,
+        "template_half_width": None if template is None else int(template[-1]) // 2,
+    }
 
 
 def detections_from_hdf5(
@@ -636,7 +705,7 @@ def detections_from_hdf5(
             )
 
     if not frames:
-        return pd.DataFrame(
+        empty = pd.DataFrame(
             columns=[
                 "search_index",
                 "x",
@@ -651,5 +720,11 @@ def detections_from_hdf5(
                 "z_score",
             ]
         )
+        frames = [empty]
 
-    return pd.concat(frames, ignore_index=True)
+    detections = pd.concat(frames, ignore_index=True)
+    geometry = correlation_table_geometry(file_path)
+    detections.attrs.update(
+        {key: value for key, value in geometry.items() if value is not None}
+    )
+    return detections

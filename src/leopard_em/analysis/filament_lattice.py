@@ -24,11 +24,14 @@ import roma
 import torch
 
 __all__ = [
+    "FilamentAssignment",
     "FilamentAxis",
+    "LatticeModelScore",
     "LatticeRise",
     "LatticeSites",
     "PolarityEstimate",
     "TemplateLatticeGeometry",
+    "assign_detections_to_filaments",
     "axis_points_from_peaks",
     "estimate_lattice_rise",
     "estimate_polarity",
@@ -41,6 +44,7 @@ __all__ = [
     "image_offset_from_template_point",
     "lattice_sharpness",
     "rise_from_template_autocorrelation",
+    "score_lattice_model",
     "subunit_contrast",
     "template_axial_autocorrelation",
     "unwrap_helical_axial_coordinate",
@@ -1363,7 +1367,9 @@ class LatticeSites:
         the search window -- deviations far below it mean the positions are set by the
         data rather than by the model.
     rise_angstrom : float
-        Fitted axial repeat.
+        Fitted axial repeat, corrected for out-of-plane tilt. This is an AXIAL repeat,
+        not a projected one: the fit divides out the score-weighted mean of sin(theta),
+        so it is directly comparable to a repeat measured from an atomic model.
     axis : FilamentAxis
         Axis the sites were measured against.
     n_predicted : int
@@ -1536,7 +1542,12 @@ def extract_lattice_sites(
     )
 
     all_points = axis_points_from_peaks(detections, geometry, pixel_size_angstrom)
-    all_phi = detections["phi"].to_numpy(dtype=np.float64)
+    # Read the angles through the same column convention axis_points_from_peaks uses, so
+    # a table carrying refined_* columns does not end up with refined axis points and
+    # unrefined angles.
+    angle_columns = geometry_columns(detections)
+    all_phi = detections[angle_columns["phi"]].to_numpy(dtype=np.float64)
+    all_theta = detections[angle_columns["theta"]].to_numpy(dtype=np.float64)
     scores = detections[score_column].to_numpy(dtype=np.float64)
     boot_points = axis_points_from_peaks(bootstrap, geometry, pixel_size_angstrom)
 
@@ -1594,6 +1605,17 @@ def extract_lattice_sites(
             pixel_size_angstrom,
             rise,
             scores[selected],
+            # ALWAYS correct the out-of-plane tilt. A filament at theta is projected
+            # shorter by sin(theta), so without this the returned repeat is a projected
+            # one, not an axial one, and it reads systematically LOW. The size of it is
+            # easy to underestimate: 1/sin(mean theta) is not the correction applied --
+            # estimate_lattice_rise divides by the score-weighted mean of sin(theta),
+            # and because sin is concave that is the larger number. On a real filament
+            # spanning theta 79-99 degrees with a mean of 88.8, the naive figure is
+            # +0.02% while the correction actually applied is +0.45% -- twenty times
+            # bigger, and comparable to the chord-vs-arc bias on a bent tube. Against a
+            # 2.5% expanded-versus-compacted separation that is not negligible.
+            theta_deg=all_theta[selected],
         ).rise_angstrom
 
     return LatticeSites(
@@ -1605,4 +1627,874 @@ def extract_lattice_sites(
         rise_angstrom=rise,
         axis=axis,
         n_predicted=n_predicted,
+    )
+
+
+@dataclass(frozen=True)
+class LatticeModelScore:
+    """How well one candidate lattice model accounts for a fixed set of detections.
+
+    Produced by :func:`score_lattice_model`. The comparison is only meaningful between
+    scores computed with the same detections, the same windows and the same threshold.
+
+    Attributes
+    ----------
+    n_protofilaments, rise_angstrom : int, float
+        The model that was scored.
+    n_predicted, n_found : int
+        Sites the model predicts within the observed span, and how many were filled.
+    occupancy : float
+        ``n_found / n_predicted``. The headline statistic.
+    mean_score, median_score : float
+        Over the filled sites only. ``nan`` when nothing was found.
+    score_threshold : float
+        The cutoff actually applied, so two scores can be checked for comparability.
+    phase_offset_angstrom : float
+        Global axial shift chosen by the refinement. A value near +/- rise/2 means the
+        model preferred a different registration than the anchor implied -- treat the
+        result with suspicion.
+    axial_deviation_angstrom : np.ndarray
+        Signed distance from each filled site to its prediction. Small values relative
+        to the window mean the detections, not the model, set the positions.
+    site_protofilament, site_axial_index : np.ndarray
+        Indices identifying every predicted site, filled or not.
+    detection_index : np.ndarray
+        Row of the source table filling each site, or -1 where the site was empty.
+    """
+
+    n_protofilaments: int
+    rise_angstrom: float
+    n_predicted: int
+    n_found: int
+    occupancy: float
+    mean_score: float
+    median_score: float
+    score_threshold: float
+    phase_offset_angstrom: float
+    axial_deviation_angstrom: np.ndarray
+    site_protofilament: np.ndarray
+    site_axial_index: np.ndarray
+    detection_index: np.ndarray
+
+    def occupancy_by_protofilament(self) -> dict[int, float]:
+        """Filled fraction per protofilament, to expose an unevenly sampled tube."""
+        filled = self.detection_index >= 0
+        return {
+            int(p): float(filled[self.site_protofilament == p].mean())
+            for p in np.unique(self.site_protofilament)
+        }
+
+
+def _predict_lattice_sites(
+    geometry: TemplateLatticeGeometry,
+    axis: FilamentAxis,
+    pixel_size_angstrom: float,
+    n_protofilaments: int,
+    rise_angstrom: float,
+    anchor_along_angstrom: float,
+    anchor_phi_deg: float,
+    theta_deg: float,
+    psi_deg: float,
+    axial_index_range: tuple[int, int],
+    along_span_angstrom: tuple[float, float] | None = None,
+    foreshortening: float = 1.0,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Predicted (x, y) in pixels and azimuth for every site the model implies.
+
+    Inverts the two mappings the forward analysis uses, in order:
+
+    * ``unwrap_helical_axial_coordinate`` places sites at a constant *unwrapped*
+      coordinate, so a site's along-axis coordinate runs back as
+      ``s = s0 + m * rise - (turn_shift / 360) * (phi - phi0)``, where ``turn_shift`` is
+      the template's measured axial shift per turn scaled to the model's repeat;
+    * ``axis_points_from_peaks`` maps a detection to its axis point by *adding*
+      ``(R^T p)[:2]``, so predicting the detection from the axis point *subtracts* it.
+
+    The template point ``p`` is the template's own axis offset and is deliberately held
+    fixed across models: it is a property of the template that produced the detections,
+    not of the model under test. This is why the test cannot see tube radius.
+    """
+    spacing = 360.0 / n_protofilaments
+    # Preserve the template's measured axial shift per turn, scaled to the model's
+    # repeat, rather than re-deriving it from an assumed subunit rise -- the geometry
+    # stores a repeat that may be a dimer, so n_start * rise / N would be out by the
+    # number of subunits per repeat. Note per_degree = turn_shift / 360 is therefore
+    # independent of N, which is why this test cannot separate N by axial position.
+    turn_shift = geometry.axial_shift_per_turn_angstrom * (
+        rise_angstrom / geometry.rise_angstrom
+    )
+    per_degree = turn_shift / 360.0
+
+    protofilaments = np.arange(n_protofilaments)
+    phi = (anchor_phi_deg + protofilaments * spacing) % 360.0
+    # Azimuth relative to the anchor, wrapped into [0, 360) rather than +/-180. The
+    # helical offset accumulates monotonically the whole way round the tube -- going
+    # once round genuinely rises by the turn shift -- so a signed difference would flip
+    # the offset's sign past 180 degrees and displace half the protofilaments.
+    phi_relative = protofilaments * spacing
+
+    axial = np.arange(axial_index_range[0], axial_index_range[1] + 1)
+
+    pf_grid, m_grid = np.meshgrid(protofilaments, axial, indexing="ij")
+    phi_grid = phi[pf_grid.ravel()]
+    along = (
+        anchor_along_angstrom
+        + m_grid.ravel() * rise_angstrom
+        - per_degree * phi_relative[pf_grid.ravel()]
+    )
+
+    offsets = image_offset_from_template_point(
+        np.array([*geometry.axis_offset_angstrom, 0.0]),
+        phi_grid,
+        np.full(phi_grid.shape, float(theta_deg)),
+        np.full(phi_grid.shape, float(psi_deg)),
+    )
+    axis_points = (
+        axis.origin[None, :]
+        + (along[:, None] * foreshortening / pixel_size_angstrom)
+        * axis.direction[None, :]
+    )
+    predicted_xy = axis_points - offsets / pixel_size_angstrom
+
+    site_pf, site_m = pf_grid.ravel(), m_grid.ravel()
+    if along_span_angstrom is not None:
+        # Sites beyond the ends of the observed filament are not real predictions.
+        # Keeping them would depress occupancy by an amount that depends on how far
+        # the model's helical offset spreads sites, which differs between models.
+        inside = (along >= along_span_angstrom[0]) & (along <= along_span_angstrom[1])
+        predicted_xy, phi_grid = predicted_xy[inside], phi_grid[inside]
+        site_pf, site_m = site_pf[inside], site_m[inside]
+
+    return predicted_xy, phi_grid, site_pf, site_m
+
+
+def _match_sites_to_detections(
+    predicted_xy: np.ndarray,
+    predicted_phi: np.ndarray,
+    phi: np.ndarray,
+    scores: np.ndarray,
+    tree,
+    rows: np.ndarray,
+    xy_radius_px: float,
+    angular_radius_deg: float,
+) -> np.ndarray:
+    """Best detection for each predicted site, one detection to at most one site.
+
+    Returns an index per site, or -1 where nothing qualified. The assignment is greedy
+    by descending score: without it a single strong detection can satisfy several
+    neighbouring predictions at once, which inflates the occupancy of models whose
+    sites are packed more closely and would systematically favour large ``N`` and the
+    compacted repeat.
+    """
+    # pylint: disable=import-outside-toplevel
+    from leopard_em.analysis.correlation_peaks import _circular_distance_deg
+
+    assigned = np.full(len(predicted_xy), -1, dtype=np.int64)
+    if rows.size == 0:
+        return assigned
+
+    candidates: list[tuple[float, int, int]] = []
+    for site, (xy, phi_pred) in enumerate(zip(predicted_xy, predicted_phi)):
+        for local in tree.query_ball_point(xy, xy_radius_px):
+            row = int(rows[local])
+            if _circular_distance_deg(phi[row], phi_pred) <= angular_radius_deg:
+                candidates.append((float(scores[row]), site, row))
+
+    taken_sites: set[int] = set()
+    taken_rows: set[int] = set()
+    for _, site, row in sorted(candidates, key=lambda c: -c[0]):
+        if site in taken_sites or row in taken_rows:
+            continue
+        assigned[site] = row
+        taken_sites.add(site)
+        taken_rows.add(row)
+
+    return assigned
+
+
+def score_lattice_model(
+    detections,
+    geometry: TemplateLatticeGeometry,
+    axis: FilamentAxis,
+    pixel_size_angstrom: float,
+    n_protofilaments: int,
+    rise_angstrom: float,
+    score_threshold: float,
+    anchor_index: int | None = None,
+    xy_radius_px: float = 12.0,
+    angular_radius_deg: float | None = None,
+    theta_tolerance_deg: float = 3.5,
+    psi_tolerance_deg: float = 2.5,
+    score_column: str = "z_score",
+    refine_phase: bool = True,
+    phase_step_angstrom: float = 0.5,
+    azimuth_offset_deg: float = 0.0,
+    detection_index_cache: dict | None = None,
+) -> LatticeModelScore:
+    """Ask how much of a candidate lattice a fixed set of detections actually supports.
+
+    Complementary to competing whole templates. That varies the template and so carries
+    template-quality and template-size confounds; this holds the detections completely
+    fixed and varies only the *model*, predicting where every subunit should appear in
+    ``(x, y)`` and in azimuth and asking whether a detection is there.
+
+    Two properties make the comparison interpretable. Sites a model predicts but that
+    hold nothing are counted, so occupancy is a real statistic rather than the near
+    tautology it becomes when sites are defined by the detections themselves. And a
+    detection can fill at most one site, so a model cannot win by predicting sites so
+    densely that one strong detection satisfies several.
+
+    What it can and cannot see
+    --------------------------
+    The template's axis offset is held fixed across models -- it belongs to the template
+    that produced the detections, not to the model being tested -- so **tube radius is
+    not testable here**. Competing whole templates is the radius measurement.
+
+    For a closed lattice the unwrap coefficient ``n_start * rise / 360`` is independent
+    of ``n_protofilaments``, so the along-axis positions for a given azimuth do not
+    depend on ``N`` either. The protofilament axis of the comparison therefore rests on
+    *azimuth quantisation* alone -- which azimuths are occupied -- and re-expresses the
+    same information as the azimuth harmonic, in a stricter form. The repeat axis is
+    much stronger, because a wrong repeat accumulates along the whole track.
+
+    Parameters
+    ----------
+    detections : pd.DataFrame
+        Detections with position, orientation and ``score_column``. Pass everything.
+    geometry : TemplateLatticeGeometry
+        Calibration of the template that produced ``detections``. Only its axis offset
+        and ``n_start`` are used; its own protofilament count is not.
+    axis : FilamentAxis
+        Fitted filament axis, e.g. from :func:`extract_lattice_sites`.
+    pixel_size_angstrom : float
+        Pixel size of the micrograph.
+    n_protofilaments, rise_angstrom : int, float
+        The model to score.
+    score_threshold : float
+        A site holds nothing unless a detection exceeds this. Use the same value for
+        every model being compared, or models predicting fewer sites get an easier cut.
+    anchor_index : int | None
+        Row anchoring the lattice phase and supplying theta/psi. Defaults to the
+        best-scoring detection.
+    xy_radius_px : float
+        Positional tolerance about each prediction.
+    angular_radius_deg : float | None
+        Azimuthal tolerance. Defaults to ``0.4 * 360 / n_protofilaments``, which stays
+        below half the protofilament spacing; a wider gate makes neighbouring models
+        indistinguishable. Do not pass ``suggested_angular_radius_deg``, which is sized
+        for peak suppression, not for separating models.
+    theta_tolerance_deg, psi_tolerance_deg : float
+        Tolerances about the anchor's tilt and in-plane angle, defaulting to one search
+        grid step. The psi tolerance is what excludes the opposite polarity pole.
+    score_column : str
+        Column ranked when choosing between detections.
+    refine_phase : bool
+        Scan a single global axial offset and keep the best. One parameter per model,
+        so no model is penalised for the arbitrary choice of anchor.
+    phase_step_angstrom : float
+        Step of that scan.
+    azimuth_offset_deg : float
+        Rotate the whole predicted azimuth grid. Randomising this is how to build a
+        null: occupancy has a large floor that depends on the model, because a coarser
+        azimuth grid is more likely to find something in window whatever the truth, so
+        raw occupancy cannot be compared between models without one.
+    detection_index_cache : dict | None
+        Pass the same empty dict to every call that shares detections, anchor and
+        thresholds, and the eligibility mask and spatial index are built once instead of
+        per call. Comparing eight models against a null of many draws otherwise rebuilds
+        a million-point tree hundreds of times, which dominates the runtime.
+
+    Returns
+    -------
+    LatticeModelScore
+
+    Raises
+    ------
+    ValueError
+        If the angular tolerance is too wide to separate adjacent protofilaments.
+    """
+    spacing = 360.0 / n_protofilaments
+    if angular_radius_deg is None:
+        angular_radius_deg = 0.4 * spacing
+    if angular_radius_deg >= 0.5 * spacing:
+        raise ValueError(
+            f"angular_radius_deg={angular_radius_deg:.2f} is at least half the "
+            f"protofilament spacing ({spacing:.2f} deg) for N={n_protofilaments}; "
+            "neighbouring azimuths would overlap and models become indistinguishable."
+        )
+
+    columns = geometry_columns(detections)
+    positions = np.column_stack(
+        [
+            detections[columns["x"]].to_numpy(dtype=np.float64),
+            detections[columns["y"]].to_numpy(dtype=np.float64),
+        ]
+    )
+    phi = detections[columns["phi"]].to_numpy(dtype=np.float64)
+    theta = detections[columns["theta"]].to_numpy(dtype=np.float64)
+    psi = detections[columns["psi"]].to_numpy(dtype=np.float64)
+    scores = detections[score_column].to_numpy(dtype=np.float64)
+
+    if anchor_index is None:
+        anchor_index = int(np.argmax(scores))
+
+    along_px, _ = filament_coordinates(positions, axis)
+    # A filament tilted out of the image plane is projected shorter by sin(theta), so
+    # divide it out and work in true three-dimensional Angstroms. The repeat difference
+    # under test is 2.7%, and sin(theta) reaches that by theta = 77 degrees.
+    foreshortening = float(np.sin(np.radians(float(theta[anchor_index]))))
+    if foreshortening < 0.1:
+        raise ValueError(
+            f"theta = {theta[anchor_index]:.1f} deg is too close to end-on for a "
+            "projected lattice measurement."
+        )
+    along = along_px * pixel_size_angstrom / foreshortening
+    anchor_along = float(along[anchor_index])
+
+    # The site range must be taken in the UNWRAPPED coordinate. Protofilaments are
+    # offset helically, so the raw along-axis span is wider than the lattice span by up
+    # to a turn's worth -- using it would invent sites beyond the filament's ends and
+    # depress every model's occupancy by a constant that depends on the model.
+    per_degree = (
+        geometry.axial_shift_per_turn_angstrom
+        * (rise_angstrom / geometry.rise_angstrom)
+        / 360.0
+    )
+    phi_relative = (phi - float(phi[anchor_index])) % 360.0
+    unwrapped = along + per_degree * phi_relative
+    fractional = (unwrapped - anchor_along) / rise_angstrom
+    index_range = (int(np.floor(fractional.min())), int(np.ceil(fractional.max())))
+
+    offsets = [0.0]
+    if refine_phase:
+        reach = 0.5 * rise_angstrom
+        offsets = list(np.arange(-reach, reach + phase_step_angstrom, phase_step_angstrom))
+
+    # Eligibility and the spatial index do not depend on the phase, so build them once.
+    # Rebuilding a million-point tree inside the offset scan dominates the runtime.
+    # pylint: disable=import-outside-toplevel
+    from scipy.spatial import cKDTree
+
+    from leopard_em.analysis.correlation_peaks import _circular_distance_deg
+
+    cache_key = (
+        id(detections),
+        int(anchor_index),
+        float(score_threshold),
+        float(theta_tolerance_deg),
+        float(psi_tolerance_deg),
+        score_column,
+    )
+    if detection_index_cache is not None and cache_key in detection_index_cache:
+        tree, rows = detection_index_cache[cache_key]
+    else:
+        eligible = (
+            (scores > score_threshold)
+            & (np.abs(theta - float(theta[anchor_index])) <= theta_tolerance_deg)
+            # Excludes the opposite polarity pole, ~180 degrees away in psi. Without
+            # this, reversed detections fill sites in every model alike and wash the
+            # test out.
+            & (
+                _circular_distance_deg(psi, float(psi[anchor_index]))
+                <= psi_tolerance_deg
+            )
+        )
+        rows = np.flatnonzero(eligible)
+        tree = cKDTree(positions[rows]) if rows.size else None
+        if detection_index_cache is not None:
+            detection_index_cache[cache_key] = (tree, rows)
+
+    best = None
+    for offset in offsets:
+        predicted_xy, predicted_phi, site_pf, site_m = _predict_lattice_sites(
+            geometry,
+            axis,
+            pixel_size_angstrom,
+            n_protofilaments,
+            rise_angstrom,
+            anchor_along + offset,
+            float(phi[anchor_index]) + azimuth_offset_deg,
+            float(theta[anchor_index]),
+            float(psi[anchor_index]),
+            index_range,
+            (float(along.min()), float(along.max())),
+            foreshortening,
+        )
+        assigned = _match_sites_to_detections(
+            predicted_xy,
+            predicted_phi,
+            phi,
+            scores,
+            tree,
+            rows,
+            xy_radius_px,
+            angular_radius_deg,
+        )
+        n_found = int((assigned >= 0).sum())
+        # Tie-break on the residuals. The window is wider than the phase step, so a
+        # range of offsets fills the same number of sites; without this the scan keeps
+        # whichever edge of that plateau it reached first, leaving a constant axial
+        # offset in every deviation and making the anti-circularity check unreadable.
+        filled_now = assigned >= 0
+        if filled_now.any():
+            residual = (
+                along[assigned[filled_now]]
+                - filament_coordinates(predicted_xy[filled_now], axis)[0]
+                * pixel_size_angstrom
+                / foreshortening
+            )
+            penalty = float(np.sum(residual**2))
+        else:
+            penalty = float("inf")
+        key = (n_found, -penalty)
+        if best is None or key > best[0]:
+            best = (key, assigned, site_pf, site_m, predicted_xy, float(offset))
+
+    assert best is not None
+    (n_found, _), assigned, site_pf, site_m, predicted_xy, offset = best
+
+    filled = assigned >= 0
+    found_scores = scores[assigned[filled]] if n_found else np.empty(0)
+    deviation = np.zeros(len(assigned))
+    if n_found:
+        deviation[filled] = (
+            along[assigned[filled]]
+            - filament_coordinates(predicted_xy[filled], axis)[0]
+            * pixel_size_angstrom
+            / foreshortening
+        )
+
+    return LatticeModelScore(
+        n_protofilaments=n_protofilaments,
+        rise_angstrom=rise_angstrom,
+        n_predicted=len(assigned),
+        n_found=n_found,
+        occupancy=n_found / len(assigned) if len(assigned) else 0.0,
+        mean_score=float(found_scores.mean()) if n_found else float("nan"),
+        median_score=float(np.median(found_scores)) if n_found else float("nan"),
+        score_threshold=score_threshold,
+        phase_offset_angstrom=offset,
+        axial_deviation_angstrom=deviation[filled],
+        site_protofilament=site_pf,
+        site_axial_index=site_m,
+        detection_index=assigned,
+    )
+
+
+# ------------------------------------------------------------------------------------
+# Which filament a detection belongs to -- decided from the detections, not the drawing
+# ------------------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class FilamentAssignment:
+    """Which filament each detection belongs to, and the curves that decided it.
+
+    Attributes
+    ----------
+    labels : np.ndarray
+        ``(n,)`` filament label per detection, using the seeds' labels; 0 where no
+        filament accepted it (clutter between tubes, off-axis false positives).
+    axis_points_px : np.ndarray
+        ``(n, 2)`` each detection's own predicted axis point, (x, y) pixels, in the
+        frame of its position columns.
+    transverse_angstrom : np.ndarray
+        ``(n,)`` distance from that axis point to the assigned filament's curve. NaN
+        where unassigned.
+    tangent_mismatch_deg : np.ndarray
+        ``(n,)`` angle between the detection's own in-plane direction and the curve's
+        local tangent, folded into [0, 90]. NaN where unassigned.
+    curves_px : dict[int, np.ndarray]
+        Fitted centreline per filament, ``(m, 2)`` (x, y) pixels at about 1 px
+        spacing, spanning the filament's own assigned axis points. Fitted to the
+        detections alone; a filament left with too few detections has no curve.
+    n_iterations : int
+        Refit-and-reassign rounds actually run.
+    converged : bool
+        Whether the labels stopped changing before the iteration limit.
+    """
+
+    labels: np.ndarray
+    axis_points_px: np.ndarray
+    transverse_angstrom: np.ndarray
+    tangent_mismatch_deg: np.ndarray
+    curves_px: dict[int, np.ndarray]
+    n_iterations: int
+    converged: bool
+
+    def counts(self) -> dict[int, int]:
+        """Detections per filament label, 0 included."""
+        values, counts = np.unique(self.labels, return_counts=True)
+        return {int(v): int(c) for v, c in zip(values, counts)}
+
+
+def _densify_polyline(points_xy: np.ndarray, spacing_px: float = 1.0) -> np.ndarray:
+    """Resample a polyline at roughly ``spacing_px`` along its length."""
+    points = np.asarray(points_xy, dtype=np.float64).reshape(-1, 2)
+    if len(points) < 2:
+        return points
+    steps = np.hypot(*np.diff(points, axis=0).T)
+    arc = np.concatenate([[0.0], np.cumsum(steps)])
+    if arc[-1] <= 0:
+        return points[:1]
+    samples = np.linspace(0.0, arc[-1], max(int(np.ceil(arc[-1] / spacing_px)) + 1, 2))
+    return np.column_stack(
+        [np.interp(samples, arc, points[:, 0]), np.interp(samples, arc, points[:, 1])]
+    )
+
+
+def _curve_tangents(curve_xy: np.ndarray) -> np.ndarray:
+    """Unit tangent at every sample of a densely sampled curve."""
+    if len(curve_xy) < 2:
+        return np.tile([1.0, 0.0], (len(curve_xy), 1))
+    tangent = np.gradient(curve_xy, axis=0)
+    norm = np.linalg.norm(tangent, axis=1, keepdims=True)
+    return tangent / np.where(norm > 0, norm, 1.0)
+
+
+def _extend_curve(curve_xy: np.ndarray, extend_px: float) -> np.ndarray:
+    """Continue a curve straight past both ends along its end tangents."""
+    if extend_px <= 0 or len(curve_xy) < 2:
+        return curve_xy
+    tangents = _curve_tangents(curve_xy)
+    steps = np.arange(1.0, extend_px + 1.0)[:, None]
+    head = curve_xy[0] - steps[::-1] * tangents[0]
+    tail = curve_xy[-1] + steps * tangents[-1]
+    return np.vstack([head, curve_xy, tail])
+
+
+def _binned_along(t, points_xy, weights, bin_px):
+    """Score-weighted mean position in bins of the curve parameter ``t``.
+
+    Also returns how many detections fell in each bin, which the knot placement uses:
+    a bin's weighted mean is only as good as the number of detections behind it.
+    """
+    edges = np.arange(t.min(), t.max() + bin_px, bin_px)
+    which = np.clip(np.digitize(t, edges) - 1, 0, len(edges) - 1)
+    total = np.bincount(which, weights=weights, minlength=len(edges))
+    count = np.bincount(which, minlength=len(edges))
+    keep = total > 0
+    mean_t = np.bincount(which, weights=weights * t, minlength=len(edges))[keep]
+    mean_x = np.bincount(which, weights=weights * points_xy[:, 0], minlength=len(edges))
+    mean_y = np.bincount(which, weights=weights * points_xy[:, 1], minlength=len(edges))
+    total = total[keep]
+    return (mean_t / total, mean_x[keep] / total, mean_y[keep] / total, total,
+            count[keep])
+
+
+_MIN_DETECTIONS_PER_KNOT = 30
+
+
+def _spline_xy(t_bins, x_bins, y_bins, w_bins, knot_px, n_bins=None):
+    """Least-squares cubic splines x(t), y(t) with knots no closer than ``knot_px``.
+
+    A knot is kept only when the stretch behind it holds enough data: at least
+    ``degree + 1`` occupied bins (Schoenberg-Whitney, which a gap in coverage readily
+    breaks) and at least ``_MIN_DETECTIONS_PER_KNOT`` detections. The second condition
+    is what keeps a sparse stretch stiff -- measured on the bundle synthetic, a stretch
+    with a handful of detections let the curve stray 23-29 A where dense stretches sat
+    within 4 A. A stubborn fit falls back to fewer knots and finally a polynomial.
+    """
+    from scipy.interpolate import LSQUnivariateSpline  # pylint: disable=import-outside-toplevel
+
+    degree = int(min(3, len(t_bins) - 1))
+    if degree < 1:
+        return lambda t: np.full_like(np.asarray(t, float), x_bins[0]), (
+            lambda t: np.full_like(np.asarray(t, float), y_bins[0])
+        )
+
+    counts = np.ones_like(t_bins) if n_bins is None else np.asarray(n_bins)
+    candidates = np.arange(t_bins[0] + knot_px, t_bins[-1] - 0.5 * knot_px, knot_px)
+    knots: list[float] = []
+    previous = t_bins[0]
+    for knot in candidates:
+        behind = (t_bins > previous) & (t_bins <= knot)
+        ahead = t_bins > knot
+        if (
+            np.count_nonzero(behind) >= degree + 1
+            and counts[behind].sum() >= _MIN_DETECTIONS_PER_KNOT
+            and counts[ahead].sum() >= _MIN_DETECTIONS_PER_KNOT
+        ):
+            knots.append(float(knot))
+            previous = knot
+    # scipy weights RESIDUALS (it minimises sum((w * r)^2)), and a bin mean over total
+    # weight W has standard error ~ 1/sqrt(W) -- so the residual weight is sqrt(W).
+    # Passing W itself squares the imbalance: a bin of 3000 detections then outweighs
+    # one of 30 by 10^4 instead of 10^2, and on the bundle synthetic that dragged the
+    # curve ~10 A off its sparse stretches while those stretches' detections were
+    # unbiased to within 3 A.
+    residual_weight = np.sqrt(w_bins)
+    while True:
+        try:
+            spline_x = LSQUnivariateSpline(
+                t_bins, x_bins, knots, w=residual_weight, k=degree
+            )
+            spline_y = LSQUnivariateSpline(
+                t_bins, y_bins, knots, w=residual_weight, k=degree
+            )
+            return spline_x, spline_y
+        except ValueError:
+            if not knots:
+                break
+            knots = knots[::2] if len(knots) > 1 else []
+    coeff_x = np.polyfit(t_bins, x_bins, degree, w=np.sqrt(w_bins))
+    coeff_y = np.polyfit(t_bins, y_bins, degree, w=np.sqrt(w_bins))
+    return np.poly1d(coeff_x), np.poly1d(coeff_y)
+
+
+def _fit_filament_curve(
+    points_xy: np.ndarray, weights: np.ndarray, knot_px: float
+) -> np.ndarray:
+    """Smooth centreline through one filament's axis points, sampled at ~1 px.
+
+    Two passes. The first parameterises by position along the points' principal
+    axis, which is enough to get the shape; the second re-parameterises by arc length
+    along that first curve, so a strongly bent tube is not squashed onto its chord.
+    Knot spacing keeps the curve free of structure near the lattice period.
+    """
+    from scipy.spatial import cKDTree  # pylint: disable=import-outside-toplevel
+
+    points = np.asarray(points_xy, dtype=np.float64)
+    w = np.clip(np.asarray(weights, dtype=np.float64), 1e-6, None)
+    centre = np.average(points, axis=0, weights=w)
+    offset = points - centre
+    covariance = (offset * w[:, None]).T @ offset / w.sum()
+    principal = np.linalg.eigh(covariance)[1][:, -1]
+    t = offset @ principal
+
+    curve = points[np.argsort(t)]
+    for _ in range(2):
+        t_bins, x_bins, y_bins, w_bins, n_bins = _binned_along(
+            t, points, w, max(knot_px / 8.0, 1.0)
+        )
+        if len(t_bins) < 2:
+            return points[:1].copy()
+        spline_x, spline_y = _spline_xy(
+            t_bins, x_bins, y_bins, w_bins, knot_px, n_bins=n_bins
+        )
+        fine = np.linspace(t_bins[0], t_bins[-1], max(int(t_bins[-1] - t_bins[0]) * 2, 2))
+        curve = _densify_polyline(np.column_stack([spline_x(fine), spline_y(fine)]))
+        # Re-parameterise every point by arc length along this curve.
+        _, nearest = cKDTree(curve).query(points)
+        t = nearest.astype(np.float64)
+    return curve
+
+
+# CPU threads for the nearest-curve search (a shared machine: a few, not all of them).
+_QUERY_WORKERS = 8
+
+
+def _assign_to_curves(axis_xy, direction_deg, curves, max_transverse_px, max_tangent_deg):
+    """Nearest acceptable curve per detection, by position AND tangent agreement."""
+    from scipy.spatial import cKDTree  # pylint: disable=import-outside-toplevel
+
+    n = len(axis_xy)
+    labels = np.zeros(n, dtype=np.int64)
+    best = np.full(n, np.inf)
+    transverse = np.full(n, np.nan)
+    mismatch = np.full(n, np.nan)
+    for label, curve in curves.items():
+        if len(curve) < 2:
+            continue
+        # Only detections within max_transverse_px of the curve can join it, so the
+        # search stops just past that distance (a little slack, so the <= test below
+        # decides at the edge, as before). Same result, and on a 30M-detection
+        # table (a bundle micrograph) ~50x faster: ~6.5 min per curve per pass before.
+        distance, index = cKDTree(curve).query(
+            axis_xy,
+            distance_upper_bound=max_transverse_px * (1.0 + 1e-6),
+            workers=_QUERY_WORKERS,
+        )
+        near = np.flatnonzero(np.isfinite(distance))
+        distance = distance[near]
+        tangent = _curve_tangents(curve)[index[near]]
+        tangent_deg = np.degrees(np.arctan2(tangent[:, 1], tangent[:, 0]))
+        # Polarity-blind: a filament's tangent and a detection's direction agree up
+        # to 180 degrees, so fold the difference into [0, 90].
+        angle = np.abs(((direction_deg[near] - tangent_deg + 90.0) % 180.0) - 90.0)
+        ok = (distance <= max_transverse_px) & (angle <= max_tangent_deg)
+        cost = (distance / max_transverse_px) ** 2 + (angle / max_tangent_deg) ** 2
+        better = ok & (cost < best[near])
+        chosen = near[better]
+        best[chosen] = cost[better]
+        labels[chosen] = int(label)
+        transverse[chosen] = distance[better]
+        mismatch[chosen] = angle[better]
+    return labels, transverse, mismatch
+
+
+# pylint: disable=too-many-arguments,too-many-locals
+def assign_detections_to_filaments(
+    detections,
+    geometry: TemplateLatticeGeometry,
+    pixel_size_angstrom: float,
+    seed_curves_px: dict[int, np.ndarray] | None = None,
+    initial_labels: np.ndarray | None = None,
+    max_transverse_angstrom: float = 60.0,
+    max_tangent_deg: float = 10.0,
+    seed_transverse_angstrom: float = 150.0,
+    seed_tangent_deg: float = 25.0,
+    knot_spacing_angstrom: float = 500.0,
+    extend_angstrom: float = 500.0,
+    n_iterations: int = 10,
+    score_column: str | None = "z_score",
+    position_columns: tuple[str, str] | None = None,
+    prefer_refined: bool = True,
+    min_detections: int = 8,
+    settled_fraction: float = 1e-4,
+) -> FilamentAssignment:
+    """Assign each detection to a filament from its OWN predicted axis point and tangent.
+
+    Deciding membership by which drawn band a detection's box centre falls in has two
+    faults. It takes geometry from the drawing rather than the data. And the box
+    centre is the wrong point: a patch template's box centre sits 85.8 A off the axis
+    and sweeps a circle as ``phi`` changes, so in a tight bundle it can land in the
+    neighbouring tube's band. Every detection instead predicts a point ON ITS AXIS
+    (:func:`axis_points_from_peaks`, offset undone) and a local in-plane direction
+    (from ``theta`` and ``psi``). This uses both:
+
+    1. Seed membership -- from ``initial_labels``, or by matching to
+       ``seed_curves_px`` (e.g. the drawn paths) under the loose
+       ``seed_transverse_angstrom`` gate. Seeds only decide who starts where.
+    2. Fit each filament's centreline to its members' axis points alone.
+    3. Reassign every detection to the curve its axis point is nearest to and whose
+       local tangent agrees with its direction; reject anything outside both gates.
+    4. Repeat 2-3 until the labels stop changing.
+
+    Position separates parallel filaments; the tangent separates a crossing, where
+    position alone is ambiguous but the two directions differ by far more than a
+    detection's angular error.
+
+    Parameters
+    ----------
+    detections : pd.DataFrame
+        Detections with positions and ``phi``/``theta``/``psi``.
+    geometry : TemplateLatticeGeometry
+        The template's axis offset (zero for a ring, non-zero for a patch).
+    pixel_size_angstrom : float
+        Micrograph pixel size.
+    seed_curves_px : dict[int, np.ndarray], optional
+        ``label -> (m, 2)`` polylines, (x, y) pixels in the SAME frame as the position
+        columns (table positions are the correlation-map frame: shift a drawn path by
+        minus half the template box). Used only to seed membership.
+    initial_labels : np.ndarray, optional
+        ``(n,)`` starting labels, 0 = unknown. Takes precedence over the curves.
+    max_transverse_angstrom : float
+        Largest distance from a detection's axis point to its filament's curve.
+    max_tangent_deg : float
+        Largest disagreement between a detection's direction and the curve tangent.
+    seed_transverse_angstrom : float
+        The looser distance gate for matching to seed curves, which carry drawing
+        error.
+    seed_tangent_deg : float
+        The looser tangent gate for the same step. A drawing's tangent is the least
+        trustworthy thing about it -- a wobble of a few tens of Angstroms over a
+        couple of hundred nanometres tilts it by several degrees -- so seeding must
+        not demand the agreement the data-fitted curves are later held to.
+    knot_spacing_angstrom : float
+        Minimum spacing of spline knots, keeping the curve smooth on the scale of
+        the lattice.
+    extend_angstrom : float
+        How far each curve is continued straight past its ends when assigning, so a
+        filament can grow into detections just beyond its current extent.
+    n_iterations : int
+        Maximum refit-and-reassign rounds.
+    score_column : str or None
+        Column weighting each detection in the curve fit; None for equal weights.
+    position_columns : tuple[str, str], optional
+        Override the (x, y) position columns.
+    prefer_refined : bool
+        Read ``refined_`` columns when present.
+    min_detections : int
+        A filament with fewer members than this gets no curve, and its detections are
+        left unassigned rather than kept on the seed's geometry.
+    settled_fraction : float
+        Labels count as settled once fewer than this fraction change in a round. A few
+        weak detections exactly on a boundary can flip back and forth indefinitely --
+        on in situ 823, 105-132 of 866k (0.015%), median z 6.2 -- which is a two-state
+        cycle, not a failure to converge.
+
+    Returns
+    -------
+    FilamentAssignment
+    """
+    if seed_curves_px is None and initial_labels is None:
+        raise ValueError("Give seed_curves_px or initial_labels to seed membership.")
+
+    axis_xy = axis_points_from_peaks(
+        detections,
+        geometry,
+        pixel_size_angstrom,
+        position_columns=position_columns,
+        prefer_refined=prefer_refined,
+    )
+    columns = geometry_columns(detections, prefer_refined)
+    direction = image_offset_from_template_point(
+        np.array([0.0, 0.0, 1.0]),
+        detections[columns["phi"]].to_numpy(),
+        detections[columns["theta"]].to_numpy(),
+        detections[columns["psi"]].to_numpy(),
+    )
+    direction_deg = np.degrees(np.arctan2(direction[:, 1], direction[:, 0]))
+    if score_column is not None and score_column in detections.columns:
+        weights = detections[score_column].to_numpy(dtype=np.float64)
+    else:
+        weights = np.ones(len(detections))
+
+    max_transverse_px = max_transverse_angstrom / pixel_size_angstrom
+    knot_px = knot_spacing_angstrom / pixel_size_angstrom
+    extend_px = extend_angstrom / pixel_size_angstrom
+
+    if initial_labels is not None:
+        labels = np.asarray(initial_labels, dtype=np.int64).copy()
+        if labels.shape != (len(detections),):
+            raise ValueError("initial_labels must have one entry per detection.")
+        filament_ids = sorted(int(v) for v in np.unique(labels) if v > 0)
+    else:
+        assert seed_curves_px is not None
+        filament_ids = sorted(int(k) for k in seed_curves_px)
+        seeds = {
+            label: _densify_polyline(np.asarray(seed_curves_px[label], dtype=np.float64))
+            for label in filament_ids
+        }
+        labels, _, _ = _assign_to_curves(
+            axis_xy,
+            direction_deg,
+            seeds,
+            seed_transverse_angstrom / pixel_size_angstrom,
+            seed_tangent_deg,
+        )
+
+    curves: dict[int, np.ndarray] = {}
+    transverse = np.full(len(detections), np.nan)
+    mismatch = np.full(len(detections), np.nan)
+    converged = False
+    iteration = 0
+    for iteration in range(1, n_iterations + 1):
+        curves = {}
+        for label in filament_ids:
+            members = labels == label
+            if np.count_nonzero(members) < min_detections:
+                continue
+            curves[label] = _fit_filament_curve(
+                axis_xy[members], weights[members], knot_px
+            )
+        extended = {label: _extend_curve(c, extend_px) for label, c in curves.items()}
+        new_labels, transverse, mismatch = _assign_to_curves(
+            axis_xy, direction_deg, extended, max_transverse_px, max_tangent_deg
+        )
+        changed = np.count_nonzero(new_labels != labels)
+        labels = new_labels
+        if changed <= settled_fraction * len(labels):
+            converged = True
+            break
+
+    return FilamentAssignment(
+        labels=labels,
+        axis_points_px=axis_xy,
+        transverse_angstrom=transverse * pixel_size_angstrom,
+        tangent_mismatch_deg=mismatch,
+        curves_px=curves,
+        n_iterations=iteration,
+        converged=converged,
     )

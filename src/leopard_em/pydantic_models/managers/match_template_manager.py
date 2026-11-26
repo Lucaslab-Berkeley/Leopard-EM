@@ -179,16 +179,23 @@ class MatchTemplateManager(BaseModel2DTM):
             if maps.orientation_eligible is None
             else torch.from_numpy(maps.orientation_eligible.astype(bool))
         )
-        self.psi_center = (
-            None
-            if maps.psi_center is None
-            else torch.from_numpy(np.asarray(maps.psi_center, dtype=np.float32))
-        )
-        self.pole_mask = (
-            None
-            if maps.pole_mask is None
-            else torch.from_numpy(np.asarray(maps.pole_mask, dtype=np.uint8))
-        )
+        # Overlapping regions arrive as (K, H, W) stacks so the gate can accept an
+        # orientation any covering region allows; one region per pixel stays (H, W).
+        stacked = maps.stacked_psi_layers() if maps.n_psi_layers > 1 else None
+        if stacked is not None:
+            self.psi_center = torch.from_numpy(stacked[0])
+            self.pole_mask = torch.from_numpy(stacked[1])
+        else:
+            self.psi_center = (
+                None
+                if maps.psi_center is None
+                else torch.from_numpy(np.asarray(maps.psi_center, dtype=np.float32))
+            )
+            self.pole_mask = (
+                None
+                if maps.pole_mask is None
+                else torch.from_numpy(np.asarray(maps.pole_mask, dtype=np.uint8))
+            )
         self.psi_cone_half_angle_deg = maps.psi_cone_half_angle_deg
         self.psi_theta_center_deg = maps.psi_theta_center_deg
         self.psi_phi_min = maps.psi_phi_min
@@ -539,6 +546,13 @@ class MatchTemplateManager(BaseModel2DTM):
                 correlation_variance_map=results["correlation_variance"],
             )
         )
+        # Record the geometry the table's coordinates depend on, so nothing downstream
+        # has to assume a pixel size or template box (x + template_shape[-1] // 2 is
+        # the micrograph position of a detection).
+        table = self.match_template_result.correlation_table
+        table.pixel_size = float(self.optics_group.pixel_size)
+        table.template_shape = [int(n) for n in self.template_volume.shape]
+        table.micrograph_shape = [int(n) for n in self.micrograph.shape[-2:]]
 
         # Apply the valid cropping mode to the results
         # NOTE: zipFFT already applies valid cropping internally

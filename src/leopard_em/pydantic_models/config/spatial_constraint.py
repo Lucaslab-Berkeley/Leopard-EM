@@ -13,7 +13,16 @@ HDF5 layout::
     maps/orientation_eligible uint8 (n_orient, H, W) or (n_orient,)  # optional
     maps/psi_center        float32 (H, W)           # optional, membrane normal psi
     maps/signed_distance   float32 (H, W)           # optional, polarity GUI
+    maps/psi_center_extra  float32 (K-1, H, W)      # optional, further covering regions
+    maps/region_id_extra   int16  (K-1, H, W)       # optional, 0 = layer unused here
     regions/0001/...
+
+``psi_center`` / ``region_id`` hold the NEAREST covering region at each pixel. Where
+regions overlap -- a bundle of filaments, or one crossing another -- every further
+covering region goes in the ``_extra`` layers, nearest first. The search then accepts an
+orientation if ANY covering region would (see ``_orient_ok_from_psi_center``), so a
+pixel owned by one filament no longer rejects a neighbour's genuine detections. Files
+without the ``_extra`` datasets behave exactly as before.
 """
 
 from __future__ import annotations
@@ -146,6 +155,15 @@ class SpatialConstraintMaps:
     psi_cone_half_angle_deg, psi_theta_center_deg, psi_phi_min, psi_phi_max
         Shared Euler-box scalars used with ``psi_center``. YAML is the
         source of record; these are filled at expand time.
+    psi_center_extra : np.ndarray, optional
+        ``float32`` ``(K-1, H, W)``: ``psi_center`` of every FURTHER region covering
+        each pixel, nearest first. Layer 0 of the stack is ``psi_center`` itself.
+    region_id_extra : np.ndarray, optional
+        ``int16`` ``(K-1, H, W)``: which region each extra layer belongs to, 0 where
+        that layer is unused at a pixel.
+    pole_mask_extra : np.ndarray, optional
+        ``uint8`` ``(K-1, H, W)``: pole bits per extra layer, derived from
+        ``region_id_extra`` and each region's polarity exactly as ``pole_mask`` is.
     """
 
     eligible: np.ndarray
@@ -167,6 +185,53 @@ class SpatialConstraintMaps:
     psi_theta_center_deg: float | None = None
     psi_phi_min: float | None = None
     psi_phi_max: float | None = None
+    psi_center_extra: np.ndarray | None = None
+    region_id_extra: np.ndarray | None = None
+    pole_mask_extra: np.ndarray | None = None
+
+    @property
+    def n_psi_layers(self) -> int:
+        """How many ``psi_center`` layers the gate evaluates: 0, 1, or 1 + extras."""
+        if self.psi_center is None:
+            return 0
+        if self.psi_center_extra is None:
+            return 1
+        return 1 + int(np.asarray(self.psi_center_extra).shape[0])
+
+    def stacked_psi_layers(self) -> tuple[np.ndarray, np.ndarray] | None:
+        """``(psi, poles)`` as ``(K, H, W)`` stacks, nearest region first.
+
+        ``None`` without ``psi_center``. With no extra layers ``K == 1``, so callers
+        can always hand the backend a stack.
+        """
+        if self.psi_center is None:
+            return None
+        if self.pole_mask is None:
+            self.pole_mask = pole_mask_from_region_id(
+                self.region_id, regions=self.regions
+            )
+        psi = [np.asarray(self.psi_center, dtype=np.float32)]
+        poles = [np.asarray(self.pole_mask, dtype=np.uint8)]
+        if self.psi_center_extra is not None:
+            if self.pole_mask_extra is None:
+                self.pole_mask_extra = self._pole_mask_for_extra()
+            psi.extend(np.asarray(self.psi_center_extra, dtype=np.float32))
+            poles.extend(np.asarray(self.pole_mask_extra, dtype=np.uint8))
+        return np.stack(psi), np.stack(poles)
+
+    def _pole_mask_for_extra(
+        self,
+        polarity_by_region: dict[int, str] | None = None,
+        default_polarity: str = "unset",
+    ) -> np.ndarray | None:
+        if self.region_id_extra is None:
+            return None
+        return pole_mask_from_region_id(
+            self.region_id_extra,
+            polarity_by_region=polarity_by_region,
+            default_polarity=default_polarity,
+            regions=self.regions,
+        )
 
     def fill_n_orientations(self, n_orient: int) -> None:
         """Set ``n_orientations`` to ``n_orient`` inside the eligible mask."""
@@ -193,6 +258,10 @@ class SpatialConstraintMaps:
             polarity_by_region=polarity_by_region,
             default_polarity=default_polarity,
             regions=self.regions,
+        )
+        self.pole_mask_extra = self._pole_mask_for_extra(
+            polarity_by_region=polarity_by_region,
+            default_polarity=default_polarity,
         )
 
     def expand_defocus_against_grid(self, defocus_values: Any) -> None:
@@ -283,6 +352,8 @@ class SpatialConstraintMaps:
                 self.pole_mask = pole_mask_from_region_id(
                     self.region_id, regions=self.regions
                 )
+            if self.psi_center_extra is not None and self.pole_mask_extra is None:
+                self.pole_mask_extra = self._pole_mask_for_extra()
             self.n_orientations = count_orientations_from_psi_center(
                 angles,
                 psi_center=self.psi_center,
@@ -292,6 +363,8 @@ class SpatialConstraintMaps:
                 theta_center_deg=self._resolved_psi_theta_center(),
                 phi_min=self._resolved_psi_phi_min(),
                 phi_max=self._resolved_psi_phi_max(),
+                psi_center_extra=self.psi_center_extra,
+                pole_mask_extra=self.pole_mask_extra,
             )
             self.orientation_eligible = None
             return
@@ -489,6 +562,15 @@ class SpatialConstraintMaps:
         pole_mask = _sample_optional_map(self.pole_mask, yy, xx, in_bounds, 0)
         if pole_mask is not None:
             pole_mask = pole_mask.astype(np.uint8)
+        psi_center_extra = _sample_optional_stack(
+            self.psi_center_extra, yy, xx, in_bounds, 0.0
+        )
+        region_id_extra = _sample_optional_stack(
+            self.region_id_extra, yy, xx, in_bounds, 0
+        )
+        pole_mask_extra = _sample_optional_stack(
+            self.pole_mask_extra, yy, xx, in_bounds, 0
+        )
 
         return SpatialConstraintMaps(
             eligible=eligible,
@@ -510,6 +592,9 @@ class SpatialConstraintMaps:
             psi_theta_center_deg=self.psi_theta_center_deg,
             psi_phi_min=self.psi_phi_min,
             psi_phi_max=self.psi_phi_max,
+            psi_center_extra=psi_center_extra,
+            region_id_extra=region_id_extra,
+            pole_mask_extra=pole_mask_extra,
         )
 
     def allowed_num_ccg(self, n_defocus: int | None = None, n_cs: int = 1) -> int:
@@ -802,6 +887,19 @@ def write_spatial_constraint_hdf5(
                 data=np.asarray(maps.signed_distance, dtype=np.float32),
                 **compression_kwargs,
             )
+        if maps.psi_center_extra is not None:
+            if maps.region_id_extra is None:
+                raise ValueError("psi_center_extra needs region_id_extra alongside it.")
+            maps_group.create_dataset(
+                "psi_center_extra",
+                data=np.asarray(maps.psi_center_extra, dtype=np.float32),
+                **compression_kwargs,
+            )
+            maps_group.create_dataset(
+                "region_id_extra",
+                data=np.asarray(maps.region_id_extra, dtype=np.int16),
+                **compression_kwargs,
+            )
 
         regions_group = handle.create_group(_REGIONS_GROUP)
         for index, region in enumerate(maps.regions, start=1):
@@ -831,6 +929,12 @@ def read_spatial_constraint_hdf5(path: str) -> SpatialConstraintMaps:
         signed_distance = _read_optional_dataset(
             maps_group, "signed_distance", np.float32
         )
+        psi_center_extra = _read_optional_dataset(
+            maps_group, "psi_center_extra", np.float32
+        )
+        region_id_extra = _read_optional_dataset(
+            maps_group, "region_id_extra", np.int16
+        )
         if shape_attr is None:
             micrograph_shape = (int(eligible.shape[0]), int(eligible.shape[1]))
         else:
@@ -859,6 +963,8 @@ def read_spatial_constraint_hdf5(path: str) -> SpatialConstraintMaps:
         orientation_eligible=orientation_eligible,
         psi_center=psi_center,
         signed_distance=signed_distance,
+        psi_center_extra=psi_center_extra,
+        region_id_extra=region_id_extra,
     )
 
 
@@ -891,6 +997,21 @@ def _sample_optional_map(
         return None
     sampled = _sample_and_mask(array, yy, xx, in_bounds, fill)
     return np.asarray(sampled, dtype=array.dtype)
+
+
+def _sample_optional_stack(
+    array: np.ndarray | None,
+    yy: np.ndarray,
+    xx: np.ndarray,
+    in_bounds: np.ndarray,
+    fill: float,
+) -> np.ndarray | None:
+    """``_sample_optional_map`` for a ``(K, H, W)`` stack, layer by layer."""
+    if array is None:
+        return None
+    stack = np.asarray(array)
+    sampled = np.where(in_bounds[None, :, :], stack[:, yy, xx], fill)
+    return np.asarray(sampled, dtype=stack.dtype)
 
 
 def _write_region_group(grp: h5py.Group, region: dict[str, Any]) -> None:
@@ -1170,11 +1291,20 @@ def count_orientations_from_psi_center(
     phi_max: float = 360.0,
     atol: float = 1e-3,
     chunk: int = _ORIENT_COUNT_CHUNK,
+    psi_center_extra: np.ndarray | None = None,
+    pole_mask_extra: np.ndarray | None = None,
 ) -> np.ndarray:
     """Count YAML angles inside the per-pixel ``psi_center`` Euler box.
 
     Does not allocate an ``(n_orient, H, W)`` cube. Loops over orientation
     chunks and accumulates a ``(H, W)`` count.
+
+    With ``psi_center_extra`` / ``pole_mask_extra`` (``(K-1, H, W)``), a pixel covered
+    by several regions counts the UNION of their windows -- the set the search
+    actually admits there. Summing the windows would double-count where they
+    overlap (parallel filaments share almost all of theirs); using only the nearest
+    would undercount where they do not (a crossing). Either error feeds straight
+    into ``allowed_num_ccg`` and so into the threshold.
     """
     angles = _as_euler_array(euler_angles)
     n_grid = int(angles.shape[0])
@@ -1211,11 +1341,38 @@ def count_orientations_from_psi_center(
     # which two binary searches settle. Together these turn an O(pixels x angles) scan
     # into O(distinct angles x log n). On a 2046x2880 crop with 88,416 in-box angles
     # that is the difference between ten hours and under a second.
+    contested = None
+    if psi_center_extra is not None and pole_mask_extra is not None and not cone_full:
+        extra_poles = np.asarray(pole_mask_extra, dtype=np.uint8)
+        contested = (extra_poles != 0).any(axis=0) & in_play
+        if not bool(contested.any()):
+            contested = None
+
+    def _with_union(single_layer: np.ndarray) -> np.ndarray:
+        if contested is None:
+            return single_layer
+        layers_psi = np.concatenate(
+            [
+                psi_map[contested][None, :],
+                np.asarray(psi_center_extra, dtype=np.float64)[:, contested],
+            ]
+        )
+        layers_poles = np.concatenate(
+            [
+                poles[contested][None, :],
+                np.asarray(pole_mask_extra, dtype=np.uint8)[:, contested],
+            ]
+        )
+        single_layer[contested] = _count_union_of_layers(
+            psi[box_ok], layers_psi, layers_poles, half
+        )
+        return single_layer
+
     if not cone_full and half < 90.0:
         counts[in_play] = _count_by_arc_lookup(
             psi[box_ok], psi_map[in_play], poles[in_play], half
         )
-        return counts
+        return _with_union(counts)
 
     report = n_angles >= _ORIENT_COUNT_PROGRESS_MIN_ANGLES
     if report:
@@ -1250,7 +1407,56 @@ def count_orientations_from_psi_center(
                 flush=True,
             )
             last_report = now
-    return counts
+    return _with_union(counts)
+
+
+def _count_union_of_layers(
+    grid_psi: np.ndarray,
+    psi_layers: np.ndarray,
+    pole_layers: np.ndarray,
+    half: float,
+) -> np.ndarray:
+    """Exact count of grid angles inside the union of every layer's pole arcs.
+
+    ``psi_layers`` / ``pole_layers`` are ``(K, n)`` for ``n`` pixels. The answer
+    depends only on each pixel's tuple of ``(psi, poles)`` values, so pixels sharing a
+    tuple share a count -- and ``psi_center`` is painted from spline samples, so there
+    are far fewer distinct tuples than pixels. Each distinct tuple is tested against
+    the distinct grid ``psi`` values, weighted by how often each occurs in the box.
+    Valid for any cone below 180 degrees, overlapping arcs included.
+    """
+    values, multiplicity = np.unique(
+        np.asarray(grid_psi, dtype=np.float64) % 360.0, return_counts=True
+    )
+    n_layers = int(psi_layers.shape[0])
+    rows = np.concatenate(
+        [
+            np.asarray(psi_layers, dtype=np.float64).T % 360.0,
+            np.asarray(pole_layers, dtype=np.float64).T,
+        ],
+        axis=1,
+    )
+    unique_rows, inverse = np.unique(rows, axis=0, return_inverse=True)
+    inverse = np.asarray(inverse).reshape(-1)
+
+    out = np.empty(unique_rows.shape[0], dtype=np.int64)
+    step = max(1, 2_000_000 // max(int(values.size), 1))
+    for start in range(0, unique_rows.shape[0], step):
+        block = unique_rows[start : start + step]
+        allowed = np.zeros((block.shape[0], values.size), dtype=bool)
+        for layer in range(n_layers):
+            centre = block[:, layer][:, None]
+            bits = block[:, n_layers + layer].astype(np.uint8)[:, None]
+            near = circular_abs_diff_deg(values[None, :], centre) <= half
+            far = (
+                circular_abs_diff_deg(values[None, :], (centre + 180.0) % 360.0)
+                <= half
+            )
+            allowed |= (((bits & POLE_POSITIVE) != 0) & near) | (
+                ((bits & POLE_NEGATIVE) != 0) & far
+            )
+        out[start : start + block.shape[0]] = allowed.astype(np.int64) @ multiplicity
+    return out[inverse].astype(np.int32)
 
 
 def euler_ok_from_psi_center(

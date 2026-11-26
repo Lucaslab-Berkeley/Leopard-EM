@@ -141,51 +141,123 @@ def psi_from_tangent(tangent_yx: np.ndarray) -> np.ndarray:
     return np.degrees(np.arctan2(-tangent[:, 0], tangent[:, 1])) % 360.0
 
 
+def paint_path_layers(
+    shape: tuple[int, int],
+    paths: list[dict],
+    smooth_px: float = DEFAULT_SMOOTH_PX,
+) -> dict[str, np.ndarray | None]:
+    """Rasterize drawn paths, keeping EVERY path that covers each pixel.
+
+    Each path gets its own distance transform (on a crop around its band, so the cost
+    scales with the band, not the frame). A pixel is covered by a path when it lies
+    within that path's own half-width, and every covering path is recorded, nearest
+    first:
+
+        region_id,  psi_center          layer 0 -- the nearest covering path
+        region_id_extra, psi_center_extra   layers 1..K-1, ``(K-1, H, W)``; ``None``
+                                            when no pixel is covered twice
+
+    Nothing is discarded where bands overlap. The earlier nearest-wins rule kept only
+    layer 0, so in a bundle or at a crossing a pixel owned by one filament rejected a
+    neighbour's genuine detections, and every downstream label came from the drawing.
+    Leopard-EM's search ORs across the layers; which filament a detection belongs to is
+    decided later, from the data.
+
+    ``eligible`` is covered by ANY path -- with unequal widths that is not the same as
+    "within the nearest path's width", which the old rule used.
+
+    A path may carry its own ``curve_yx`` (sampled centreline) and ``psi_deg`` (one
+    value per sample) in place of the spline through its clicks -- for a caller that
+    has refitted the tangent from data, such as refitting the constraint from a ring
+    search. It then gets the same layered output as a drawing does.
+    """
+    from scipy.ndimage import distance_transform_edt
+
+    height, width = shape
+    n_paths = len(paths)
+    if n_paths == 0:
+        raise ValueError("No paths to rasterize.")
+    distance = np.full((n_paths, height, width), np.inf, dtype=np.float32)
+    psi_at = np.zeros((n_paths, height, width), dtype=np.float32)
+    half_widths = np.array([float(p["width_px"]) / 2.0 for p in paths])
+
+    landed = False
+    for index, path in enumerate(paths):
+        if path.get("curve_yx") is not None and path.get("psi_deg") is not None:
+            curve = np.asarray(path["curve_yx"], dtype=np.float64)
+            psi = np.asarray(path["psi_deg"], dtype=np.float32) % 360.0
+            if len(psi) != len(curve):
+                raise ValueError("psi_deg needs one value per curve_yx sample.")
+        else:
+            curve, tangent = spline_through_points(path["points"], smooth_px=smooth_px)
+            psi = psi_from_tangent(tangent).astype(np.float32)
+        rows = np.rint(curve[:, 0]).astype(int)
+        cols = np.rint(curve[:, 1]).astype(int)
+        inside = (rows >= 0) & (rows < height) & (cols >= 0) & (cols < width)
+        if not inside.any():
+            continue
+        landed = True
+        rows, cols, psi = rows[inside], cols[inside], psi[inside]
+
+        pad = int(np.ceil(half_widths[index])) + 2
+        y0, y1 = max(rows.min() - pad, 0), min(rows.max() + pad + 1, height)
+        x0, x1 = max(cols.min() - pad, 0), min(cols.max() + pad + 1, width)
+        centreline = np.zeros((y1 - y0, x1 - x0), dtype=bool)
+        psi_line = np.zeros((y1 - y0, x1 - x0), dtype=np.float32)
+        centreline[rows - y0, cols - x0] = True
+        psi_line[rows - y0, cols - x0] = psi
+
+        crop_distance, (near_y, near_x) = distance_transform_edt(
+            ~centreline, return_indices=True
+        )
+        distance[index, y0:y1, x0:x1] = crop_distance
+        psi_at[index, y0:y1, x0:x1] = psi_line[near_y, near_x]
+
+    if not landed:
+        raise ValueError("No path pixels landed inside the micrograph.")
+
+    covered = distance <= half_widths[:, None, None]
+    ranked = np.where(covered, distance, np.inf)
+    order = np.argsort(ranked, axis=0, kind="stable")
+    n_layers = max(int(covered.sum(axis=0).max()), 1)
+    order = order[:n_layers]
+
+    layer_covered = np.take_along_axis(covered, order, axis=0)
+    region_layers = np.where(layer_covered, order + 1, 0).astype(np.int16)
+    psi_layers = np.where(
+        layer_covered, np.take_along_axis(psi_at, order, axis=0), 0.0
+    ).astype(np.float32)
+
+    nearest_any = distance.min(axis=0)
+    return {
+        "eligible": (region_layers[0] > 0).astype(np.uint8),
+        "region_id": region_layers[0],
+        "psi_center": psi_layers[0],
+        "distance": np.where(np.isfinite(nearest_any), nearest_any, 0.0).astype(
+            np.float32
+        ),
+        "region_id_extra": region_layers[1:] if n_layers > 1 else None,
+        "psi_center_extra": psi_layers[1:] if n_layers > 1 else None,
+    }
+
+
 def paint_path_maps(
     shape: tuple[int, int],
     paths: list[dict],
     smooth_px: float = DEFAULT_SMOOTH_PX,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Rasterize drawn paths into eligibility, region id, psi_center and distance.
+    """Layer 0 of ``paint_path_layers``: eligibility, region id, psi_center, distance.
 
-    Each path contributes its centreline; a Euclidean distance transform then assigns
-    every pixel to its **nearest** centreline, which is how overlapping paths are
-    resolved (the same rule the membrane exporter uses, and the opposite of the
-    later-region-wins rule in the straight-filament rasterizer).
-
-    Eligibility is then per-path, because each path carries its own width: a pixel is in
-    play when its distance to the *owning* centreline is within that path's half-width.
+    For display and for callers that only need the nearest path. The exported
+    constraint carries every layer -- see ``paint_path_layers``.
     """
-    from scipy.ndimage import distance_transform_edt
-
-    height, width = shape
-    centreline_region = np.zeros(shape, dtype=np.int16)
-    centreline_psi = np.zeros(shape, dtype=np.float32)
-
-    for index, path in enumerate(paths, start=1):
-        curve, tangent = spline_through_points(path["points"], smooth_px=smooth_px)
-        psi = psi_from_tangent(tangent)
-        rows = np.clip(np.rint(curve[:, 0]).astype(int), 0, height - 1)
-        cols = np.clip(np.rint(curve[:, 1]).astype(int), 0, width - 1)
-        centreline_region[rows, cols] = index
-        centreline_psi[rows, cols] = psi.astype(np.float32)
-
-    if not np.any(centreline_region):
-        raise ValueError("No path pixels landed inside the micrograph.")
-
-    distance, (nearest_y, nearest_x) = distance_transform_edt(
-        centreline_region == 0, return_indices=True
+    layers = paint_path_layers(shape, paths, smooth_px=smooth_px)
+    return (
+        layers["eligible"],
+        layers["region_id"],
+        layers["psi_center"],
+        layers["distance"],
     )
-    region_id = centreline_region[nearest_y, nearest_x].astype(np.int16)
-    psi_center = centreline_psi[nearest_y, nearest_x].astype(np.float32)
-
-    half_widths = np.array(
-        [0.0] + [float(path["width_px"]) / 2.0 for path in paths], dtype=np.float64
-    )
-    eligible = (distance <= half_widths[region_id]).astype(np.uint8)
-    region_id = np.where(eligible > 0, region_id, 0).astype(np.int16)
-    psi_center = np.where(eligible > 0, psi_center, 0.0).astype(np.float32)
-    return eligible, region_id, psi_center, distance.astype(np.float32)
 
 
 def estimate_n_orientations(
@@ -297,8 +369,13 @@ def write_constraint_hdf5(
     psi_step: float,
     theta_step: float,
     pixel_size_angstrom: float | None = None,
+    psi_center_extra: np.ndarray | None = None,
+    region_id_extra: np.ndarray | None = None,
 ) -> None:
     """Write the continuous constraint sidecar (standalone; no leopard_em import).
+
+    ``psi_center_extra`` / ``region_id_extra`` are the further covering paths from
+    ``paint_path_layers``; written only when some pixel is covered more than once.
 
     Layout matches ``leopard_em.pydantic_models.config.spatial_constraint``: a ``maps``
     group of ``(H, W)`` arrays plus a ``regions`` table of Euler-box attributes. The
@@ -338,6 +415,19 @@ def write_constraint_hdf5(
             maps_group.create_dataset(
                 "signed_distance",
                 data=np.asarray(signed_distance, dtype=np.float32),
+                **compression,
+            )
+        if psi_center_extra is not None:
+            if region_id_extra is None:
+                raise ValueError("psi_center_extra needs region_id_extra alongside it.")
+            maps_group.create_dataset(
+                "psi_center_extra",
+                data=np.asarray(psi_center_extra, dtype=np.float32),
+                **compression,
+            )
+            maps_group.create_dataset(
+                "region_id_extra",
+                data=np.asarray(region_id_extra, dtype=np.int16),
                 **compression,
             )
 
@@ -697,10 +787,12 @@ def build_viewer(
             summary.setPlainText("No paths drawn yet.")
             return
         try:
-            eligible, region_id, psi_center, distance = rasterize(paths)
+            layers = paint_path_layers(image.shape, paths)
         except ValueError as error:
             summary.setPlainText(f"Cannot rasterize: {error}")
             return
+        eligible, region_id = layers["eligible"], layers["region_id"]
+        psi_center, distance = layers["psi_center"], layers["distance"]
 
         yaml_path = pathlib.Path(output_path).expanduser().resolve()
         hdf5_path = yaml_path.with_suffix(".h5")
@@ -724,6 +816,8 @@ def build_viewer(
                 theta_center_deg=theta_center_deg,
                 psi_step=psi_step, theta_step=theta_step,
                 pixel_size_angstrom=pixel_size,
+                psi_center_extra=layers["psi_center_extra"],
+                region_id_extra=layers["region_id_extra"],
             )
             payload = build_sidecar_payload(
                 paths, cone_half_angle_deg, theta_center_deg, psi_step, theta_step,

@@ -30,7 +30,7 @@ from napari_choose_filament_path import (
     estimate_n_orientations,
     load_mrc_image,
     load_paths_json,
-    paint_path_maps,
+    paint_path_layers,
     preview_text,
     write_constraint_hdf5,
 )
@@ -80,9 +80,9 @@ def main() -> None:
     image, header_pixel_size = load_mrc_image(str(micrograph))
     pixel_size = args.pixel_size_angstrom or header_pixel_size
 
-    eligible, region_id, psi_center, distance = paint_path_maps(
-        image.shape, paths, smooth_px=args.smooth_px
-    )
+    layers = paint_path_layers(image.shape, paths, smooth_px=args.smooth_px)
+    eligible, region_id = layers["eligible"], layers["region_id"]
+    psi_center, distance = layers["psi_center"], layers["distance"]
 
     yaml_path = args.output.expanduser().resolve()
     hdf5_path = yaml_path.with_suffix(".h5")
@@ -98,6 +98,8 @@ def main() -> None:
         theta_center_deg=args.theta_center_deg,
         psi_step=args.psi_step, theta_step=args.theta_step,
         pixel_size_angstrom=pixel_size,
+        psi_center_extra=layers["psi_center_extra"],
+        region_id_extra=layers["region_id_extra"],
     )
     yaml_path.write_text(
         dump_sidecar_yaml(
@@ -114,6 +116,15 @@ def main() -> None:
     print(f"micrograph {micrograph.name}  {image.shape}"
           + (f"  pixel size {pixel_size:.4f} Å" if pixel_size else ""))
     print(preview_text(paths, eligible, pixel_size, args.cone_half_angle_deg))
+    extra = layers["region_id_extra"]
+    if extra is None:
+        print("no pixel is covered by more than one path")
+    else:
+        depth = 1 + (extra > 0).sum(axis=0)
+        in_play = eligible > 0
+        print(f"overlapping bands: {100 * (depth[in_play] >= 2).mean():.1f}% of "
+              f"eligible pixels covered by 2+ paths, up to {int(depth.max())} deep "
+              f"-- every covering path is kept")
     print(f"\nwrote {yaml_path}")
     print(f"wrote {hdf5_path}")
 

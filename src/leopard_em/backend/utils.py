@@ -77,6 +77,43 @@ def _in_angle_range_torch(
     return (values >= lo - atol) | (values <= hi + atol)
 
 
+PsiLayer = tuple[torch.Tensor, torch.Tensor, torch.Tensor]
+
+
+def sparse_psi_layers(
+    psi_center: torch.Tensor, pole_mask: torch.Tensor | None
+) -> list[PsiLayer]:
+    """Layers ``1..K-1`` of a ``(K, H, W)`` stack, kept only where they are in use.
+
+    Returns one ``(flat_index, psi, poles)`` triple per layer. Extra layers exist only
+    where regions overlap -- a few percent of a micrograph -- so gating them densely
+    would multiply the cost of the whole gate by K to change a handful of pixels.
+    Built once per search, not once per batch. A 2-D ``psi_center`` has no extra
+    layers and returns ``[]``.
+    """
+    if psi_center.ndim != 3 or psi_center.shape[0] <= 1:
+        return []
+    if pole_mask is None or tuple(pole_mask.shape) != tuple(psi_center.shape):
+        raise ValueError(
+            "A layered psi_center needs a pole_mask of the same (K, H, W) shape; "
+            "an unused layer is marked by pole bits of 0."
+        )
+    layers: list[PsiLayer] = []
+    for layer in range(1, int(psi_center.shape[0])):
+        poles = pole_mask[layer].reshape(-1).to(dtype=torch.uint8)
+        index = torch.nonzero(poles != 0, as_tuple=False).reshape(-1)
+        if index.numel() == 0:
+            continue
+        layers.append(
+            (
+                index,
+                psi_center[layer].reshape(-1)[index].contiguous(),
+                poles[index].contiguous(),
+            )
+        )
+    return layers
+
+
 def _orient_ok_from_psi_center(
     euler_angles: torch.Tensor,
     orient_idx: torch.Tensor,
@@ -89,8 +126,22 @@ def _orient_ok_from_psi_center(
     height: int,
     width: int,
     atol: float = 1e-3,
+    extra_layers: list[PsiLayer] | None = None,
 ) -> torch.Tensor:
-    """Return ``(B, H, W)`` mask for this batch from per-pixel ``psi_center``."""
+    """Return ``(B, H, W)`` mask for this batch from per-pixel ``psi_center``.
+
+    ``psi_center`` is either ``(H, W)`` -- one region per pixel -- or a ``(K, H, W)``
+    stack of every region covering each pixel, nearest first. An orientation passes
+    at a pixel if it lies inside the window of ANY covering region: a pixel owned by
+    one filament must not reject a crossing or neighbouring filament's genuine
+    detections. ``extra_layers`` is the precomputed ``sparse_psi_layers`` form of
+    layers ``1..K-1``; if it is not supplied it is built here.
+    """
+    if psi_center.ndim == 3:
+        if extra_layers is None:
+            extra_layers = sparse_psi_layers(psi_center, pole_mask)
+        psi_center = psi_center[0]
+        pole_mask = None if pole_mask is None else pole_mask[0]
     device = psi_center.device
     angles = euler_angles[orient_idx.to(dtype=torch.int64)]
     phi = angles[:, 0]
@@ -137,6 +188,20 @@ def _orient_ok_from_psi_center(
         allow_pos = (poles & 1) != 0
         allow_neg = (poles & 2) != 0
         psi_ok = (allow_pos & (d0 <= half)) | (allow_neg & (d1 <= half))
+
+        if extra_layers:
+            flat_ok = psi_ok.reshape(psi_ok.shape[0], -1)
+            psi_col = psi[:, None]
+            for index, layer_psi, layer_poles in extra_layers:
+                layer_psi = layer_psi.to(device=device, dtype=psi.dtype)[None, :]
+                layer_poles = layer_poles.to(device=device)[None, :]
+                near = _circular_abs_diff_deg(psi_col, layer_psi) <= half
+                far = _circular_abs_diff_deg(psi_col, (layer_psi + 180.0) % 360.0) <= half
+                layer_ok = (((layer_poles & 1) != 0) & near) | (
+                    ((layer_poles & 2) != 0) & far
+                )
+                # Indices are unique within a layer, so this read-OR-write is exact.
+                flat_ok[:, index.to(device)] |= layer_ok
 
     return box_ok & psi_ok
 
@@ -535,6 +600,7 @@ def do_iteration_and_correlation_table_updates(
     psi_theta_center_deg: float | None = None,
     psi_phi_min: float | None = None,
     psi_phi_max: float | None = None,
+    psi_extra_layers: list[PsiLayer] | None = None,
 ) -> None:
     """Helper function for updating maxima, tracked statistics, and correlation table.
 
@@ -606,6 +672,9 @@ def do_iteration_and_correlation_table_updates(
         ``psi_center`` is set.
     psi_cone_half_angle_deg, psi_theta_center_deg, psi_phi_min, psi_phi_max
         Shared Euler-box scalars used with ``psi_center``.
+    psi_extra_layers : list, optional
+        ``sparse_psi_layers`` of a layered ``psi_center``, built once per search. When
+        ``psi_center`` is ``(K, H, W)`` and this is None it is rebuilt each call.
     """
     apply_eligibility = (
         eligible_pixels is not None
@@ -645,6 +714,7 @@ def do_iteration_and_correlation_table_updates(
                 phi_max=360.0 if psi_phi_max is None else psi_phi_max,
                 height=valid_shape_h,
                 width=valid_shape_w,
+                extra_layers=psi_extra_layers,
             )
         elif orientation_eligible is None:
             orient_ok = torch.ones(

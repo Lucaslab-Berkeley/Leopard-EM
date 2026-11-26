@@ -967,3 +967,364 @@ class TestProtofilamentResolvedSites:
             sites.occupancy_by_protofilament()
         with pytest.raises(ValueError, match="pooled protofilaments"):
             sites.mean_score_by_protofilament()
+
+
+class TestScoreLatticeModel:
+    """Competing lattice models against a fixed set of detections."""
+
+    @staticmethod
+    def _axis(peaks, geometry):
+        return fit_filament_axis(
+            axis_points_from_peaks(peaks, geometry, PIXEL_SIZE),
+            peaks["z_score"].to_numpy(),
+            _reference(peaks),
+        )
+
+    def _score(self, peaks, geometry, n_pf, rise, **kwargs):
+        from leopard_em.analysis.filament_lattice import score_lattice_model
+
+        kwargs.setdefault("score_threshold", 1.0)
+        return score_lattice_model(
+            peaks,
+            geometry,
+            self._axis(peaks, geometry),
+            PIXEL_SIZE,
+            n_protofilaments=n_pf,
+            rise_angstrom=rise,
+            **kwargs,
+        )
+
+    def test_matching_model_fills_every_site(self, microtubule):
+        peaks, _ = synthetic_lattice(microtubule, n_repeats=10)
+        score = self._score(peaks, microtubule, 14, microtubule.rise_angstrom)
+        # Not exactly 1.0: the helical offset spreads sites past the ends of the
+        # observed track, so a handful at the extremes have no detection to find.
+        assert score.occupancy > 0.93, score.occupancy
+        assert np.abs(score.axial_deviation_angstrom).max() < 2.0
+
+    def test_correct_protofilament_number_wins(self, microtubule):
+        peaks, _ = synthetic_lattice(microtubule, n_repeats=10)
+        occ = {
+            n: self._score(peaks, microtubule, n, microtubule.rise_angstrom).occupancy
+            for n in (12, 13, 14, 15)
+        }
+        assert max(occ, key=occ.get) == 14, occ
+        # Middle-peaked: the neighbours on both sides must be worse.
+        assert occ[14] > occ[13] and occ[14] > occ[15], occ
+
+    def test_wrong_repeat_is_rejected(self, microtubule):
+        """Discrimination grows with track length, as the wrong repeat accumulates."""
+        peaks, _ = synthetic_lattice(microtubule, n_repeats=25)
+        right = self._score(peaks, microtubule, 14, microtubule.rise_angstrom)
+        wrong = self._score(peaks, microtubule, 14, microtubule.rise_angstrom * 0.973)
+        assert right.occupancy > wrong.occupancy + 0.3, (right.occupancy, wrong.occupancy)
+
+    def test_sign_of_the_helical_term_is_right(self, microtubule):
+        """Fails if the unwrap inverse flips sign.
+
+        With ``azimuth_offset`` non-zero the anchor sits away from phi = 0, so the
+        helical term ``-(lateral / spacing) * (phi - phi0)`` is large for most
+        protofilaments. A flipped sign still passes the round-trip test, where phi is
+        near the anchor, but displaces sites by up to a full turn's worth here.
+        """
+        peaks, _ = synthetic_lattice(microtubule, n_repeats=10, azimuth_offset=137.0)
+        score = self._score(peaks, microtubule, 14, microtubule.rise_angstrom)
+        assert score.occupancy > 0.95, score.occupancy
+
+    def test_a_detection_fills_only_one_site(self, microtubule):
+        peaks, _ = synthetic_lattice(microtubule, n_repeats=10)
+        score = self._score(peaks, microtubule, 14, microtubule.rise_angstrom)
+        filled = score.detection_index[score.detection_index >= 0]
+        assert len(filled) == len(np.unique(filled))
+
+    def test_angular_gate_must_separate_protofilaments(self, microtubule):
+        peaks, _ = synthetic_lattice(microtubule, n_repeats=4)
+        with pytest.raises(ValueError, match="half the protofilament spacing"):
+            self._score(peaks, microtubule, 14, 84.0, angular_radius_deg=20.0)
+
+    def test_empty_sites_are_counted(self, microtubule):
+        peaks, _ = synthetic_lattice(microtubule, n_repeats=10)
+        score = self._score(peaks, microtubule, 14, microtubule.rise_angstrom,
+                            score_threshold=1e6)
+        assert score.n_found == 0
+        assert score.n_predicted > 0
+        assert score.occupancy == 0.0
+
+
+# ------------------------------------------------------------------------------------
+# assign_detections_to_filaments: membership from the data, not the drawing
+# ------------------------------------------------------------------------------------
+
+_PIXEL = 1.056
+_RING = None  # built lazily so the module's other tests are unaffected
+
+
+def _ring_geometry():
+    from leopard_em.analysis.filament_lattice import TemplateLatticeGeometry
+
+    return TemplateLatticeGeometry(
+        axis_offset_angstrom=(0.0, 0.0),
+        subunit_radius_angstrom=118.0,
+        n_protofilaments=13,
+        rise_angstrom=40.9,
+    )
+
+
+def _patch_geometry():
+    from leopard_em.analysis.filament_lattice import TemplateLatticeGeometry
+
+    # The 5-PF patch: box centre 85.8 A off the axis, rotating with phi.
+    return TemplateLatticeGeometry(
+        axis_offset_angstrom=(85.8, 0.0),
+        subunit_radius_angstrom=118.0,
+        n_protofilaments=13,
+        rise_angstrom=40.9,
+    )
+
+
+def _bent_curve(start_xy, angle_deg, length_px, sagitta_px, n=400):
+    """A gently bent filament centreline, (x, y) pixels."""
+    s = np.linspace(-0.5, 0.5, n)
+    along = s * length_px
+    across = sagitta_px * (1.0 - 4.0 * s**2)
+    a = np.radians(angle_deg)
+    u = np.array([np.cos(a), np.sin(a)])
+    v = np.array([-np.sin(a), np.cos(a)])
+    return np.asarray(start_xy) + along[:, None] * u + across[:, None] * v
+
+
+def _offset_curve(curve_xy, distance_px):
+    """The curve displaced along its own normal -- a parallel neighbour."""
+    tangent = np.gradient(curve_xy, axis=0)
+    tangent /= np.linalg.norm(tangent, axis=1, keepdims=True)
+    normal = np.column_stack([-tangent[:, 1], tangent[:, 0]])
+    return curve_xy + distance_px * normal
+
+
+def _drawn_version(curve_xy, error_px, phase=0.0, periods=2.5):
+    """What a hand drawing of the curve looks like: a smooth wander off the truth.
+
+    Give each tube its own ``phase``: paths drawn one at a time do not wander in
+    step, and lockstep errors would cancel between neighbours and hide exactly the
+    relative error that mislabels them.
+    """
+    s = np.linspace(0.0, 1.0, len(curve_xy))
+    tangent = np.gradient(curve_xy, axis=0)
+    tangent /= np.linalg.norm(tangent, axis=1, keepdims=True)
+    normal = np.column_stack([-tangent[:, 1], tangent[:, 0]])
+    return curve_xy + (error_px * np.sin(2 * np.pi * periods * s + phase))[:, None] * normal
+
+
+def _tube_detections(curve_xy, geometry, label, rng, spacing_angstrom=41.0,
+                     psi_noise_deg=1.0, position_noise_angstrom=3.0):
+    """Detections along one tube, built through the library's own conventions.
+
+    The direction of the tube axis in the image is at angle ``180 - psi`` (measured
+    with ``image_offset_from_template_point``), and the box centre is the axis point
+    minus the template axis offset rotated by the detection's own orientation.
+    """
+    import pandas as pd
+
+    from leopard_em.analysis.filament_lattice import image_offset_from_template_point
+
+    steps = np.hypot(*np.diff(curve_xy, axis=0).T)
+    arc = np.concatenate([[0.0], np.cumsum(steps)])
+    samples = np.arange(0.0, arc[-1], spacing_angstrom / _PIXEL)
+    axis = np.column_stack(
+        [np.interp(samples, arc, curve_xy[:, 0]), np.interp(samples, arc, curve_xy[:, 1])]
+    )
+    tangent = np.gradient(axis, axis=0)
+    angle = np.degrees(np.arctan2(tangent[:, 1], tangent[:, 0]))
+    pole = 0.0 if rng.random() < 0.5 else 180.0  # one polarity per tube
+    psi = (180.0 - angle + pole + rng.normal(0, psi_noise_deg, len(axis))) % 360.0
+    theta = 90.0 + rng.normal(0, 1.0, len(axis))
+    phi = rng.uniform(0.0, 360.0, len(axis))
+    offset = image_offset_from_template_point(
+        np.array([*geometry.axis_offset_angstrom, 0.0]), phi, theta, psi
+    )
+    box = axis - offset / _PIXEL
+    box += rng.normal(0, position_noise_angstrom / _PIXEL, box.shape)
+    return pd.DataFrame(
+        {"x": box[:, 0], "y": box[:, 1], "phi": phi, "theta": theta, "psi": psi,
+         "z_score": 8.0 + rng.normal(0, 1.0, len(axis)), "truth": label}
+    )
+
+
+def _clutter(n, extent_px, rng):
+    import pandas as pd
+
+    return pd.DataFrame(
+        {"x": rng.uniform(0, extent_px, n), "y": rng.uniform(0, extent_px, n),
+         "phi": rng.uniform(0, 360, n), "theta": rng.uniform(70, 110, n),
+         "psi": rng.uniform(0, 360, n), "z_score": 7.0 + rng.random(n), "truth": 0}
+    )
+
+
+def _bundle_with_crossing(spacings_angstrom=(411.0, 463.0)):
+    """823's layout: three parallel bent tubes and one crossing them at ~30 degrees."""
+    base = _bent_curve((2000.0, 2000.0), 40.0, 3900.0, 80.0)
+    tubes = {1: base}
+    tubes[2] = _offset_curve(base, spacings_angstrom[0] / _PIXEL)
+    tubes[3] = _offset_curve(base, -spacings_angstrom[1] / _PIXEL)
+    tubes[4] = _bent_curve((2000.0, 2000.0), 10.0, 3900.0, -60.0)
+    return tubes
+
+
+def _detections_for(tubes, geometry, rng, n_clutter=300):
+    import pandas as pd
+
+    parts = [_tube_detections(c, geometry, label, rng) for label, c in tubes.items()]
+    parts.append(_clutter(n_clutter, 4000.0, rng))
+    return pd.concat(parts, ignore_index=True)
+
+
+def _curve_rms_to_truth(fitted, truth):
+    from scipy.spatial import cKDTree
+
+    dense = truth if len(truth) > 2000 else np.vstack(
+        [np.linspace(truth[i], truth[i + 1], 20, endpoint=False)
+         for i in range(len(truth) - 1)]
+    )
+    distance, _ = cKDTree(dense).query(fitted)
+    return float(np.sqrt(np.mean(distance**2)) * _PIXEL)
+
+
+@pytest.mark.parametrize("geometry_factory", [_ring_geometry, _patch_geometry])
+def test_assignment_recovers_bundle_and_crossing_from_drawn_seeds(geometry_factory):
+    from leopard_em.analysis.filament_lattice import assign_detections_to_filaments
+
+    rng = np.random.default_rng(7)
+    geometry = geometry_factory()
+    tubes = _bundle_with_crossing()
+    detections = _detections_for(tubes, geometry, rng)
+    # Drawn paths wander 50 A off the truth -- a realistic hand drawing.
+    seeds = {
+        label: _drawn_version(c, 50.0 / _PIXEL, phase=1.7 * label)
+        for label, c in tubes.items()
+    }
+
+    result = assign_detections_to_filaments(
+        detections, geometry, _PIXEL, seed_curves_px=seeds
+    )
+
+    assert result.converged
+    real = detections["truth"].to_numpy() > 0
+    accuracy = np.mean(result.labels[real] == detections["truth"].to_numpy()[real])
+    assert accuracy >= 0.995, accuracy
+    clutter_kept = np.mean(result.labels[~real] > 0)
+    assert clutter_kept <= 0.05, clutter_kept
+    # The curves come from the data: close to the truth, not to the drawing.
+    for label, truth_curve in tubes.items():
+        rms = _curve_rms_to_truth(result.curves_px[label], truth_curve)
+        assert rms < 8.0, (label, rms)
+
+
+def test_assignment_separates_a_crossing_by_tangent():
+    """At a crossing, position is ambiguous; the direction is not."""
+    from leopard_em.analysis.filament_lattice import assign_detections_to_filaments
+
+    rng = np.random.default_rng(3)
+    geometry = _ring_geometry()
+    tubes = _bundle_with_crossing()
+    detections = _detections_for(tubes, geometry, rng, n_clutter=0)
+    result = assign_detections_to_filaments(
+        detections, geometry, _PIXEL,
+        seed_curves_px={
+            k: _drawn_version(c, 50.0 / _PIXEL, phase=1.7 * k) for k, c in tubes.items()
+        },
+    )
+    axis = result.axis_points_px
+    near_crossing = np.hypot(axis[:, 0] - 2000.0, axis[:, 1] - 2000.0) < 150.0 / _PIXEL
+    assert near_crossing.sum() > 10
+    truth = detections["truth"].to_numpy()
+    assert np.array_equal(result.labels[near_crossing], truth[near_crossing])
+
+
+def test_patch_box_centres_cross_into_a_tight_neighbour_but_axis_points_do_not():
+    """The failure the box-centre rule has, and this one does not.
+
+    A patch's box centre sits 85.8 A off-axis and swings with phi, so labelling by
+    the nearest drawn path mislabels a detection whenever that offset plus the
+    relative drawing error exceeds half the spacing. Measured: never at 823's 411 A
+    spacing even with 80 A of drawing error; 1.5-4.5% once tubes nearly touch
+    (250-300 A) with 50-80 A of error. This pins the regime where it bites -- 250 A,
+    80 A -- and requires the axis-point rule to be clean there.
+    """
+    from scipy.spatial import cKDTree
+
+    from leopard_em.analysis.filament_lattice import assign_detections_to_filaments
+
+    rng = np.random.default_rng(11)
+    geometry = _patch_geometry()
+    base = _bent_curve((2000.0, 2000.0), 40.0, 3000.0, 60.0)
+    tubes = {1: base, 2: _offset_curve(base, 250.0 / _PIXEL)}
+    detections = _detections_for(tubes, geometry, rng, n_clutter=0)
+    seeds = {
+        k: _drawn_version(c, 80.0 / _PIXEL, phase=1.7 * k) for k, c in tubes.items()
+    }
+    truth = detections["truth"].to_numpy()
+
+    box = detections[["x", "y"]].to_numpy()
+    distances = np.column_stack(
+        [cKDTree(_densify(seeds[k])).query(box)[0] for k in (1, 2)]
+    )
+    by_box_centre = np.argmin(distances, axis=1) + 1
+    old_accuracy = np.mean(by_box_centre == truth)
+
+    result = assign_detections_to_filaments(
+        detections, geometry, _PIXEL, seed_curves_px=seeds
+    )
+    new_accuracy = np.mean(result.labels == truth)
+    assert new_accuracy >= 0.995, new_accuracy
+    assert old_accuracy < 0.99, old_accuracy
+
+
+def _densify(curve):
+    from leopard_em.analysis.filament_lattice import _densify_polyline
+
+    return _densify_polyline(curve)
+
+
+def test_assignment_grows_from_sparse_initial_labels():
+    from leopard_em.analysis.filament_lattice import assign_detections_to_filaments
+
+    rng = np.random.default_rng(5)
+    geometry = _ring_geometry()
+    tubes = _bundle_with_crossing()
+    detections = _detections_for(tubes, geometry, rng)
+    truth = detections["truth"].to_numpy()
+    initial = np.where((truth > 0) & (rng.random(len(truth)) < 0.15), truth, 0)
+
+    result = assign_detections_to_filaments(
+        detections, geometry, _PIXEL, initial_labels=initial
+    )
+    real = truth > 0
+    assert np.mean(result.labels[real] == truth[real]) >= 0.995
+
+
+def test_filament_without_detections_gets_no_curve_and_no_members():
+    """A seed with nothing under it must not keep the drawing's geometry alive."""
+    from leopard_em.analysis.filament_lattice import assign_detections_to_filaments
+
+    rng = np.random.default_rng(2)
+    geometry = _ring_geometry()
+    tube = _bent_curve((2000.0, 2000.0), 40.0, 3000.0, 60.0)
+    detections = _detections_for({1: tube}, geometry, rng, n_clutter=50)
+    empty = _bent_curve((600.0, 3400.0), 0.0, 800.0, 0.0)
+
+    result = assign_detections_to_filaments(
+        detections, geometry, _PIXEL, seed_curves_px={1: tube, 9: empty}
+    )
+    assert 9 not in result.curves_px
+    assert not np.any(result.labels == 9)
+    real = detections["truth"].to_numpy() > 0
+    assert np.mean(result.labels[real] == 1) >= 0.995
+
+
+def test_assignment_requires_a_seed():
+    from leopard_em.analysis.filament_lattice import assign_detections_to_filaments
+
+    rng = np.random.default_rng(0)
+    detections = _detections_for({1: _bent_curve((0, 0), 0, 500, 0)}, _ring_geometry(), rng)
+    with pytest.raises(ValueError, match="seed"):
+        assign_detections_to_filaments(detections, _ring_geometry(), _PIXEL)

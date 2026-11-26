@@ -536,3 +536,171 @@ def test_count_orientations_shares_answers_between_equal_angles():
     )
     assert len(np.unique(counts[psi_center == 10.0])) == 1
     assert len(np.unique(counts[psi_center == 200.0])) == 1
+
+
+# ------------------------------------------------------------------------------------
+# Layered psi_center: every region covering a pixel, nearest first
+# ------------------------------------------------------------------------------------
+
+
+def _layered_maps():
+    """Two filaments whose bands overlap in the right half of a small frame."""
+    maps = rasterize_rectangle((6, 8), box=(0.0, 0.0, 5.0, 7.0), n_orientations=0)
+    maps.region_id[:] = 1
+    maps.psi_center = np.full((6, 8), 10.0, dtype=np.float32)
+    maps.psi_center_extra = np.zeros((1, 6, 8), dtype=np.float32)
+    maps.region_id_extra = np.zeros((1, 6, 8), dtype=np.int16)
+    maps.psi_center_extra[0, :, 4:] = 40.0
+    maps.region_id_extra[0, :, 4:] = 2
+    maps.regions = [
+        {"region_id": 1, "polarity": "both"},
+        {"region_id": 2, "polarity": "positive"},
+    ]
+    return maps
+
+
+def test_hdf5_roundtrip_psi_center_extra(tmp_path: Path):
+    maps = _layered_maps()
+    path = tmp_path / "layered.h5"
+    write_spatial_constraint_hdf5(str(path), maps)
+    loaded = read_spatial_constraint_hdf5(str(path))
+    np.testing.assert_allclose(loaded.psi_center_extra, maps.psi_center_extra)
+    np.testing.assert_array_equal(loaded.region_id_extra, maps.region_id_extra)
+    assert loaded.n_psi_layers == 2
+
+
+def test_file_without_extra_layers_still_reads_as_one_layer(tmp_path: Path):
+    maps = _layered_maps()
+    maps.psi_center_extra = None
+    maps.region_id_extra = None
+    path = tmp_path / "single.h5"
+    write_spatial_constraint_hdf5(str(path), maps)
+    loaded = read_spatial_constraint_hdf5(str(path))
+    assert loaded.psi_center_extra is None
+    assert loaded.n_psi_layers == 1
+    psi, poles = loaded.stacked_psi_layers()
+    assert psi.shape == (1, 6, 8)
+
+
+def test_extra_layers_follow_the_stats_map_shift():
+    maps = _layered_maps()
+    stats = maps.to_stats_map_coords(half_template_width=1, stats_shape=(4, 6))
+    assert stats.psi_center_extra.shape == (1, 4, 6)
+    # stats (y, x) is micrograph (y + 1, x + 1): the overlap starts at x = 3.
+    assert int(stats.region_id_extra[0, 0, 2]) == 0
+    assert int(stats.region_id_extra[0, 0, 3]) == 2
+    assert stats.psi_center_extra[0, 0, 3] == pytest.approx(40.0)
+
+
+def test_extra_layers_get_their_own_region_polarity():
+    maps = _layered_maps()
+    maps.set_psi_search_box(cone_half_angle_deg=10.0)
+    psi, poles = maps.stacked_psi_layers()
+    assert psi.shape == (2, 6, 8)
+    assert int(poles[0, 0, 0]) == 3  # region 1: both
+    assert int(poles[1, 0, 5]) == 1  # region 2: positive only
+    assert int(poles[1, 0, 0]) == 0  # layer unused where only region 1 covers
+
+
+def _union_count_by_scan(angles, psi_layers, pole_layers, eligible, half_cone):
+    """Brute force: count grid angles any layer admits, pixel by pixel."""
+    from leopard_em.pydantic_models.config.spatial_constraint import (
+        POLE_NEGATIVE,
+        POLE_POSITIVE,
+        circular_abs_diff_deg,
+    )
+
+    phi, theta, psi = angles[:, 0], angles[:, 1], angles[:, 2]
+    in_box = (theta >= 90.0 - half_cone - 1e-3) & (theta <= 90.0 + half_cone + 1e-3)
+    half = half_cone + 1e-3
+    counts = np.zeros(eligible.shape, dtype=np.int32)
+    for value in psi[in_box]:
+        ok = np.zeros(eligible.shape, dtype=bool)
+        for centre, bits in zip(psi_layers, pole_layers):
+            near = circular_abs_diff_deg(value, centre) <= half
+            far = circular_abs_diff_deg(value, (centre + 180.0) % 360.0) <= half
+            ok |= (((bits & POLE_POSITIVE) != 0) & near) | (
+                ((bits & POLE_NEGATIVE) != 0) & far
+            )
+        counts += (ok & (eligible > 0)).astype(np.int32)
+    return counts
+
+
+@pytest.mark.parametrize("half_cone", [5.0, 20.0, 60.0, 100.0])
+def test_union_count_is_exact(half_cone):
+    """The count that feeds the threshold must be the union, neither sum nor nearest."""
+    from leopard_em.pydantic_models.config.spatial_constraint import (
+        count_orientations_from_psi_center,
+    )
+
+    rng = np.random.default_rng(int(half_cone))
+    angles = np.column_stack(
+        [rng.uniform(0, 360, 500), rng.uniform(60, 120, 500), rng.uniform(0, 360, 500)]
+    )
+    shape = (12, 14)
+    eligible = (rng.random(shape) > 0.2).astype(np.uint8)
+    psi_layers = rng.uniform(0, 360, (3, *shape))
+    # Some pixels crossed by near-parallel neighbours, some by distant ones.
+    psi_layers[1] = (psi_layers[0] + rng.choice([5.0, 30.0, 150.0], shape)) % 360.0
+    pole_layers = rng.choice([1, 2, 3], (3, *shape)).astype(np.uint8)
+    pole_layers[1:][rng.random((2, *shape)) < 0.4] = 0  # layers unused here and there
+    pole_layers[:, eligible == 0] = 0
+
+    fast = count_orientations_from_psi_center(
+        angles,
+        psi_center=psi_layers[0],
+        eligible=eligible,
+        pole_mask=pole_layers[0],
+        cone_half_angle_deg=half_cone,
+        psi_center_extra=psi_layers[1:],
+        pole_mask_extra=pole_layers[1:],
+    )
+    reference = _union_count_by_scan(angles, psi_layers, pole_layers, eligible, half_cone)
+    assert np.array_equal(fast, reference)
+
+
+def test_union_count_neither_sums_nor_drops_a_crossing():
+    """Parallel neighbours share their window; a crossing adds a second one."""
+    from leopard_em.pydantic_models.config.spatial_constraint import (
+        count_orientations_from_psi_center,
+    )
+
+    angles = np.column_stack(
+        [np.zeros(360), np.full(360, 90.0), np.arange(0.0, 360.0, 1.0)]
+    )
+    eligible = np.ones((1, 3), dtype=np.uint8)
+    psi = np.array([[0.0, 0.0, 0.0]])
+    poles = np.full((1, 3), 1, dtype=np.uint8)
+    extra_psi = np.array([[[0.0, 0.0, 30.0]]])
+    extra_poles = np.array([[[0, 1, 1]]], dtype=np.uint8)
+    counts = count_orientations_from_psi_center(
+        angles, psi_center=psi, eligible=eligible, pole_mask=poles,
+        cone_half_angle_deg=10.0,
+        psi_center_extra=extra_psi, pole_mask_extra=extra_poles,
+    )
+    # 21 grid angles in one +/-10 window (inclusive), 42 in two disjoint ones.
+    assert counts.tolist() == [[21, 21, 42]]
+
+
+def test_filament_constraint_counts_the_union_from_a_layered_file(tmp_path: Path):
+    maps = _layered_maps()
+    h5_path = tmp_path / "layered.h5"
+    write_spatial_constraint_hdf5(str(h5_path), maps)
+    constraint = FilamentConstraint(
+        cone_half_angle_deg=10.0,
+        spatial_constraint_path=str(h5_path),
+        regions=[
+            {"region_id": 1, "polarity": "both"},
+            {"region_id": 2, "polarity": "positive"},
+        ],
+    )
+    angles = np.column_stack(
+        [np.zeros(360), np.full(360, 90.0), np.arange(0.0, 360.0, 1.0)]
+    )
+    stats = constraint.stats_maps_for_template(
+        image_shape=(6, 8), template_width=1, euler_angles=angles
+    )
+    # Region 1 alone (both poles): 2 x 21. Overlap adds region 2's positive pole.
+    assert int(stats.n_orientations[0, 0]) == 42
+    assert int(stats.n_orientations[0, 5]) == 63
+    assert stats.n_psi_layers == 2

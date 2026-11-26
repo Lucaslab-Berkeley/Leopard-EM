@@ -30,7 +30,10 @@ from leopard_em.backend.process_results import (
     process_correlation_table,
     scale_mip,
 )
-from leopard_em.backend.utils import do_iteration_and_correlation_table_updates
+from leopard_em.backend.utils import (
+    do_iteration_and_correlation_table_updates,
+    sparse_psi_layers,
+)
 
 DEFAULT_STATISTIC_DTYPE = torch.float32
 # Cross-correlation above which a detection is recorded in the CorrelationTable.
@@ -679,9 +682,16 @@ def _core_match_template_single_gpu(
                 f"{tuple(defocus_eligible.shape)} does not match "
                 f"{expected_defocus_shape}."
             )
+    # psi_center / pole_mask are (H, W), or a (K, H, W) stack when regions overlap.
+    # A stack is split here, once: layer 0 stays dense and the rest become the sparse
+    # lists the gate ORs in, so overlaps cost only where they exist.
+    psi_extra_layers = None
     if psi_center is not None:
         psi_center = psi_center.to(device=device, dtype=torch.float32)
-        if tuple(psi_center.shape) != valid_correlation_shape:
+        if (
+            psi_center.ndim not in (2, 3)
+            or tuple(psi_center.shape[-2:]) != valid_correlation_shape
+        ):
             raise ValueError(
                 "psi_center shape "
                 f"{tuple(psi_center.shape)} does not match stats-map shape "
@@ -689,12 +699,19 @@ def _core_match_template_single_gpu(
             )
     if pole_mask is not None:
         pole_mask = pole_mask.to(device=device, dtype=torch.uint8)
-        if tuple(pole_mask.shape) != valid_correlation_shape:
+        if (
+            pole_mask.ndim not in (2, 3)
+            or tuple(pole_mask.shape[-2:]) != valid_correlation_shape
+        ):
             raise ValueError(
                 "pole_mask shape "
                 f"{tuple(pole_mask.shape)} does not match stats-map shape "
                 f"{valid_correlation_shape}."
             )
+    if psi_center is not None and psi_center.ndim == 3:
+        psi_extra_layers = sparse_psi_layers(psi_center, pole_mask)
+        psi_center = psi_center[0].contiguous()
+        pole_mask = None if pole_mask is None else pole_mask[0].contiguous()
     if backend == "zipfft":
         # NOTE: zipFFT expects a pre-transformed, pre-transposed input image FFT
         # Transpose the 'image_dft' along last two dimensions into contiguous layout
@@ -794,6 +811,7 @@ def _core_match_template_single_gpu(
                     psi_theta_center_deg=psi_theta_center_deg,
                     psi_phi_min=psi_phi_min,
                     psi_phi_max=psi_phi_max,
+                    psi_extra_layers=psi_extra_layers,
                 )
 
         except Exception as e:

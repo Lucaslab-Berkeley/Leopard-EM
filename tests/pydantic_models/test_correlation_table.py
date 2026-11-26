@@ -471,3 +471,50 @@ class TestLegacyTables:
                 recovered = CorrelationTable.from_hdf5(path)
         df = recovered.to_detections_dataframe(euler_angles=grid_euler_angles)
         assert df["psi"].tolist() == [0.0, 180.0, 180.0]
+
+
+# ---------------------------------------------------------------------------
+# Recorded search geometry
+# ---------------------------------------------------------------------------
+
+
+class TestRecordedGeometry:
+    """A table must say which pixel size and template box its coordinates assume."""
+
+    def test_geometry_roundtrips(self, minimal_table, tmp_path):
+        from leopard_em.pydantic_models.results.correlation_table import (
+            correlation_table_geometry,
+            detections_from_hdf5,
+        )
+
+        minimal_table.pixel_size = 1.056
+        minimal_table.template_shape = [528, 528, 528]
+        minimal_table.micrograph_shape = [5760, 4092]
+        path = str(tmp_path / "geometry.h5")
+        minimal_table.to_hdf5(path)
+
+        geometry = correlation_table_geometry(path)
+        assert geometry["pixel_size"] == pytest.approx(1.056)
+        assert geometry["template_shape"] == [528, 528, 528]
+        assert geometry["micrograph_shape"] == [5760, 4092]
+        assert geometry["template_half_width"] == 264
+
+        recovered = CorrelationTable.from_hdf5(path)
+        assert recovered.template_half_width == 264
+        assert recovered.pixel_size == pytest.approx(1.056)
+
+        detections = detections_from_hdf5(path)
+        assert detections.attrs["template_half_width"] == 264
+        assert detections.attrs["pixel_size"] == pytest.approx(1.056)
+
+    def test_older_tables_report_unknown_geometry(self, minimal_table, tmp_path):
+        """No geometry is invented for a table that never recorded one."""
+        from leopard_em.pydantic_models.results.correlation_table import (
+            correlation_table_geometry,
+        )
+
+        path = str(tmp_path / "legacy.h5")
+        minimal_table.to_hdf5(path)
+        geometry = correlation_table_geometry(path)
+        assert all(value is None for value in geometry.values())
+        assert CorrelationTable.from_hdf5(path).template_half_width is None

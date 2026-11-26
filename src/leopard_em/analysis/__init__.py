@@ -7,10 +7,13 @@ from .correlation_peaks import (
     peaks_to_match_template_dataframe,
 )
 from .filament_lattice import (
+    FilamentAssignment,
     FilamentAxis,
+    LatticeModelScore,
     LatticeSites,
     PolarityEstimate,
     TemplateLatticeGeometry,
+    assign_detections_to_filaments,
     axis_points_from_peaks,
     estimate_lattice_rise,
     estimate_polarity,
@@ -18,6 +21,7 @@ from .filament_lattice import (
     extract_lattice_sites,
     filament_coordinates,
     fit_filament_axis,
+    score_lattice_model,
 )
 from .inspect_peaks_result import (
     InspectionResult,
@@ -37,12 +41,15 @@ from .zscore_metric import (
 
 __all__ = [
     "CLUSTER_STATISTIC_COLUMNS",
+    "FilamentAssignment",
     "FilamentAxis",
     "InspectionResult",
+    "LatticeModelScore",
     "LatticeSites",
     "MatchTemplatePeaks",
     "PolarityEstimate",
     "TemplateLatticeGeometry",
+    "assign_detections_to_filaments",
     "axis_points_from_peaks",
     "constrained_zscore_cutoff",
     "estimate_lattice_rise",
@@ -60,4 +67,5 @@ __all__ = [
     "match_template_peaks_to_dict",
     "peaks_to_match_template_dataframe",
     "save_inspection_result",
+    "score_lattice_model",
 ]

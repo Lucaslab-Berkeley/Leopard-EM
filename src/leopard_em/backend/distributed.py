@@ -2,6 +2,7 @@
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from functools import partial
 from multiprocessing import Manager, Process
 from typing import Any, Callable, Optional
 
@@ -299,6 +300,28 @@ class TensorShapeDataclass:
     pixel_values_shape: tuple[int]  # (num_Cs,)
 
 
+def _run_then_release(target: Callable, *args: Any, **kwargs: Any) -> None:
+    """Run ``target`` in a worker, then drop the worker's references to its inputs.
+
+    Tensors reach a spawned worker through /dev/shm (the "file_system" sharing
+    strategy), and a shared file is removed only once every process holding it has
+    released it. The Process object keeps the worker's arguments alive to the end,
+    and its tensors were not freed when the worker exited. Each file then stayed in
+    /dev/shm until the parent exited, so a parent that refines many times (one
+    refine per template) piled up ~160 GB and filled /dev/shm.
+    """
+    import gc  # pylint: disable=import-outside-toplevel
+    import multiprocessing  # pylint: disable=import-outside-toplevel
+
+    try:
+        target(*args, **kwargs)
+    finally:
+        process = multiprocessing.current_process()
+        process._args, process._kwargs = (), {}  # pylint: disable=protected-access
+        del args, kwargs
+        gc.collect()
+
+
 def run_multiprocess_jobs(
     target: Callable,
     kwargs_list: list[dict[str, Any]],
@@ -378,7 +401,9 @@ def run_multiprocess_jobs(
 
         # Merge per-process kwargs with common kwargs.
         proc_kwargs = {**extra_kwargs, **kwargs}
-        p = Process(target=target, args=args, kwargs=proc_kwargs)
+        p = Process(
+            target=partial(_run_then_release, target), args=args, kwargs=proc_kwargs
+        )
         processes.append(p)
         p.start()
 
