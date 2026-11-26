@@ -1,0 +1,53 @@
+# GMPCPP frame 0005 (in vitro, 0.9194 A/px, 300 kV), the SVD pipeline's RING at N=13: the expanded13 reference 6dpu_13pf_2rings_flatB (6DPU atoms + lattice, centred, in the rival templates' frame). The 14-PF run's PF competition called this tube 13.
+# Optics: PICASSO (Stage 0, results_ctf/..._optics.yaml) + Leopard's ctf_B_factor 60;
+# defocus planes +/-600 A as configs/match_tm_full_2rings.yaml. Result paths are for a Leopard run.
+micrograph_path: Frames/2025-05-23_14.39.26_25May23_GMPCPP1_26-94_0005_X-1Y+1-0_sum_DW.mrc
+template_volume_path: maps/6dpu_13pf_2rings_flatB_0.9194_bscale0.5.mrc
+computational_config:
+  gpu_ids:
+  - 0
+  - 1
+  - 2
+  - 3
+  num_cpus: 8
+defocus_search_config:
+  enabled: true
+  defocus_max: 600.0
+  defocus_min: -600.0
+  defocus_step: 200.0
+match_template_result:
+  allow_file_overwrite: true
+  correlation_average_path: results_gmpcpp/output_correlation_average_gmpcpp_13pf.mrc
+  correlation_variance_path: results_gmpcpp/output_correlation_variance_gmpcpp_13pf.mrc
+  mip_path: results_gmpcpp/output_mip_gmpcpp_13pf.mrc
+  orientation_phi_path: results_gmpcpp/output_orientation_phi_gmpcpp_13pf.mrc
+  orientation_psi_path: results_gmpcpp/output_orientation_psi_gmpcpp_13pf.mrc
+  orientation_theta_path: results_gmpcpp/output_orientation_theta_gmpcpp_13pf.mrc
+  relative_defocus_path: results_gmpcpp/output_relative_defocus_gmpcpp_13pf.mrc
+  scaled_mip_path: results_gmpcpp/output_scaled_mip_gmpcpp_13pf.mrc
+optics_group:
+  label: micrograph_1
+  amplitude_contrast_ratio: 0.07
+  ctf_B_factor: 60.0
+  astigmatism_angle: 5.100330210812075
+  defocus_u: 8272.14383520186
+  defocus_v: 8081.398969516158
+  phase_shift: 0.0
+  pixel_size: 0.9194
+  spherical_aberration: 2.7
+  voltage: 300.0
+orientation_search_config:
+  base_grid_method: uniform
+  psi_step: 1.5
+  theta_step: 2.5
+preprocessing_filters:
+  bandpass_filter:
+    enabled: false
+    falloff: 0.05
+    high_freq_cutoff: 0.5
+    low_freq_cutoff: 0.0
+  whitening_filter:
+    enabled: true
+    do_power_spectrum: true
+    max_freq: 1.0
+    num_freq_bins: null

@@ -2043,37 +2043,472 @@ def slide_curved_truth(pdf: PdfPages) -> None:
     plt.close(fig)
 
 
+# ---------------------------------------------------------------------------------------
+# Real data: the curved GDP micrograph, and in situ (set1_823)
+# ---------------------------------------------------------------------------------------
+
+# Readouts as the stage logs report them (logs/in_situ_823_stage*.log, STATUS.md); the
+# micrograph panels are plotted from the membership tables on disk.
+GDP_READOUTS = [
+    ("polarity, per stretch", "∞ : 1", "∞ : 1"),
+    ("PF, azimuth harmonic", "13  (1.51×)", "13  (2.84×)"),
+    ("PF, 13 over 14 (paired)", "t = 10.4", "t = 16.2"),
+    ("lattice, compacted over expanded", "t = 8.1", "t = 8.7"),
+    ("rise (refined, block error)", "unresolved", "40.83 ± 0.20 Å"),
+]
+IN_SITU_READOUTS = [
+    ("polarity ψ (worst stretch)", "194°  102:1", "219°  56:1", "42°  38:1", "225°  57:1"),
+    ("PF: harmonic · 13 over 14", "15× · t 11", "20× · t 23", "9× · t 22", "27× · t 19"),
+    ("lattice, neutral pose: C over E", "z 3.7", "z 14.7", "z 7.9", "z 8.7"),
+    ("rise, ring (block error)", "41.19 ± 0.09", "40.50 ± 0.08", "40.77 ± 0.14", "flagged"),
+    ("rise, patch (block error)", "41.20 ± 0.05", "40.53 ± 0.14", "40.75 ± 0.18", "40.83 ± 0.16"),
+    ("REGISTER: α/β, paired patch", "3.6%  t 8.9", "0.1%  t 0.4", "9.9%  t 24.9",
+     "5.2%  t 13.1"),
+]
+FILAMENT_COLOURS = [BLUE, AMBER, GREEN, RED]
+
+
+def micrograph_with_membership(ax, micrograph, membership_csv, binning=8,
+                               min_z=8.0, max_points=40000, arrows=False, size=0.6):
+    """A band-passed, binned micrograph with each filament's axis points in its colour."""
+    from scipy.ndimage import gaussian_filter
+
+    with mrcfile.open(str(micrograph), permissive=True) as handle:
+        image = np.asarray(handle.data, dtype=np.float32)
+    h = image.shape[0] // binning * binning
+    w = image.shape[1] // binning * binning
+    small = image[:h, :w].reshape(h // binning, binning, w // binning, binning).mean((1, 3))
+    small = gaussian_filter(small, 1.2) - gaussian_filter(small, 50)
+    v = 2.2 * small.std()
+    ax.imshow(small, cmap="gray", vmin=-v, vmax=v)
+
+    members = pd.read_csv(membership_csv, usecols=["axis_x_img", "axis_y_img", "filament",
+                                                   "z_score", "psi"])
+    members = members[(members["filament"] > 0) & (members["z_score"] > min_z)]
+    if len(members) > max_points:
+        members = members.sample(max_points, random_state=0)
+    for label in sorted(members["filament"].unique()):
+        mine = members[members["filament"] == label]
+        colour = FILAMENT_COLOURS[(int(label) - 1) % len(FILAMENT_COLOURS)]
+        ax.scatter(mine["axis_x_img"] / binning, mine["axis_y_img"] / binning, s=size,
+                   color=colour, alpha=0.35, lw=0)
+        x, y = mine["axis_x_img"].median() / binning, mine["axis_y_img"].median() / binning
+        ax.text(x, y, str(int(label)), fontsize=13, fontweight="bold", color="white",
+                ha="center", va="center",
+                path_effects=[pe.withStroke(linewidth=3, foreground=colour)])
+        if arrows:
+            # The matched direction of the tube axis in the image is at 180 - psi.
+            psi = np.degrees(np.angle(np.exp(1j * np.radians(mine["psi"])).mean()))
+            angle = np.radians(180.0 - psi)
+            length = 0.09 * small.shape[1]
+            ax.annotate("", xy=(x + 1.7 * length * np.cos(angle),
+                                y + 1.7 * length * np.sin(angle)),
+                        xytext=(x + 0.6 * length * np.cos(angle),
+                                y + 0.6 * length * np.sin(angle)),
+                        arrowprops={"arrowstyle": "-|>", "color": colour, "lw": 2.2})
+    ax.set_xticks([])
+    ax.set_yticks([])
+    return small.shape
+
+
+def readout_table(fig, x0, y0, rows, headers, widths, row_height=0.052, size=11):
+    """Readouts as a plain table: first column labels, then one column per filament."""
+    x = x0
+    for header, width in zip(headers, widths):
+        fig.text(x, y0, header, fontsize=size, fontweight="bold", color=BLUE, va="top")
+        x += width
+    for i, row in enumerate(rows):
+        y = y0 - (i + 1) * row_height
+        x = x0
+        for j, (cell, width) in enumerate(zip(row, widths)):
+            bold = j > 0 and row[0].startswith("REGISTER")
+            fig.text(x, y, cell, fontsize=size, color=INK if j else MUTED, va="top",
+                     fontweight="bold" if bold else "normal")
+            x += width
+
+
+def slide_gdp_real(pdf: PdfPages) -> None:
+    """The real curved GDP micrograph: four readouts, each filament on its own."""
+    fig = slide("A real curved micrograph (GDP)",
+                "Two bent microtubules, one ring search, every readout per filament")
+    ax = fig.add_axes([0.045, 0.13, 0.34, 0.69])
+    shape = micrograph_with_membership(
+        ax, HERE / "Frames" / "GDP_curved_mgraph.mrc",
+        HERE / "results_gdp_curved" / "stage3_membership_gdp_curved_13pf.csv",
+        min_z=6.0, size=2.0)
+    _scale_bar(ax, shape, 100.0, PIXEL_SIZE * 8, "100 nm")
+    ax.set_title("ring detections, coloured by filament", fontsize=11, color=INK,
+                 loc="left")
+
+    readout_table(fig, 0.43, 0.79, GDP_READOUTS,
+                  ["", "filament 1", "filament 2"], [0.25, 0.13, 0.15])
+    fig.text(0.43, 0.43, "Seam / monomer register: NOT detected", fontsize=12.5,
+             fontweight="bold", color=RED, va="top")
+    _body(fig, 0.43, 0.39,
+          "Paired 5-PF patch test, both tubes: 0.9% of score, t = 1.5 (4-ring patch:\n"
+          "1.4%, t = 2.2), against 8.2%, t = 20.5 on the synthetic whose register is\n"
+          "known — about 5x weaker, tracking the lower signal (mean z 7.9 vs 12.7).\n\n"
+          "Both tubes: 13 protofilaments, compacted, one polarity each. The 13-PF\n"
+          "competition is middle-peaked (12 and 14 fall below 13 from either side),\n"
+          "so it is structural, not a template-mass effect.", 0.50, 11)
+    note(fig, "The first run found zero peaks: every config had inherited the GMPCPP "
+              "defocus (8390 Å) and this frame is at 1989 Å, outside the ±600 Å search."
+              "\nStage 0 now reads the CTF estimate and refuses to run without one.")
+    pdf.savefig(fig)
+    plt.close(fig)
+
+
+def slide_overlap(pdf: PdfPages) -> None:
+    """Overlapping filaments: what broke, and the synthetic that validates the fix."""
+    fig = slide("Overlapping filaments — fixed in the search and the analysis",
+                "A synthetic with the in situ layout: three parallel tubes 411 and 463 Å "
+                "apart, a fourth crossing all three")
+    ax = fig.add_axes([0.045, 0.13, 0.30, 0.69])
+    shape = micrograph_with_membership(
+        ax, HERE / "Frames" / "synthetic_bundle_823like.mrc",
+        HERE / "results_bundle" / "stage3_membership_bundle_ring_layered.csv",
+        binning=6, min_z=6.0)
+    _scale_bar(ax, shape, 50.0, PIXEL_SIZE * 6, "50 nm")
+    ax.set_title("membership from the data", fontsize=11, color=INK, loc="left")
+
+    ax2 = fig.add_axes([0.40, 0.46, 0.22, 0.32])
+    old, new = [80.0, 60.0, 80.0, 38.1], [93.3, 60.0, 93.3, 47.6]
+    positions = np.arange(4)
+    ax2.bar(positions - 0.19, old, 0.36, color=LIGHT, edgecolor=MUTED, label="one ψ per pixel")
+    ax2.bar(positions + 0.19, new, 0.36, color=BLUE, label="every covering path")
+    ax2.set_xticks(positions)
+    ax2.set_xticklabels([f"tube {i}" for i in range(1, 5)], fontsize=9.5)
+    ax2.set_ylabel("axis covered at crossings (%)")
+    ax2.set_ylim(0, 105)
+    ax2.legend(frameon=False, fontsize=9, loc="lower center", ncol=2,
+               bbox_to_anchor=(0.5, 1.0))
+    ax2.grid(alpha=0.25, ls=":", axis="y")
+
+    _body(fig, 0.40, 0.37,
+          "SEARCH. Each pixel now keeps every drawn path covering\n"
+          "it; an orientation passes if ANY of them allows it. The\n"
+          "old rule kept the nearest, so at a crossing one tube\n"
+          "rejected the other's real detections. Checked: the old\n"
+          "table is an exact subset of the new one, and all extra\n"
+          "rows sit on multiply-covered pixels.", 0.26, 10.5)
+    _body(fig, 0.665, 0.79,
+          "ANALYSIS. Which tube a detection belongs to\n"
+          "now comes from its OWN predicted axis point and\n"
+          "direction, against curves fitted to the data —\n"
+          "not from the drawn band its box centre falls in.\n\n"
+          "Correct tube, ring:   99.95%  (drawn rule 95.8%)\n"
+          "Correct tube, patch: 99.9%   (drawn rule 98.7%)\n\n"
+          "Fitted curves sit 0.8–4 Å from the true axes;\n"
+          "the drawings were 31–38 Å off.\n\n"
+          "Position separates parallel tubes; direction\n"
+          "separates a crossing, where position cannot.", 0.29, 10.5)
+    note(fig, "Every pixel figure (bands, offsets) now also comes from geometry the "
+              "correlation table records — pixel size, template box —\nnever from "
+              "constants: two early searches used a 512³ map, not 600³.")
+    pdf.savefig(fig)
+    plt.close(fig)
+
+
+def slide_in_situ(pdf: PdfPages) -> None:
+    """set1_823: four microtubules in an unroofed cell, every readout per filament."""
+    fig = slide("In situ: four microtubules in an unroofed cell",
+                "set1_823 · K3, 1.056 Å/px · 2,338 ring peaks, max z 11.9 · "
+                "RIPPLE motion correction, PICASSO CTF")
+    ax = fig.add_axes([0.035, 0.12, 0.25, 0.71])
+    shape = micrograph_with_membership(
+        ax, HERE / "results_in_situ" / "set1_823_Aug09_10.05.20_DW.mrc",
+        HERE / "results_in_situ_823" / "stage3_membership_in_situ_823_13pf.csv",
+        min_z=8.5, arrows=True)
+    _scale_bar(ax, shape, 100.0, 1.056 * 8, "100 nm")
+    ax.set_title("arrows: matched direction", fontsize=10.5, color=INK, loc="left")
+
+    readout_table(fig, 0.31, 0.80, IN_SITU_READOUTS,
+                  ["", "fil 1", "fil 2", "fil 3", "fil 4"],
+                  [0.205, 0.115, 0.115, 0.115, 0.115], row_height=0.050, size=10.5)
+    _body(fig, 0.31, 0.43,
+          "13 PF on every tube; compacted at every pixel size tried (fit: ≈ nominal).\n"
+          "Filament 3 points OPPOSITE to its neighbours 2 and 4: mixed polarity.\n"
+          "The α/β REGISTER is detected on three of four tubes — filament 3 at 9.9%\n"
+          "of score, above the known-register synthetic (8.2%). Controls are null:\n"
+          "two-dimer period t ≤ 1.5, shuffled indices |t| < 1.9.\n"
+          "Ring and patch, separate searches, agree on each tube's rise to 0.03 Å —\n"
+          "but it also varies ALONG tubes (halves 0.4–1.9% apart; 0.09% on a uniform\n"
+          "synthetic), so per-tube differences are not yet established.", 0.64, 10.5)
+    note(fig, "Register: half the even-minus-odd difference of the paired (in − out) "
+              "scores, cancelling the ~0.5 z advantage of the template that found\nthe "
+              "sites. Filament 4's whole-tube ring rise is flagged: 7.9 Å site deviation, "
+              "and it lies outside all its own block values.")
+    pdf.savefig(fig)
+    plt.close(fig)
+
+
+IN_SITU_823 = HERE / "results_in_situ_823"
+CALL_COLOURS = {"C": BLUE, "E": RED, "?": "#9e9e9e"}
+C_REPEAT, E_REPEAT = 40.943, 41.833   # the maps' own repeats (Stage 6b)
+
+
+RING_FIT, PATCH_FIT = 1.047, 1.0561   # fit_pixel_size.py, joint over the four tubes
+
+
+def load_lattice_profile(suffix="neutral"):
+    """Stage 6b's running profiles (patch, and ring for comparison) and an axis point
+    per lattice index.
+
+    The patch sits 86 A off the axis, so its Stage 4 axis points are used (Stage 7's
+    stack is Stage 4's sites row for row, which the neutral stack's labels index); a
+    patch has a site on each protofilament at an index, so they are averaged per index.
+    """
+    tag = "in_situ_823_13pf_patch"
+    profile = pd.read_csv(IN_SITU_823 / f"stage6b_profile_{tag}_{suffix}.csv")
+    ring = pd.read_csv(IN_SITU_823 / f"stage6b_profile_in_situ_823_13pf_{suffix}.csv")
+    stack = pd.read_csv(IN_SITU_823 / f"stack_sites_{tag}_neutral.csv", index_col=0)
+    stack = stack[stack["detected"].astype(bool)]
+    axis = pd.read_csv(IN_SITU_823 / f"stage4_sites_{tag}.csv",
+                       usecols=["axis_x_img", "axis_y_img"])
+    sites = stack[["filament", "axial_index"]].join(axis)
+    sites = sites.groupby(["filament", "axial_index"], as_index=False).mean()
+    return profile, ring, sites
+
+
+def slide_lattice_along(pdf: PdfPages) -> None:
+    """set1_823: which parts of each tube are compacted or expanded (Stage 6b)."""
+    from scipy.ndimage import gaussian_filter
+
+    profile, ring, sites = load_lattice_profile()
+    fig = slide("Compacted or expanded — along each tube",
+                "set1_823 · Stage 6b, 5-PF patch sites at 1.056 Å/px (fitted ≈ nominal) · "
+                "each point: its tube's window (98–139 nm)")
+
+    # Micrograph, cropped to the tubes; each lattice index coloured by its window's call.
+    binning = 8
+    with mrcfile.open(str(HERE / "results_in_situ" / "set1_823_Aug09_10.05.20_DW.mrc"),
+                      permissive=True) as handle:
+        image = np.asarray(handle.data, dtype=np.float32)
+    h, w = (image.shape[0] // binning * binning, image.shape[1] // binning * binning)
+    small = image[:h, :w].reshape(h // binning, binning, w // binning, binning).mean((1, 3))
+    small = gaussian_filter(small, 1.2) - gaussian_filter(small, 50)
+    x_all = sites["axis_x_img"].to_numpy() / binning
+    y_all = sites["axis_y_img"].to_numpy() / binning
+    pad = 45
+    x0, x1 = int(max(x_all.min() - pad, 0)), int(min(x_all.max() + pad, small.shape[1]))
+    y0, y1 = int(max(y_all.min() - pad, 0)), int(min(y_all.max() + pad, small.shape[0]))
+    crop = small[y0:y1, x0:x1]
+    aspect = crop.shape[1] / crop.shape[0]
+    height = 0.66
+    width = height * aspect * 7.5 / 13.33
+    ax = fig.add_axes([0.035, 0.15, width, height])
+    v = 2.2 * crop.std()
+    ax.imshow(crop, cmap="gray", vmin=-v, vmax=v)
+    for label in sorted(sites["filament"].unique()):
+        mine = sites[sites["filament"] == label].sort_values("axial_index")
+        index = mine["axial_index"].to_numpy()
+        xy = mine[["axis_x_img", "axis_y_img"]].to_numpy() / binning
+        kernel = np.ones(7) / 7
+        smooth = np.column_stack([np.convolve(np.pad(xy[:, k], 3, mode="edge"), kernel,
+                                              "valid") for k in (0, 1)])
+        smooth -= (x0, y0)
+        windows = profile[profile["filament"] == label]
+        if windows.empty:
+            continue
+        centres = windows["centre_index"].to_numpy()
+        calls = windows["call"].to_numpy()
+        own = calls[np.abs(index[:, None] - centres[None, :]).argmin(axis=1)]
+        edges = np.flatnonzero(own[1:] != own[:-1]) + 1
+        for start, stop in zip(np.r_[0, edges], np.r_[edges, len(own)]):
+            piece = slice(start, min(stop + 1, len(own)))
+            ax.plot(smooth[piece, 0], smooth[piece, 1], color=CALL_COLOURS[own[start]],
+                    lw=5.5, solid_capstyle="butt",
+                    path_effects=[pe.Stroke(linewidth=7.5, foreground="white"),
+                                  pe.Normal()])
+        start = smooth[0] + (smooth[0] - smooth[min(8, len(smooth) - 1)]) * 0.9
+        ax.text(start[0], start[1], str(int(label)), fontsize=13, fontweight="bold",
+                color="white", ha="center", va="center",
+                path_effects=[pe.withStroke(linewidth=3, foreground=INK)])
+    ax.set_xticks([])
+    ax.set_yticks([])
+    _scale_bar(ax, crop.shape, 100.0, 1.056 * binning, "100 nm")
+    handles = [mpatches.Patch(color=CALL_COLOURS[k], label=text) for k, text in
+               (("C", "compacted"), ("E", "expanded"), ("?", "undecided"))]
+    ax.legend(handles=handles, loc="upper left", fontsize=9.5, frameon=True,
+              framealpha=0.85, handlelength=1.4, borderpad=0.4)
+
+    # The running local rise along each tube: patch, with the ring's for comparison.
+    left = 0.035 + width + 0.045
+    strip_width = 0.225
+    labels = sorted(profile["filament"].unique())
+    gap, top, bottom = 0.016, 0.79, 0.17
+    strip_height = (top - bottom - gap * (len(labels) - 1)) / len(labels)
+    for i, label in enumerate(labels):
+        part = profile[profile["filament"] == label].sort_values("centre_index")
+        other = ring[ring["filament"] == label].sort_values("centre_index")
+        origin = sites.loc[sites["filament"] == label, "axial_index"].min()
+        axs = fig.add_axes([left, top - (i + 1) * strip_height - i * gap,
+                            strip_width, strip_height])
+        x = (part["centre_index"] - origin) * C_REPEAT / 10
+        axs.fill_between(x, part["local_rise"] - 2 * part["rise_se"],
+                         part["local_rise"] + 2 * part["rise_se"], color=LIGHT, lw=0)
+        axs.plot(x, part["local_rise"], color=INK, lw=1.2)
+        axs.scatter(x, part["local_rise"], c=[CALL_COLOURS[c] for c in part["call"]],
+                    s=12, zorder=3)
+        if other["local_rise"].notna().any():
+            axs.plot((other["centre_index"] - origin) * C_REPEAT / 10,
+                     other["local_rise"], color=MUTED, lw=1.0, ls=(0, (2, 1.5)))
+        for value, key in ((C_REPEAT, "C"), (E_REPEAT, "E")):
+            axs.axhline(value, color=CALL_COLOURS[key], lw=0.9, ls="--")
+        axs.axhline((C_REPEAT + E_REPEAT) / 2, color=MUTED, lw=0.6, ls=":")
+        axs.set_ylim(39.75, 42.05)
+        axs.set_xlim(-10, 420)
+        axs.set_yticks([40.5, 41.0, 41.5, 42.0])
+        axs.tick_params(labelsize=8.5)
+        axs.text(0.012, 0.9, f"tube {int(label)}", transform=axs.transAxes,
+                 fontsize=10, fontweight="bold", color=INK, va="top")
+        axs.grid(alpha=0.25, ls=":")
+        if i < len(labels) - 1:
+            axs.set_xticklabels([])
+        if i == 0:
+            axs.set_title("local rise (Å): patch ±2 SE; dotted: ring", fontsize=9.5,
+                          color=INK, loc="left")
+    axs.set_xlabel("position along the tube (nm)", fontsize=9.5)
+
+    text_left = left + strip_width + 0.03
+    _body(fig, text_left, 0.80,
+          "Tubes 2–4: compacted along their\n"
+          "whole length, 0.4–1.5% below the\n"
+          "compacted model. Tube 1 sits between\n"
+          "the lattices; near its far end it rises\n"
+          "to 41.5–41.65 Å and one window reads\n"
+          "expanded — the ring's 41.45 Å there\n"
+          "does not: not established.\n\n"
+          "Every tube's rise wanders 1–1.5%\n"
+          "over ~100 nm, and the ring and patch\n"
+          "— separate searches — trace the\n"
+          "SAME wander (pulls sd 0.6).", 0.25, 10.5)
+    fig.text(text_left, 0.305, "Pixel size: fitted, ≈ nominal", fontsize=11.5,
+             fontweight="bold", color=GREEN, va="top")
+    _body(fig, text_left, 0.265,
+          f"The patch fit gives {PATCH_FIT} Å/px\n"
+          "(synthetic check: +0.01%). Compacted\n"
+          "wins on every tube at every scale\n"
+          "tried, so the tube-level call does not\n"
+          "depend on it (next slide).", 0.25, 10.5)
+    note(fig, "Rise per window: slope of the refined sites along the lattice ÷ its own "
+              "sin θ; window: the shortest the tube's scatter decides (90% power).\n"
+              "Error bars checked on a known-domain synthetic (ring) and ring against "
+              "patch here.")
+    pdf.savefig(fig)
+    plt.close(fig)
+
+
+def pixel_fit_curves(tag, results):
+    """Mean z against trial pixel size, per tube and lattice, from fit_pixel_size.py."""
+    table = pd.read_csv(results / f"pixel_fit_{tag}.csv")
+    sizes = sorted({float(c.split("_", 1)[1]) for c in table.columns
+                    if c[:2] in ("C_", "E_")})
+    curves = {}
+    for label, part in table.groupby("filament"):
+        curves[int(label)] = {key: np.array([part[f"{key}_{p:g}"].mean() for p in sizes])
+                              for key in ("C", "E")}
+    return np.array(sizes), curves
+
+
+def slide_pixel_fit(pdf: PdfPages) -> None:
+    """Fitting the pixel size from the tube's own cross-section."""
+    fig = slide("Fitting the pixel size from the data",
+                "Both lattices rendered over a grid of pixel sizes, every site scored at "
+                "its neutral pose — the CTF kept at the image's own scale")
+    panels = [
+        (f"set1_823, RING: whole cross-section → {RING_FIT} Å/px", "in_situ_823_13pf",
+         IN_SITU_823, 1.056, RING_FIT, None, ["1", "2", "3", "4"]),
+        (f"set1_823, 5-PF PATCH: local protofilament spacing → {PATCH_FIT} Å/px",
+         "in_situ_823_13pf_patch", IN_SITU_823, 1.056, PATCH_FIT, None,
+         ["1", "2", "3", "4"]),
+    ]
+    for row, (title, tag, results, nominal, joint, truth, names) in enumerate(panels):
+        sizes, curves = pixel_fit_curves(tag, results)
+        y0 = 0.525 - row * 0.355
+        fig.text(0.045, y0 + 0.27, title, fontsize=12, fontweight="bold", color=BLUE)
+        for i, label in enumerate(sorted(curves)):
+            ax = fig.add_axes([0.045 + i * 0.155, y0, 0.13, 0.225])
+            for key in ("C", "E"):
+                ax.plot(sizes, curves[label][key], "o-", ms=3, lw=1.4,
+                        color=CALL_COLOURS[key])
+            ax.axvline(nominal, color=MUTED, lw=0.8, ls="--")
+            ax.axvline(joint, color=GREEN, lw=1.3)
+            if truth:
+                ax.axvline(truth, color=AMBER, lw=1.0, ls="-.")
+            ax.set_title(f"tube {names[i]}", fontsize=9.5, loc="left")
+            ax.tick_params(labelsize=8)
+            ax.grid(alpha=0.25, ls=":")
+            if i == 0:
+                ax.set_ylabel("mean z", fontsize=9)
+            if row == 1:
+                ax.set_xlabel("template pixel size (Å)", fontsize=9)
+    handles = [plt.Line2D([], [], color=CALL_COLOURS["C"], marker="o", ms=3,
+                          label="compacted"),
+               plt.Line2D([], [], color=CALL_COLOURS["E"], marker="o", ms=3,
+                          label="expanded"),
+               plt.Line2D([], [], color=MUTED, ls="--", label="nominal"),
+               plt.Line2D([], [], color=GREEN, label="joint fit")]
+    fig.legend(handles=handles, loc="upper left", bbox_to_anchor=(0.045, 0.856),
+               ncol=4, frameon=False, fontsize=9.5)
+    _body(fig, 0.685, 0.79,
+          "WHY IT WORKS. A wrong pixel size\n"
+          "stretches the axial repeat — which\n"
+          "alone looks like compaction — but also\n"
+          "the protofilament spacing and radius,\n"
+          "which compaction barely changes. So\n"
+          "the wrong lattice peaks LOWER.\n\n"
+          "CHECKED on the known-domain synthetic\n"
+          "(truth 0.9194): ring 0.9202 (+0.09%),\n"
+          "patch 0.9195 (+0.01%); pure tubes pick\n"
+          "their own lattice.\n\n"
+          "ON 823 THE TWO DISAGREE BY 0.9% —\n"
+          "impossible on the synthetic's round,\n"
+          "model-exact tubes. The ring reads the\n"
+          "whole projected width: a tube slightly\n"
+          "flattened on the support looks wider.\n"
+          "The patch's local spacing does not.", 0.28, 10.5)
+    fig.text(0.685, 0.228, "What stands", fontsize=11.5, fontweight="bold",
+             color=GREEN, va="top")
+    _body(fig, 0.685, 0.19,
+          "Pixel size ≈ nominal (patch). Compacted\n"
+          "wins on every tube at every scale, in\n"
+          "both (margins 0.35–1.5 z).", 0.28, 10.5)
+    note(fig, "Only the object is rescaled; the CTF stays at the image's scale. The "
+              "compacted-minus-expanded gap grows at smaller pixel sizes by itself (expanded "
+              "\nwants a larger one for its longer repeat), so a stronger competition at a "
+              "trial size is not evidence for it.")
+    pdf.savefig(fig)
+    plt.close(fig)
+
+
 def slide_next(pdf: PdfPages) -> None:
-    """The two things worth doing next."""
-    fig = slide("Where to go next", "Two questions, both about whether these "
-                                    "measurements survive contact with real data")
+    """What the in situ test leaves open."""
+    fig = slide("Where to go next", "The in situ test worked; three questions it opens")
 
     items = [
-        ("1", "Test on in-situ-like data, with semi ground truth", GREEN,
-         "Everything here rests on one filament in one clean micrograph. Lattice "
-         "spacing, protofilament\n"
-         "number and the monomer register all have to be shown to work where the "
-         "specimen is crowded\n"
-         "and the contrast is worse.\n\n"
-         "Semi ground truth is what makes it a TEST rather than an application: a "
-         "specimen whose answer\n"
-         "is independently known, so a wrong answer shows as wrong. Agreement between "
-         "two of our own\n"
-         "methods is not evidence — they share the templates, the axis fit and the "
-         "assumptions."),
-        ("2", "Find the spatial resolution of the lattice-spacing measurement", BLUE,
-         "The spacing is currently ONE number for a whole filament: 41.864 Å, 0.27% "
-         "from expanded.\n"
-         "The question that matters is whether it is the same number everywhere along "
-         "the tube.\n\n"
-         "Compaction is expected to vary — a GTP cap, a lattice defect or a binding "
-         "partner would each\n"
-         "show as a local change. So what to measure is not the spacing but the LENGTH "
-         "SCALE over\n"
-         "which it can be resolved: how short a stretch of tube still separates expanded "
-         "from compacted.\n"
-         "That is a precision-against-track-length curve, and it turns one number into a "
-         "profile."),
+        ("1", "Why do in situ rises wander, and sit below the model?", GREEN,
+         "Every tube's rise wanders 1–1.5% over ~100 nm, identically in two separate "
+         "searches; tubes 2–4 sit 0.4–1.5%\n"
+         "below the compacted model at the fitted (≈ nominal) pixel size; and the ring "
+         "reads the tubes ~0.9% wider\n"
+         "than the model. Real lattice variation, flattening on the support, or image "
+         "distortion: a flattened-tube\n"
+         "template, tubes at other angles, and one tube with a different motion model "
+         "separate them."),
+        ("2", "The register is readable — locate the seam", BLUE,
+         "Three of four tubes show α/β discrimination. Resolved by protofilament, the "
+         "register should flip\n"
+         "across the seam, which would place it. Also: why filament 2 (the most sites) "
+         "reads nothing, and\n"
+         "re-test the 3-PF patch, which was scored at the 5-PF patch's box centres — up "
+         "to 47 Å off."),
+        ("3", "More than one micrograph", AMBER,
+         "All 26 movies are motion-corrected and CTF-estimated. The pipeline now runs "
+         "Stages 3–7 unattended\n"
+         "once a search lands, so a population — PF number, lattice, polarity and "
+         "register per tube — is\n"
+         "a matter of drawing paths and GPU time."),
     ]
 
     y = 0.775
@@ -2084,13 +2519,13 @@ def slide_next(pdf: PdfPages) -> None:
                  color="white", ha="center", va="center", zorder=4)
         fig.text(0.105, y, title, fontsize=15, fontweight="bold", color=colour,
                  va="top")
-        fig.text(0.105, y - 0.058, body, fontsize=11.5, color=INK, va="top",
+        fig.text(0.105, y - 0.055, body, fontsize=11.5, color=INK, va="top",
                  linespacing=1.6)
-        y -= 0.345
+        y -= 0.235
 
-    note(fig, "Both are cheaper than more model building. The first needs a specimen, "
-              "not a method; the second needs only the analysis already written, run on "
-              "sub-sections of the track.")
+    note(fig, "Each stage was checked on data with a known answer before use: a bundle "
+              "synthetic for membership and the overlap gate,\nGDP for Stages 3–6, and "
+              "the curved synthetic for the register.")
     pdf.savefig(fig)
     plt.close(fig)
 
@@ -2130,6 +2565,11 @@ def main() -> None:
             slide_seam_register,
             slide_curved_problem,
             slide_curved_truth,
+            slide_gdp_real,
+            slide_overlap,
+            slide_in_situ,
+            slide_lattice_along,
+            slide_pixel_fit,
             slide_next,
         ]
         for make in slides:

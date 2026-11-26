@@ -1,0 +1,50 @@
+micrograph_path: results_in_situ/set1_823_Aug09_10.05.20_DW.mrc
+template_volume_path: maps/6dpu_atoms_6dpv_lattice_13pf_patch5_2rings_flatB_1.056_bscale0.5.mrc
+computational_config:
+  gpu_ids:
+  - 0
+  - 1
+  - 2
+  - 3
+  num_cpus: 8
+defocus_search_config:
+  enabled: true
+  defocus_min: -800.0
+  defocus_max: 800.0
+  defocus_step: 200.0
+match_template_result:
+  allow_file_overwrite: true
+  correlation_average_path: results_in_situ_823/output_correlation_average_in_situ_823_13pf_patch.mrc
+  correlation_variance_path: results_in_situ_823/output_correlation_variance_in_situ_823_13pf_patch.mrc
+  mip_path: results_in_situ_823/output_mip_in_situ_823_13pf_patch.mrc
+  orientation_phi_path: results_in_situ_823/output_orientation_phi_in_situ_823_13pf_patch.mrc
+  orientation_psi_path: results_in_situ_823/output_orientation_psi_in_situ_823_13pf_patch.mrc
+  orientation_theta_path: results_in_situ_823/output_orientation_theta_in_situ_823_13pf_patch.mrc
+  relative_defocus_path: results_in_situ_823/output_relative_defocus_in_situ_823_13pf_patch.mrc
+  scaled_mip_path: results_in_situ_823/output_scaled_mip_in_situ_823_13pf_patch.mrc
+optics_group:
+  label: set1_823_Aug09_10.05.20
+  amplitude_contrast_ratio: 0.07
+  ctf_B_factor: 60.0
+  astigmatism_angle: -82.5027019280411
+  defocus_u: 9855.273540597409
+  defocus_v: 9806.006376165897
+  phase_shift: 0.0
+  pixel_size: 1.056
+  spherical_aberration: 2.7
+  voltage: 300.0
+orientation_search_config:
+  base_grid_method: uniform
+  psi_step: 1.5
+  theta_step: 2.5
+preprocessing_filters:
+  bandpass_filter:
+    enabled: false
+    falloff: 0.05
+    high_freq_cutoff: 0.5
+    low_freq_cutoff: 0.0
+  whitening_filter:
+    enabled: true
+    do_power_spectrum: true
+    max_freq: 1.0
+    num_freq_bins: null

@@ -1,0 +1,18 @@
+{
+  "source_tracks": "/home/jdickerson/git/LucasLab/Leopard-EM/MT_tests/results_autotrace_svd_fix/gmpcpp_centred.paths.json",
+  "micrograph": "/home/jdickerson/git/LucasLab/Leopard-EM/MT_tests/Frames/2025-05-23_14.39.26_25May23_GMPCPP1_26-94_0005_X-1Y+1-0_sum_DW.mrc",
+  "kept": [
+    1
+  ],
+  "joined": [],
+  "parts": [],
+  "extended_to_edge": true,
+  "dropped": [],
+  "paths": [
+    {
+      "path": 1,
+      "from_tracks": "1",
+      "length_nm": 381.0112728425016
+    }
+  ]
+}

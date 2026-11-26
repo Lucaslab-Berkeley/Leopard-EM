@@ -236,8 +236,18 @@ def build(
     n_rings: int,
     flat_b: float | None,
     protofilament_subset: list[int] | None = None,
+    monomer_shift: int = 0,
 ) -> gemmi.Structure:
     """Place one model's monomers on another's lattice, then symmetrise to a tube.
+
+    ``monomer_shift`` slides the alpha/beta assignment along the protofilament by that
+    many monomers, which is how a ONE-MONOMER-OUT-OF-REGISTER competitor is made. It
+    shifts the CHAIN ORDER and the STEP ORDER together, and both are necessary: shifting
+    only the chains leaves alpha followed by a beta-alpha step, so the competitor is a
+    broken model and would lose the comparison for being wrong rather than for being out
+    of register. Shifted by one, the template is the same valid tube with its dimer
+    boundaries moved by a monomer -- identical mass and power, so a paired competition
+    between the two isolates alpha/beta discrimination and nothing else.
 
     ``protofilament_subset`` keeps only those protofilament copies, which is how a
     PATCH template is made: a few adjacent protofilaments rather than the closed
@@ -252,14 +262,20 @@ def build(
     radial_shift = lattice.get("radial_shift_a", 0.0)
 
     # Idealised axial position of each monomer in the column, relative to the first.
-    offsets = [0.0, steps["beta_alpha"], steps["beta_alpha"] + steps["alpha_beta"]]
-    offsets.append(offsets[2] + steps["beta_alpha"])
+    # The step CYCLE rotates with the monomer shift so each step still matches the pair
+    # of monomers it separates -- an alpha is always followed by the alpha-beta step.
+    cycle = [steps["beta_alpha"], steps["alpha_beta"]]
+    if monomer_shift % 2:
+        cycle = cycle[::-1]
+    column = COLUMN[monomer_shift % 4:] + COLUMN[:monomer_shift % 4]
+    offsets = [0.0, cycle[0], cycle[0] + cycle[1]]
+    offsets.append(offsets[2] + cycle[0])
     for ring in range(1, n_rings // 2 if n_rings > 2 else 0):
         offsets += [o + ring * 2 * steps["dimer"] for o in offsets[:4]]
 
     # Each source chain, in the canonical frame, shifted onto its idealised height.
     sources = []
-    for name, target_h in zip(COLUMN * (len(offsets) // 4), offsets):
+    for name, target_h in zip(column * (len(offsets) // 4), offsets):
         chain = atom_model[name]
         current = float((atom_rot @ chain_centroid(chain, keep[name]) + atom_trans)[2])
         sources.append((chain, target_h - current))
@@ -356,6 +372,9 @@ def main() -> None:
     # these under models/, and defaulting to cwd silently scatters the PDBs (and
     # re-downloads the depositions) wherever the builder happened to be invoked from.
     # build_patch_template.py and build_seam_controls.py already default this way.
+    parser.add_argument("--monomer-shift", type=int, default=0,
+                        help="slide the alpha/beta assignment by this many monomers; "
+                             "1 builds the one-monomer-out-of-register competitor")
     parser.add_argument("--outdir", type=pathlib.Path,
                         default=pathlib.Path(__file__).resolve().parent)
     parser.add_argument(
@@ -440,12 +459,14 @@ def main() -> None:
                 keep,
                 args.rings,
                 flat_b,
+                monomer_shift=args.monomer_shift,
             )
+            shift_tag = f"_shift{args.monomer_shift}" if args.monomer_shift else ""
             name = (
-                f"{source}_{n_pf}pf_{args.rings}rings_flatB.pdb"
+                f"{source}_{n_pf}pf_{args.rings}rings_flatB{shift_tag}.pdb"
                 if lattice_source == source
                 else f"{source}_atoms_{lattice_source}_lattice_{n_pf}pf_"
-                     f"{args.rings}rings_flatB.pdb"
+                     f"{args.rings}rings_flatB{shift_tag}.pdb"
             )
             structure.write_pdb(str(args.outdir / name))
             n_atoms = sum(len(r) for c in structure[0] for r in c)

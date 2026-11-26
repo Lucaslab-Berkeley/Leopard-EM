@@ -1,0 +1,36 @@
+cone_half_angle_deg: 20
+theta_center_deg: 90
+phi_min: 0
+phi_max: 360
+psi_step: 1.5
+theta_step: 2.5
+base_grid_method: "uniform"
+micrograph_path: "/home/jdickerson/git/LucasLab/Leopard-EM/MT_tests/Frames/GDP_curved_mgraph.mrc"
+spatial_constraint_path: "/home/jdickerson/git/LucasLab/Leopard-EM/MT_tests/configs/filament_constraint_gdp_autotrace.h5"
+regions:
+  - region_id: 1
+    polarity: both
+  - region_id: 2
+    polarity: both
+  - region_id: 3
+    polarity: both
+  - region_id: 4
+    polarity: both
+  - region_id: 5
+    polarity: both
+  - region_id: 6
+    polarity: both
+  - region_id: 7
+    polarity: both
+  - region_id: 8
+    polarity: both
+  - region_id: 9
+    polarity: both
+  - region_id: 10
+    polarity: both
+  - region_id: 11
+    polarity: both
+  - region_id: 12
+    polarity: both
+  - region_id: 13
+    polarity: both

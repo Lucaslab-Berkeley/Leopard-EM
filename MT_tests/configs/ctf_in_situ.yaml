@@ -1,0 +1,83 @@
+# PICASSO CTF estimation on the RIPPLE dose-weighted sums of the in situ movies.
+#
+# The knobs follow PICASSO's own RECOMMENDED_CTF_ESTIMATE.md for untilted 300 kV
+# movies, which is the route that matched CTFFind5 on their test set: 1D defocus,
+# then 2D defocus (astigmatism + a gentle spatial field) as THE reported answer,
+# then thickness on its own with the 2D defocus frozen.
+#
+# Two things are specific to this set:
+#
+#   pixel_spacing_angstroms  1.056 -- the mdoc's 0.528 A super-resolution pixel times
+#                            the super_resolution_factor of 2 that RIPPLE applied when
+#                            Fourier-cropping the sums. This is the microscope's own
+#                            number at 81,000x, NOT the 0.9194 A calibrated for the
+#                            in vitro set, which was a different magnification.
+#
+#   thickness_range_angstroms  these are unroofed cells, not thin ice over a hole, so
+#                            the default 300-4000 A upper bound may well be hit. If
+#                            thickness_angstroms comes back pinned at 4000 in the
+#                            metrics CSV, that is the grid railing rather than a
+#                            measurement, and the defocus is still fine -- thickness
+#                            is fit separately with the defocus already frozen.
+
+input_config:
+  image_path: null
+  images_directory: "/home/jdickerson/git/LucasLab/Leopard-EM/MT_tests/results_in_situ"
+  images_pattern: "*_DW.mrc"
+
+output_config:
+  output_directory: "/home/jdickerson/git/LucasLab/Leopard-EM/MT_tests/results_ctf_in_situ"
+  allow_file_overwrite: true
+  output_plots: true
+  save_debug_arrays: false
+  optics_csv_filename: "ctf_estimate_optics.csv"
+  metrics_csv_filename: "ctf_estimate_metrics.csv"
+
+computational_config:
+  gpu_ids:
+    - 0
+    - 1
+    - 2
+    - 3
+  images_per_device: null
+  cpu_threads_per_worker: 1
+
+optical_config:
+  pixel_spacing_angstroms: 1.056
+  voltage_kev: 300.0
+  spherical_aberration_mm: 2.7
+  amplitude_contrast_fraction: 0.07
+  target_pixel_spacing_angstroms: 1.4
+
+fitting_config:
+  defocus_grid_resolution: [1, 3, 3]
+  frequency_fit_range_angstroms: [30.0, 4.0]
+  defocus_range_microns: [0.0, 5.0]
+  patch_sidelength: 512
+  optimize_astigmatism: true
+  defocus_model: "grid"
+  optimize_phase_shift: false
+  optimize_envelope_1d: false
+  n_iterations_2d: 100
+  refine_steps_1d: 40
+  early_stopping: true
+  early_stopping_patience: 5
+  early_stopping_window_size: 3
+  early_stopping_tolerance: 1.0e-4
+
+thickness_config:
+  refine_dim: "thickness"
+  use_tilt_corrected_ps: true
+  use_equiphase: true
+  frequency_fit_range_angstroms: [30.0, 4.0]
+  thickness_range_angstroms: [300.0, 4000.0]
+  thickness_step_angstroms: 100.0
+  n_iterations: 100
+  defocus_lr: 0.01
+  thickness_lr: 50.0
+  early_stopping: true
+  early_stopping_patience: 5
+  early_stopping_window_size: 3
+  early_stopping_tolerance: 1.0e-4
+
+laser_config: null

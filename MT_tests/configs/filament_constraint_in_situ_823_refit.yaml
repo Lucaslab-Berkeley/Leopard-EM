@@ -1,0 +1,18 @@
+cone_half_angle_deg: 17.6
+theta_center_deg: 92.4454
+phi_min: 0
+phi_max: 360
+psi_step: 1.5
+theta_step: 2.5
+base_grid_method: "uniform"
+micrograph_path: "/home/jdickerson/git/LucasLab/Leopard-EM/MT_tests/results_in_situ/set1_823_Aug09_10.05.20_DW.mrc"
+spatial_constraint_path: "/home/jdickerson/git/LucasLab/Leopard-EM/MT_tests/configs/filament_constraint_in_situ_823_refit.h5"
+regions:
+  - region_id: 1
+    polarity: negative
+  - region_id: 2
+    polarity: negative
+  - region_id: 3
+    polarity: positive
+  - region_id: 4
+    polarity: negative

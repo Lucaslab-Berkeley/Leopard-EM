@@ -10,6 +10,7 @@ Writes a particle stack for the clean sites, then refines it.
 """
 
 import argparse
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -24,12 +25,16 @@ from leopard_em.pydantic_models.managers import RefineTemplateManager
 from leopard_em.pydantic_models.results.correlation_table import detections_from_hdf5
 
 HERE = Path(__file__).resolve().parent.parent
-PIXEL_SIZE = 0.9194
-TEMPLATE_HALF_WIDTH = 300  # maps are 600^3, and pos_*_img is the map frame plus this
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from frame_geometry import LEGACY_PIXEL_SIZE, frame_geometry  # noqa: E402
 
 TABLE = "results_full/output_correlation_table_patch4_full.h5"
 GEOMETRY = "models/6dpu_4_patches_aligned_zero.pdb"
-TEMPLATE = "maps/GMPCPP_4patches_0.9194_bscale0.5.mrc"
+TEMPLATE = f"maps/GMPCPP_4patches_{LEGACY_PIXEL_SIZE}_bscale0.5.mrc"
+# Geometry of TABLE; the template map is consulted only because the table predates
+# recorded geometry.
+FRAME = frame_geometry(HERE / TABLE, legacy_template=HERE / TEMPLATE,
+                       legacy_pixel_size=LEGACY_PIXEL_SIZE)
 MICROGRAPH = "Frames/2025-05-23_14.39.26_25May23_GMPCPP1_26-94_0005_X-1Y+1-0_sum_DW.mrc"
 
 SEARCH_OUTPUTS = {
@@ -49,8 +54,8 @@ OPTICS = {
     "defocus_u": 8390.503906,
     "defocus_v": 8035.022461,
     "astigmatism_angle": -0.864719,
-    "pixel_size": PIXEL_SIZE,
-    "refined_pixel_size": PIXEL_SIZE,
+    "pixel_size": FRAME.pixel_size,
+    "refined_pixel_size": FRAME.pixel_size,
     "voltage": 300.0,
     "spherical_aberration": 2.7,
     "amplitude_contrast_ratio": 0.07,
@@ -66,7 +71,7 @@ def clean_sites(min_z: float, bootstrap: float) -> pd.DataFrame:
         str(HERE / TABLE), min_z_score=min_z
     ).reset_index(drop=True)
     sites = extract_lattice_sites(
-        detections, geometry, PIXEL_SIZE, bootstrap_score_threshold=bootstrap
+        detections, geometry, FRAME.pixel_size, bootstrap_score_threshold=bootstrap
     )
     clean = detections.iloc[np.asarray(sites.detection_index)].reset_index(drop=True)
     print(
@@ -94,10 +99,10 @@ def particle_stack(clean: pd.DataFrame) -> pd.DataFrame:
             "relative_defocus": clean["relative_defocus"].to_numpy(),
         }
     )
-    stack["pos_x_img"] = stack["pos_x"] + TEMPLATE_HALF_WIDTH
-    stack["pos_y_img"] = stack["pos_y"] + TEMPLATE_HALF_WIDTH
-    stack["pos_x_img_angstrom"] = stack["pos_x_img"] * PIXEL_SIZE
-    stack["pos_y_img_angstrom"] = stack["pos_y_img"] * PIXEL_SIZE
+    stack["pos_x_img"] = stack["pos_x"] + FRAME.half_width
+    stack["pos_y_img"] = stack["pos_y"] + FRAME.half_width
+    stack["pos_x_img_angstrom"] = stack["pos_x_img"] * FRAME.pixel_size
+    stack["pos_y_img_angstrom"] = stack["pos_y_img"] * FRAME.pixel_size
     for key, value in OPTICS.items():
         stack[key] = value
     for key in ("even_zernikes", "odd_zernikes", "mag_matrix"):

@@ -1,0 +1,70 @@
+# PICASSO CTF estimation on the RIPPLE dose-weighted sums of the 16Sep2026 kinesin +
+# GMPCPP movies (Talos Arctica). Same fitting route as configs/ctf_in_situ.yaml (1D,
+# then 2D defocus as THE answer, then thickness with the defocus frozen); what differs:
+#
+#   pixel_spacing_angstroms  1.13 -- the mdoc's 0.565 A super-resolution pixel times the
+#                            super_resolution_factor of 2 RIPPLE applied. Nominal, not
+#                            calibrated (fit_pixel_size.py can check it later).
+#   voltage_kev              200 -- Talos Arctica, not the Krios's 300.
+#   spherical_aberration_mm  2.7 -- Arctica X-FEG objective.
+#   thickness_range          100-2000 A -- thin in vitro ice, not cells.
+#   gpu_ids                  [3] -- the only free GPU.
+
+input_config:
+  image_path: null
+  images_directory: "/home/jdickerson/git/LucasLab/Leopard-EM/MT_tests/results_kinesin"
+  images_pattern: "*_DW.mrc"
+
+output_config:
+  output_directory: "/home/jdickerson/git/LucasLab/Leopard-EM/MT_tests/results_ctf_kinesin"
+  allow_file_overwrite: true
+  output_plots: true
+  save_debug_arrays: false
+  optics_csv_filename: "ctf_estimate_optics.csv"
+  metrics_csv_filename: "ctf_estimate_metrics.csv"
+
+computational_config:
+  gpu_ids:
+    - 3
+  images_per_device: null
+  cpu_threads_per_worker: 1
+
+optical_config:
+  pixel_spacing_angstroms: 1.13
+  voltage_kev: 200.0
+  spherical_aberration_mm: 2.7
+  amplitude_contrast_fraction: 0.07
+  target_pixel_spacing_angstroms: 1.4
+
+fitting_config:
+  defocus_grid_resolution: [1, 3, 3]
+  frequency_fit_range_angstroms: [30.0, 4.0]
+  defocus_range_microns: [0.0, 5.0]
+  patch_sidelength: 512
+  optimize_astigmatism: true
+  defocus_model: "grid"
+  optimize_phase_shift: false
+  optimize_envelope_1d: false
+  n_iterations_2d: 100
+  refine_steps_1d: 40
+  early_stopping: true
+  early_stopping_patience: 5
+  early_stopping_window_size: 3
+  early_stopping_tolerance: 1.0e-4
+
+thickness_config:
+  refine_dim: "thickness"
+  use_tilt_corrected_ps: true
+  use_equiphase: true
+  frequency_fit_range_angstroms: [30.0, 4.0]
+  thickness_range_angstroms: [100.0, 2000.0]
+  thickness_step_angstroms: 100.0
+  n_iterations: 100
+  defocus_lr: 0.01
+  thickness_lr: 50.0
+  early_stopping: true
+  early_stopping_patience: 5
+  early_stopping_window_size: 3
+  early_stopping_tolerance: 1.0e-4
+
+laser_config: null

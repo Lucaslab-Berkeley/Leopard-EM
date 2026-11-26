@@ -1,0 +1,70 @@
+# RIPPLE motion correction for the 16Sep2026 kinesin + GMPCPP movies (Talos Arctica).
+#
+# Run with run_scripts/run_ripple_in_situ.py, which overwrites the per-movie parts of
+# movie_config (movie_path, pixel_size, voltage, fluence) from each movie's .mdoc. Each
+# of the two directories carries its own SerialEM gain, passed with --gain.
+#
+# Checked on the raw frames before use:
+#   * K3 CDS super-resolution, uint8, 11520 x 8184, 50 frames, RotationAndFlip 0.
+#   * Gain (SuperCDSRef_*.dm4): multiplicative, median 0.999, applied AS STORED -- it
+#     flattens the column fixed pattern 7.8% -> 0.58%, and correlates best with the raw
+#     sum's pixel pattern (0.299 vs 0.255-0.262 for any flip or rotation).
+#   * Dose: ExposureDose is 0 in every mdoc. The frames hold 0.89-0.93 counts/A^2/frame
+#     (45-46 over the exposure), consistent with the 50 e-/A^2 collected once detector
+#     losses are allowed for, so 1.0 e-/A^2/frame.
+#
+# mdoc PixelSpacing 0.565 A is the SUPER-RESOLUTION pixel; super_resolution_factor 2
+# Fourier-crops the corrected movie, so the sums land at 1.13 A/px (5760 x 4092).
+
+computational_config:
+  gpu_id: 3                 # only GPU 3 is free
+  keep_movie_on_cpu: true   # 50 x 8184 x 11520 float32 = 18.8 GB; stream it
+
+movie_config:
+  movie_path: null          # set per movie
+  pixel_size: 0.565         # super-resolution pixel, from the mdoc
+  super_resolution_factor: 2  # -> 1.13 A/px sums
+  fluence: 50.0             # 50 frames x 1 e-/A^2
+  fluence_per_frame: 1.0
+  pre_exposure: 0.0
+  voltage: 200.0            # Talos Arctica; the mdoc says the same
+  gain_path: null           # per directory, --gain
+  dark_path: null
+  gain_flip: 0
+  gain_rot: 0
+  multiply_gain: true
+
+output_config:
+  allow_file_overwrite: true
+  dw_sum_output_path: null              # set per movie
+  non_dw_sum_output_path: null
+  deformation_field_output_path: null   # set per movie
+  rendered_movie_output_path: null
+  motion_corrected_movie_output_path: null
+  loss_trajectories_output_path: null
+
+alignment_config:
+  # 4 x 4 spatial control points, and only 10 TEMPORAL ones (run with --time-points 10;
+  # the runner otherwise sets one per frame). With the per-frame cross-correlation
+  # pre-pass and one point per frame, 7 of the first 15 movies "travelled" 620-1350 A:
+  # on thin ice at ~1 e-/A^2/frame a single frame's correlation peak is often noise, a
+  # few frames were seeded hundreds of pixels off, and the local optimiser never came
+  # back -- the sums smeared and two CTF fits failed. Measured on the raw frames, those
+  # movies drift 0-23 A. Starting from zero with 10 time points brings them to 8-14 A
+  # (and leaves a well-behaved movie unchanged: 7.7 -> 6.5 A, same final loss).
+  deformation_field_resolution: [10, 4, 4]
+  deformation_field_path: null
+  use_xc_prepass: false
+  max_iterations: 100
+  patch_shape: [1024, 1024]
+  grid_type: "catmull_rom"
+  loss_type: "ncc"
+  optimizer_type: "adam"
+  learning_rate: 0.2
+  b_factor: 500.0
+  frequency_range: [300.0, 10.0]
+  skip_movie_preparation: false
+  early_stopping: true
+  early_stopping_patience: 5
+  early_stopping_window_size: 3
+  early_stopping_tolerance: 1.0e-5

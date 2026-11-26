@@ -1,0 +1,48 @@
+template_volume_path: maps/6dpu_14pf_2rings_flatB_kin3j8x_motorsavg_1.13_bscale0.5_nb61.18.mrc
+particle_stack:
+  df_path: results_kinesin_2_0031/kinesin_background_kinesin_2_0031_14pf.csv
+  extracted_box_size:
+  - 488
+  - 488
+  original_template_size:
+  - 488
+  - 488
+defocus_refinement_config:
+  enabled: false
+  defocus_min: -100.0
+  defocus_max: 100.0
+  defocus_step: 50.0
+pixel_size_refinement_config:
+  enabled: false
+  pixel_size_min: -0.01
+  pixel_size_max: 0.01
+  pixel_size_step: 0.01
+orientation_refinement_config:
+  enabled: false
+  phi_step_coarse: 2.5
+  phi_step_fine: 0.4
+  theta_step_coarse: 3.5
+  theta_step_fine: 0.4
+  psi_step_coarse: 2.5
+  psi_step_fine: 0.4
+  base_grid_method: uniform
+preprocessing_filters:
+  whitening_filter:
+    enabled: true
+    do_power_spectrum: true
+    max_freq: 1.0
+  bandpass_filter:
+    enabled: true
+    low_freq_cutoff: 0.0
+    high_freq_cutoff: 0.03766666666666666
+    falloff: 0.01
+computational_config:
+  gpu_ids:
+  - 3
+  num_cpus: 8
+movie_config:
+  enabled: false
+  movie_path: ''
+  deformation_field_path: ''
+  pre_exposure: 0.0
+  fluence_per_frame: 1.0

@@ -30,6 +30,9 @@ RESULTS=results_gdp_curved
 CONSTRAINT=configs/filament_constraint_${PREFIX}.yaml
 GPUS=${GPUS:-}
 LOGDIR=${RESULTS}/logs
+# The base conda env imports leopard_em but has no h5py, so a run there dies only at
+# the end, when the correlation table is written. Name the interpreter explicitly.
+PYTHON=${PYTHON:-$HOME/miniconda3/envs/leopard-em/bin/python}
 
 STAGE1="12pf 13pf 14pf 15pf"
 
@@ -65,13 +68,13 @@ for tag in $TAGS; do
         # shellcheck disable=SC2206
         args+=(--gpus $GPUS)
     fi
-    python run_scripts/run_match_curved.py "${args[@]}" 2>&1 \
+    "$PYTHON" run_scripts/run_match_curved.py "${args[@]}" 2>&1 \
         | tee "${LOGDIR}/${full}.log"
     echo "== ${full}: done $(date '+%H:%M:%S')"
     echo
 done
 
 echo "Compare them with:"
-echo "  python run_scripts/compare_gdp_curved.py"
+echo "  $PYTHON run_scripts/compare_gdp_curved.py"
 echo "Then read one out with:"
-echo "  python run_scripts/analyse_gdp_curved.py --tag ${PREFIX}_13pf"
+echo "  $PYTHON run_scripts/analyse_gdp_curved.py --tag ${PREFIX}_13pf"

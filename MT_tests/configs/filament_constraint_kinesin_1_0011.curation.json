@@ -1,0 +1,71 @@
+{
+  "source_tracks": "/home/jdickerson/git/LucasLab/Leopard-EM/MT_tests/results_autotrace/kinesin_1_0011_t2p5.paths.json",
+  "micrograph": "/home/jdickerson/git/LucasLab/Leopard-EM/MT_tests/results_kinesin/20260916_lysates_1_0011_DW.mrc",
+  "kept": [
+    26,
+    18,
+    19,
+    25,
+    3
+  ],
+  "joined": [],
+  "parts": [
+    "3:0:0.5"
+  ],
+  "extended_to_edge": true,
+  "dropped": [
+    1,
+    2,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    20,
+    21,
+    22,
+    23,
+    24,
+    27,
+    28,
+    29,
+    30,
+    31
+  ],
+  "paths": [
+    {
+      "path": 1,
+      "from_tracks": "26",
+      "length_nm": 462.35119924413004
+    },
+    {
+      "path": 2,
+      "from_tracks": "18",
+      "length_nm": 462.40795466930695
+    },
+    {
+      "path": 3,
+      "from_tracks": "19",
+      "length_nm": 462.496502912282
+    },
+    {
+      "path": 4,
+      "from_tracks": "25",
+      "length_nm": 484.0903929706002
+    },
+    {
+      "path": 5,
+      "from_tracks": "3",
+      "length_nm": 650.8112087747702
+    }
+  ]
+}

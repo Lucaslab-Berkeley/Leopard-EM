@@ -1,0 +1,93 @@
+{
+  "source_tracks": "/home/jdickerson/git/LucasLab/Leopard-EM/MT_tests/results_autotrace_svd_fix/gdp_curved.paths.json",
+  "micrograph": "/home/jdickerson/git/LucasLab/Leopard-EM/MT_tests/Frames/GDP_curved_mgraph.mrc",
+  "kept": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    7,
+    9,
+    10,
+    11,
+    12,
+    14,
+    15
+  ],
+  "joined": [
+    "13+8"
+  ],
+  "parts": [],
+  "extended_to_edge": false,
+  "dropped": [
+    6
+  ],
+  "paths": [
+    {
+      "path": 1,
+      "from_tracks": "13+8",
+      "length_nm": 514.2881228149635
+    },
+    {
+      "path": 2,
+      "from_tracks": "1",
+      "length_nm": 494.8163872117722
+    },
+    {
+      "path": 3,
+      "from_tracks": "2",
+      "length_nm": 220.14247008010958
+    },
+    {
+      "path": 4,
+      "from_tracks": "3",
+      "length_nm": 119.407365404543
+    },
+    {
+      "path": 5,
+      "from_tracks": "4",
+      "length_nm": 319.12248833361826
+    },
+    {
+      "path": 6,
+      "from_tracks": "5",
+      "length_nm": 122.30495355185712
+    },
+    {
+      "path": 7,
+      "from_tracks": "7",
+      "length_nm": 390.5224602138747
+    },
+    {
+      "path": 8,
+      "from_tracks": "9",
+      "length_nm": 324.7416894335963
+    },
+    {
+      "path": 9,
+      "from_tracks": "10",
+      "length_nm": 342.8747914373161
+    },
+    {
+      "path": 10,
+      "from_tracks": "11",
+      "length_nm": 365.6777371066629
+    },
+    {
+      "path": 11,
+      "from_tracks": "12",
+      "length_nm": 145.4333095778983
+    },
+    {
+      "path": 12,
+      "from_tracks": "14",
+      "length_nm": 287.7819957820177
+    },
+    {
+      "path": 13,
+      "from_tracks": "15",
+      "length_nm": 158.72115041391447
+    }
+  ]
+}

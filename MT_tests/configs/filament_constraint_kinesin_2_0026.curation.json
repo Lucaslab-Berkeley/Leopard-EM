@@ -1,0 +1,24 @@
+{
+  "source_tracks": "/home/jdickerson/git/LucasLab/Leopard-EM/MT_tests/results_autotrace/kinesin_2_0026.paths.json",
+  "micrograph": "/home/jdickerson/git/LucasLab/Leopard-EM/MT_tests/results_kinesin/20260916_lysates_2_0026_DW.mrc",
+  "kept": [],
+  "joined": [
+    "4+7"
+  ],
+  "extended_to_edge": true,
+  "dropped": [
+    1,
+    2,
+    3,
+    5,
+    6,
+    8
+  ],
+  "paths": [
+    {
+      "path": 1,
+      "from_tracks": "4+7",
+      "length_nm": 677.7480346184777
+    }
+  ]
+}

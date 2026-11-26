@@ -1,0 +1,38 @@
+# Kinesin-decorated templates for the 16Sep2026 kinesin set: KIF5B rigor (3J8X) on every
+# beta-tubulin, built by models/build_kinesin_templates.py. Same simulation as every
+# other 1.13 A/px map (configs/simulate_kinesin_200kV.yaml), so templates differ only in
+# their model:
+#
+#   python run_scripts/simulate_lattice_competition.py --config configs/simulate_kinesin_decorated.yaml --device cuda:3
+
+pixel_size: 1.13
+box: 488
+voltage: 200.0
+mtf: k3_200kV_CDS
+apply_dqe: true
+exposure: 50.0            # -> 62.5 on ttsim3d's 300 kV damage scale
+overwrite: false
+# ttsim3d sizes each atom's neighbourhood from the model's MEAN B, so bare tubulin and
+# tubulin-with-motors would truncate the same tubulin differently (3.2%). Every map of
+# the kinesin set uses one radius, the motors' B (lattice flat B 31.18 + 30), so
+# decorated = bare + motors exactly; maps get the suffix _nb61.18.
+neighborhood_b: 61.18
+stems:
+  # the bare references, re-simulated at the same neighbourhood
+  - 6dpu_14pf_2rings_flatB
+  - 6dpu_atoms_6dpv_lattice_14pf_2rings_flatB
+  - 6dpu_14pf_patch5_2rings_flatB
+  - 6dpu_14pf_patch5_2rings_flatB_shift1
+  # decorated (saturated) and motors-only rings, expanded and compacted 14-PF
+  - 6dpu_14pf_2rings_flatB_kin3j8x
+  - 6dpu_14pf_2rings_flatB_kin3j8x_motorsonly
+  - 6dpu_atoms_6dpv_lattice_14pf_2rings_flatB_kin3j8x
+  - 6dpu_atoms_6dpv_lattice_14pf_2rings_flatB_kin3j8x_motorsonly
+  # decorated 5-PF patch and its one-monomer-shifted register partner
+  - 6dpu_14pf_patch5_2rings_flatB_kin3j8x
+  - 6dpu_14pf_patch5_2rings_flatB_shift1_kin3j8x
+  - 6dpu_14pf_patch5_2rings_flatB_kin3j8x_motorsonly
+  - 6dpu_14pf_patch5_2rings_flatB_shift1_kin3j8x_motorsonly
+  # the same motors one monomer along the axis (the alpha positions: the other register)
+  - 6dpu_14pf_2rings_flatB_kin3j8x_shift
+  - 6dpu_14pf_2rings_flatB_kin3j8x_motorsonly_shift

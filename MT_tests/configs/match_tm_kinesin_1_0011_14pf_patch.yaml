@@ -1,0 +1,66 @@
+# Stage 7 search for 16Sep2026 kinesin + GMPCPP, micrograph 20260916_lysates_1_0011:
+# the 5-PF PATCH cut from the 14-PF EXPANDED tube (GMPCPP), for the seam register, GPU 3.
+#
+#   python run_scripts/run_match_curved.py --prefix kinesin_ --tag 1_0011_14pf_patch \
+#       --results results_kinesin_1_0011 \
+#       --constraint configs/filament_constraint_kinesin_1_0011_refit.yaml --gpus 3
+#
+# The full uniform SO(3) grid is searched (no angle restricted here); the sidecar only
+# gates which (pixel, orientation) may win the MIP -- the five curated paths, 52 nm bands,
+# psi within 20 deg of each path, theta 90 +/- 20 -- and statistics come from the whole
+# grid so z stays comparable to an unconstrained search.
+#
+# Cost on ONE GPU (823 measured 175 correlations/s per GPU on this image size):
+#   psi 2.5 / theta 3.5, 9 defocus planes: 485,856 orientations -> ~6.9 h   <- this file
+#   psi 1.5 / theta 2.5, 9 planes: 1,584,480 orientations -> ~22.6 h (the in situ grid)
+micrograph_path: results_kinesin/20260916_lysates_1_0011_DW.mrc
+template_volume_path: maps/6dpu_14pf_patch5_2rings_flatB_1.13_bscale0.5.mrc
+computational_config:
+  gpu_ids:
+  - 3
+  num_cpus: 8
+defocus_search_config:
+  # PICASSO's defocus field for this micrograph spans 37,910-39,271 A about the 38,590 A
+  # mean, so +/-800 A in 200 A steps (9 planes) covers it.
+  enabled: true
+  defocus_min: -800.0
+  defocus_max: 800.0
+  defocus_step: 200.0
+match_template_result:
+  allow_file_overwrite: true
+  correlation_average_path: results_kinesin_1_0011/output_correlation_average_kinesin_1_0011_14pf_patch.mrc
+  correlation_variance_path: results_kinesin_1_0011/output_correlation_variance_kinesin_1_0011_14pf_patch.mrc
+  mip_path: results_kinesin_1_0011/output_mip_kinesin_1_0011_14pf_patch.mrc
+  orientation_phi_path: results_kinesin_1_0011/output_orientation_phi_kinesin_1_0011_14pf_patch.mrc
+  orientation_psi_path: results_kinesin_1_0011/output_orientation_psi_kinesin_1_0011_14pf_patch.mrc
+  orientation_theta_path: results_kinesin_1_0011/output_orientation_theta_kinesin_1_0011_14pf_patch.mrc
+  relative_defocus_path: results_kinesin_1_0011/output_relative_defocus_kinesin_1_0011_14pf_patch.mrc
+  scaled_mip_path: results_kinesin_1_0011/output_scaled_mip_kinesin_1_0011_14pf_patch.mrc
+optics_group:
+  # From PICASSO (results_ctf_kinesin/20260916_lysates_1_0011_DW_optics.yaml): 3.86 um
+  # underfocus, ~106 A astigmatism. ctf_B_factor 60 as in every search here.
+  label: 20260916_lysates_1_0011
+  amplitude_contrast_ratio: 0.07
+  ctf_B_factor: 60.0
+  astigmatism_angle: 30.922855014343156
+  defocus_u: 38695.8524864167
+  defocus_v: 38484.11348648369
+  phase_shift: 0.0
+  pixel_size: 1.13
+  spherical_aberration: 2.7
+  voltage: 200.0
+orientation_search_config:
+  base_grid_method: uniform
+  psi_step: 2.5
+  theta_step: 3.5
+preprocessing_filters:
+  bandpass_filter:
+    enabled: false
+    falloff: 0.05
+    high_freq_cutoff: 0.5
+    low_freq_cutoff: 0.0
+  whitening_filter:
+    enabled: true
+    do_power_spectrum: true
+    max_freq: 1.0
+    num_freq_bins: null

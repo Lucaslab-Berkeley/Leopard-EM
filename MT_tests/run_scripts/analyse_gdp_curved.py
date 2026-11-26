@@ -54,9 +54,9 @@ from leopard_em.pydantic_models.results.correlation_table import detections_from
 
 MT_ROOT = pathlib.Path(__file__).resolve().parents[1]
 REPO_ROOT = MT_ROOT.parent
-PIXEL_SIZE = 0.9194
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+from frame_geometry import legacy_frame_geometry  # noqa: E402
 from setup_gdp_curved import SEARCHES  # noqa: E402
 
 # Same smoothing the constraint was rasterised with, so the curve analysed here is the
@@ -99,7 +99,10 @@ class DrawnCurve:
     with was not produced by the search agreeing with itself.
     """
 
-    def __init__(self, points_yx: np.ndarray) -> None:
+    def __init__(self, points_yx: np.ndarray, *, pixel_size: float) -> None:
+        # Required, never defaulted: segment counts and every Angstrom figure depend
+        # on it, and a wrong one fails silently.
+        self.pixel_size = float(pixel_size)
         self.curve, self.tangent = PATH_TOOL.spline_through_points(
             points_yx, smooth_px=SMOOTH_PX
         )
@@ -189,8 +192,8 @@ class DrawnCurve:
         _, _, basis = np.linalg.svd(points - centroid, full_matrices=False)
         along = (points - centroid) @ basis[0]
         residual = along - np.polyval(np.polyfit(arc, along, 1), arc)
-        return (float(np.sqrt((residual**2).mean()) * PIXEL_SIZE),
-                float(np.abs(residual).max() * PIXEL_SIZE))
+        return (float(np.sqrt((residual**2).mean()) * self.pixel_size),
+                float(np.abs(residual).max() * self.pixel_size))
 
     def psi_at(self, arc_value: float) -> float:
         """Tangent angle at an arc position, in degrees modulo 360."""
@@ -235,7 +238,7 @@ def segment_table(curve: DrawnCurve, k: int) -> tuple[float, float, float, float
         bias.append(abs(curve.shortening(edges[i], edges[i + 1])))
         bow.append(curve.straight_residual_px(edges[i], edges[i + 1])[1])
         distortion.append(curve.axial_distortion_angstrom(edges[i], edges[i + 1])[1])
-    repeats = (curve.length_px / k) * PIXEL_SIZE / MONOMER_RISE_ANGSTROM
+    repeats = (curve.length_px / k) * curve.pixel_size / MONOMER_RISE_ANGSTROM
     return max(bias), max(bow), max(distortion), repeats
 
 
@@ -261,12 +264,13 @@ def report_geometry(index: int, curve: DrawnCurve, n_detections: int) -> int:
     excess = curve.length_px / curve.chord_px - 1.0
     residual_rms, residual_max = curve.straight_residual_px()
     print(f"  {n_detections:,} detections inside this region")
-    print(f"  arc {curve.length_px:.0f} px ({curve.length_px * PIXEL_SIZE / 10:.0f} nm), "
+    print(f"  arc {curve.length_px:.0f} px "
+          f"({curve.length_px * curve.pixel_size / 10:.0f} nm), "
           f"chord {curve.chord_px:.0f} px -- arc exceeds chord by {100 * excess:.2f}%")
     print(f"  psi {curve.psi_at(0):.1f}° → {curve.psi_at(curve.length_px):.1f}°, "
           f"end-to-end turn {curve.turn_deg:+.1f}°")
     print(f"  median radius of curvature {radius:.0f} px "
-          f"({radius * PIXEL_SIZE / 1e4:.2f} µm)")
+          f"({radius * curve.pixel_size / 1e4:.2f} µm)")
     print(f"  departure from its own best-fit line: {residual_rms:.0f} px rms, "
           f"{residual_max:.0f} px peak")
 
@@ -322,9 +326,16 @@ def report_polarity(detections, curve: DrawnCurve, arc: np.ndarray, k: int) -> N
         if keep.sum() < 20:
             print(f"  {part + 1}/{k:<10} only {int(keep.sum())} detections, skipped")
             continue
-        estimate = estimate_polarity(
-            detections[keep].reset_index(drop=True), score_threshold=7.0
-        )
+        segment = detections[keep].reset_index(drop=True)
+        try:
+            estimate = estimate_polarity(segment, score_threshold=7.0)
+        except ValueError:
+            # Occupancy is uneven along a bent tube, so a segment can hold plenty of
+            # detections and still none above the polarity cut.
+            strong = int((segment["z_score"] > 7.0).sum())
+            print(f"  {f'{part + 1}/{k}':<12} {len(segment)} detections but only "
+                  f"{strong} above z 7, no polarity")
+            continue
         drawn = curve.psi_at(0.5 * (edges[part] + edges[part + 1]))
         # estimate_polarity reports the pole; the drawing has no polarity, only an
         # axis, so the comparison is modulo 180.
@@ -363,11 +374,15 @@ def report_axis(detections, curve: DrawnCurve, geometry, arc: np.ndarray,
                 across: np.ndarray) -> None:
     """How badly a straight axis misses, against what the drawing says it should."""
     header("3. AXIS -- a straight fit against a path that is visibly bent")
-    strong = detections[detections["z_score"] > 8.0]
-    if len(strong) < 30:
-        print(f"  only {len(strong)} detections above z 8, skipped")
+    boot = pick_bootstrap(detections["z_score"].to_numpy(), want=30)
+    if boot is None:
+        print(f"  too few strong detections to fit an axis "
+              f"(max z {detections['z_score'].max():.2f})")
         return
-    points = axis_points_from_peaks(strong, geometry, PIXEL_SIZE)
+    keep = (detections["z_score"] > boot).to_numpy()
+    strong = detections[keep]
+    arc = arc[keep]
+    points = axis_points_from_peaks(strong, geometry, curve.pixel_size)
     try:
         reference = filament_direction_from_angles(
             strong["phi"].to_numpy(), strong["theta"].to_numpy(),
@@ -392,7 +407,7 @@ def report_axis(detections, curve: DrawnCurve, geometry, arc: np.ndarray,
     expected, expected_max = curve.straight_residual_px(
         float(arc.min()), float(arc.max())
     )
-    print(f"  {len(strong):,} detections above z 8, spanning {span:.0f} px "
+    print(f"  {len(strong):,} detections above z {boot:.1f}, spanning {span:.0f} px "
           f"(arc {arc.min():.0f}-{arc.max():.0f} px of the drawing)")
     print(f"  straight fit: angle {axis.angle_deg:.2f}°, residual "
           f"{axis.residual_rms_px:.2f} px")
@@ -422,7 +437,7 @@ def report_spacing(detections, curve: DrawnCurve, geometry, arc: np.ndarray,
 
     print(f"  template repeat {template_rise:.3f} Å; {k} segments of {span:.0f} px\n")
     print(f"  {'segment':<10} {'sites':>6} {'occ':>6} {'rise Å':>9} {'bias':>8} "
-          f"{'corrected':>10} {'vs template':>12} {'dev rms Å':>10}")
+          f"{'corrected':>10} {'vs template':>12} {'dev rms Å':>10} {'boot z':>7}")
 
     rises, weights = [], []
     for part in range(k):
@@ -431,9 +446,14 @@ def report_spacing(detections, curve: DrawnCurve, geometry, arc: np.ndarray,
         if len(subset) < 200:
             print(f"  {f'{part + 1}/{k}':<10} only {len(subset)} detections, skipped")
             continue
+        boot = pick_bootstrap(subset["z_score"].to_numpy())
+        if boot is None:
+            print(f"  {f'{part + 1}/{k}':<10} {len(subset)} detections but too few "
+                  f"strong ones to bootstrap an axis")
+            continue
         try:
             sites = extract_lattice_sites(
-                subset, geometry, PIXEL_SIZE, bootstrap_score_threshold=8.0
+                subset, geometry, curve.pixel_size, bootstrap_score_threshold=boot
             )
         except ValueError as error:
             print(f"  {f'{part + 1}/{k}':<10} {error}")
@@ -448,7 +468,7 @@ def report_spacing(detections, curve: DrawnCurve, geometry, arc: np.ndarray,
         print(f"  {f'{part + 1}/{k}':<10} {n_sites:6d} {sites.occupancy:5.0%} "
               f"{rise:9.3f} {100 * bias:+7.3f}% {corrected:10.3f} "
               f"{100 * (corrected - template_rise) / template_rise:+11.2f}% "
-              f"{np.sqrt((deviation**2).mean()):10.2f}")
+              f"{np.sqrt((deviation**2).mean()):10.2f} {boot:7.1f}")
         rises.append(corrected)
         weights.append(n_sites)
 
@@ -470,6 +490,22 @@ def report_spacing(detections, curve: DrawnCurve, geometry, arc: np.ndarray,
           f"real rather than\n  noise, different parts of this tube have different "
           f"spacings, which is the\n  question the segment-wise measurement exists to "
           f"ask")
+
+
+def pick_bootstrap(scores: np.ndarray, want: int = 12,
+                   options: tuple = (8.0, 7.5, 7.0, 6.5)) -> float | None:
+    """Highest bootstrap cut that still leaves enough detections to fit an axis.
+
+    STATUS uses a fixed z > 8, which worked on a 0.82 um frame where the tube was
+    strong. This one sits at 0.2 um, where low-frequency contrast is weak and the whole
+    region can hold a single detection above 8 -- so a fixed cut silently drops entire
+    segments. Cut as high as the data allows and report which cut was used, because the
+    answer is supposed to be insensitive to it.
+    """
+    for threshold in options:
+        if int((scores > threshold).sum()) >= want:
+            return threshold
+    return None
 
 
 def alternation(index: np.ndarray, score: np.ndarray, rng, n_null: int = 2000):
@@ -507,9 +543,13 @@ def report_register(detections, curve: DrawnCurve, geometry, arc: np.ndarray,
         row = [f"{part + 1}/{k}"]
         values = []
         for rise in (None, 2.0 * geometry.rise_angstrom):
+            boot = pick_bootstrap(subset["z_score"].to_numpy())
+            if boot is None:
+                values.append(None)
+                continue
             try:
                 sites = extract_lattice_sites(
-                    subset, geometry, PIXEL_SIZE, bootstrap_score_threshold=8.0,
+                    subset, geometry, curve.pixel_size, bootstrap_score_threshold=boot,
                     initial_rise_angstrom=rise,
                 )
             except ValueError:
@@ -567,6 +607,7 @@ def main() -> None:
     detections = detections_from_hdf5(
         str(table), min_z_score=args.min_z
     ).reset_index(drop=True)
+    frame = legacy_frame_geometry(table, stem.removesuffix(".pdb"))
 
     with h5py.File(args.constraint, "r") as handle:
         region_map = handle["maps/region_id"][:]
@@ -582,13 +623,24 @@ def main() -> None:
     print(f"  {len(detections):,} detections above z {args.min_z}, "
           f"max z {detections['z_score'].max():.2f}")
     print(f"  {len(drawn)} drawn region(s): {sorted(drawn)}")
+    print(f"  {frame.describe()}")
 
-    # Region ownership is decided at the detection's own pixel, which is where the
-    # constraint gated it, so a detection can never be analysed against a curve that
-    # did not permit it.
-    y = np.clip(detections["y"].to_numpy(), 0, region_map.shape[0] - 1)
-    x = np.clip(detections["x"].to_numpy(), 0, region_map.shape[1] - 1)
+    # FRAMES. The correlation table's x/y are the correlation-map frame; the constraint
+    # maps and the drawn curve are the micrograph frame. They differ by exactly half the
+    # template box, so everything the curve touches gets shifted once, here, and nothing
+    # downstream has to think about it again. Getting this wrong displaces every
+    # detection by half a box and silently measures against the wrong stretch of tube,
+    # which is why the offset comes from the table, not a constant.
+    half = frame.half_width
+    y = np.clip(detections["y"].to_numpy() + half, 0, region_map.shape[0] - 1)
+    x = np.clip(detections["x"].to_numpy() + half, 0, region_map.shape[1] - 1)
     owner = region_map[y, x]
+    inside = int((owner > 0).sum())
+    print(f"  {inside:,} of {len(detections):,} detections fall inside a drawn region "
+          f"({inside / max(len(detections), 1):.0%}) at +{half} px offset")
+    if inside < 0.5 * len(detections):
+        print("  WARNING: most detections land outside the drawn regions. Check the "
+              "table-to-micrograph offset against the template box size.")
 
     for index in sorted(drawn):
         if args.region is not None and index != args.region:
@@ -597,10 +649,12 @@ def main() -> None:
         if len(subset) < 100:
             print(f"\nREGION {index}: only {len(subset)} detections, skipped")
             continue
-        curve = DrawnCurve(drawn[index])
+        curve = DrawnCurve(drawn[index], pixel_size=frame.pixel_size)
         k = args.segments or report_geometry(index, curve, len(subset))
 
-        points = axis_points_from_peaks(subset, geometry, PIXEL_SIZE)
+        # axis_points_from_peaks returns positions in the frame of the input columns,
+        # i.e. the table frame; the curve is in the micrograph frame.
+        points = axis_points_from_peaks(subset, geometry, frame.pixel_size) + half
         arc, across = curve.project(points)
 
         report_polarity(subset, curve, arc, k)

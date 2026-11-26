@@ -1,0 +1,37 @@
+# Template simulation for the 16Sep2026 kinesin + GMPCPP set (Talos Arctica, K3 CDS).
+#
+#   python run_scripts/simulate_lattice_competition.py --config configs/simulate_kinesin_200kV.yaml
+#
+# Runs on CPU (~40 s per map): ttsim3d's GPU path needs an nvrtc this box lacks, and the
+# CPU route is what every template here was made with.
+#
+# Fixed in the script for every template in this project (so templates differ only in
+# their model): b_factor_scaling 0.5, additional B 0, hydrogens removed, atoms NOT
+# re-centred (centre_atoms False -- the builder puts the tube axis on the box centre, so
+# a pose found with one template is valid for all of them), dose filter "rel_diff",
+# automatic upsampling.
+
+pixel_size: 1.13          # A/px: the RIPPLE sums (0.565 super-res x 2)
+box: 488                  # 551 A, the same physical box as every other set
+voltage: 200.0            # kV
+mtf: k3_200kV_CDS         # ttsim3d reference: K3, CDS mode, 200 kV -- used for both the
+apply_dqe: true           #   detector MTF and the DQE filter
+exposure: 50.0            # e-/A^2 the movies received (1 per frame x 50; counts check
+                          #   0.89-0.93/frame). Converted to the 300 kV damage scale of
+                          #   ttsim3d's dose filter: 50 / 0.8 = 62.5 at 200 kV, as RIPPLE
+                          #   did for the movies (RELION's convention)
+overwrite: true           # the 1.13 A/px maps made earlier used exposure 50 unconverted
+stems:
+  # the Stage 2 reference: GMPCPP is mostly 14 protofilaments, expanded lattice
+  - 6dpu_14pf_2rings_flatB
+  # Stage 6 rivals: protofilament number (expanded) and lattice (compacted)
+  - 6dpu_12pf_2rings_flatB
+  - 6dpu_13pf_2rings_flatB
+  - 6dpu_15pf_2rings_flatB
+  - 6dpu_atoms_6dpv_lattice_13pf_2rings_flatB
+  - 6dpu_atoms_6dpv_lattice_14pf_2rings_flatB
+  # Stage 7 register: the expanded 14-PF patch, its one-monomer-shifted partner, and
+  # the compacted patch for the lattice check
+  - 6dpu_14pf_patch5_2rings_flatB
+  - 6dpu_14pf_patch5_2rings_flatB_shift1
+  - 6dpu_atoms_6dpv_lattice_14pf_patch5_2rings_flatB

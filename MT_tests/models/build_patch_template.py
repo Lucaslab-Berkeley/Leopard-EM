@@ -39,6 +39,9 @@ def main() -> None:
     parser.add_argument("--atoms", default="6dpu", choices=sorted(B.DEPOSITIONS))
     parser.add_argument("--lattice", default=None, choices=sorted(B.DEPOSITIONS),
                         help="repeat source; defaults to --atoms")
+    parser.add_argument("--monomer-shift", type=int, default=0,
+                        help="slide the alpha/beta assignment by this many monomers; "
+                             "1 builds the one-monomer-out-of-register competitor")
     parser.add_argument("--outdir", type=pathlib.Path,
                         default=pathlib.Path(__file__).resolve().parent)
     args = parser.parse_args()
@@ -86,6 +89,7 @@ def main() -> None:
         args.rings,
         flat_b,
         protofilament_subset=subset,
+        monomer_shift=args.monomer_shift,
     )
 
     source_tag = (
@@ -93,9 +97,10 @@ def main() -> None:
         if lattice_source == args.atoms
         else f"{args.atoms}_atoms_{lattice_source}_lattice"
     )
+    shift_tag = f"_shift{args.monomer_shift}" if args.monomer_shift else ""
     name = (
         f"{source_tag}_{args.protofilaments}pf_patch{args.keep}"
-        f"_{args.rings}rings_flatB.pdb"
+        f"_{args.rings}rings_flatB{shift_tag}.pdb"
     )
     path = args.outdir / name
     structure.write_pdb(str(path))
