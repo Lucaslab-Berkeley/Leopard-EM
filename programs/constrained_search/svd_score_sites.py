@@ -18,7 +18,7 @@ Only the reduction differs: in place of "every correlation above a cut" each sit
 A pixel shared by two sites' windows (a front and a back protofilament can project onto
 the same pixel) counts for each site with that site's own orientation window.
 
-Runs in the Panther-EM environment (branch ``jd/mt-correlation-table``)::
+Runs in the Panther-EM environment (branch ``jd/emit-entries``)::
 
     source MT_tests/run_scripts/panther_env.sh   # from the Leopard-EM root
     cd MT_tests

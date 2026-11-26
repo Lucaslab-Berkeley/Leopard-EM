@@ -52,8 +52,9 @@ for GMPCPP `6dpu_14pf_2rings_flatB` (6DPU atoms and lattice, already centred).
 ## Environments
 
 ```bash
-# Panther-EM (SVD search, site scoring): branch jd/mt-correlation-table on
-# github.com/jdickerson95/Panther-EM (emit_entries, on top of mdg-seed-local-stage1).
+# Panther-EM (SVD search, site scoring): branch jd/emit-entries on
+# github.com/jdickerson95/Panther-EM (emit_entries on mdg-seed-local-stage1;
+# PR mgiammar/Panther-EM#25).
 # PANTHER_ROOT defaults to a Panther-EM checkout next to this Leopard-EM one; the
 # other overrides are in run_scripts/panther_env.sh.
 source run_scripts/panther_env.sh
@@ -640,7 +641,7 @@ along a tube do not.
   (`results_autotrace_svd_fix/`): 823 identical tracks, median offsets 22/16/31/11 →
   18/12/32/10 Å; GDP's curved path 1 covered 57% → 79% at 39 → 15 Å median offset.
   **The centre default was in Panther-EM itself** (`coordinates/*_polar.py` `from_image`)
-  and is now fixed there too (commit 4732d29 on branch `jd/mt-correlation-table`): default
+  and is now fixed there too (on main as #16, and on branch `jd/emit-entries`): default
   `(h // 2, w // 2)`; odd boxes unchanged; Panther's 502 tests pass. On an in situ
   micrograph of yeast ribosomes (LSU, 300 kV; 512³ box, same configs): recall and
   precision unchanged, z at the reference picks up 2.6% on average — ≈ 0 for ψ 0–60° and
@@ -678,7 +679,6 @@ along a tube do not.
   the looped-curve index (left, per "skip kinesin for testing").
 * Disk: see *Disk* above. `pipe_gmpcpp_14pf` (8.3 GB) is superseded by `pipe_gmpcpp_13pf`
   but kept: it is the record of the PF switch.
-* Nothing in this route is committed: the Panther-EM branch `jd/mt-correlation-table`,
-  `svd_*.py`, `lattice_fill.py`, `stage7_every_site.py`, the `continuous_unwrap_curved.py`
-  guard, the `neutral_stack` patch extension and the `--patch --start lattice` guard in
-  `stage6b_local_lattice.py` are all working-tree changes.
+* Where the code is (2026-11-25): Leopard-EM branch `jd_constrained_segment`
+  (Lucaslab-Berkeley/Leopard-EM#138) and Panther-EM branch `jd/emit-entries`
+  (mgiammar/Panther-EM#25, onto `mdg-seed-local-stage1`, which the seeded searches need).

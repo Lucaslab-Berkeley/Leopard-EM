@@ -140,7 +140,7 @@ def polar_options(box: int, convention: str) -> dict:
     """Where the polar grid -- the in-plane (psi) rotation -- is centred.
 
     Panther-EM's grids defaulted to ``(box / 2 - 0.5, box / 2 - 0.5)`` until 2026-11-12
-    (fixed on branch jd/mt-correlation-table); a projection made by Fourier slice
+    (fixed on Panther-EM main, #16); a projection made by Fourier slice
     (Panther-EM's own and Leopard-EM's) is centred at ``box // 2``. For an even box the
     old default rotated every template about a point half a pixel off its centre,
     which moves the correlation peak by ``(I - R(-psi)) (1/2, 1/2)`` px -- up to 1.4 px,

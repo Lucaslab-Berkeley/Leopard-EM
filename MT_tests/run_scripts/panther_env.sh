@@ -4,7 +4,8 @@
 # (LEOPARD_PY in run_svd_pipeline.sh). Every setting can be overridden from the caller:
 #   PANTHER_ROOT  Panther-EM checkout with a .venv (default: Panther-EM next to this
 #                 Leopard-EM checkout). The pipeline needs the emit_entries search
-#                 (branch jd/mt-correlation-table, on top of mdg-seed-local-stage1).
+#                 (branch jd/emit-entries on github.com/jdickerson95/Panther-EM, PR
+#                 mgiammar/Panther-EM#25 onto mdg-seed-local-stage1).
 #   PANTHER_VENV  its venv (default: $PANTHER_ROOT/.venv)
 #   CUDA_HOME     CUDA toolkit whose nvcc builds the fused-kernel JIT; it must match the
 #                 CUDA of the venv's torch (default: /usr/local/cuda-12.8 if present)

@@ -7,8 +7,8 @@ only each pixel's maximum -- the raw material of Leopard-EM's correlation table.
 ``svd_entries_to_table.py`` (Leopard-EM's environment) then applies the constraint's
 per-pixel orientation gate and writes the table itself.
 
-Runs in the Panther-EM environment (Panther-EM branch ``jd/mt-correlation-table``, which
-adds the entry emission)::
+Runs in the Panther-EM environment (Panther-EM branch ``jd/emit-entries``, which adds the
+entry emission; mgiammar/Panther-EM#25)::
 
     source MT_tests/run_scripts/panther_env.sh   # from the Leopard-EM root
     cd MT_tests
