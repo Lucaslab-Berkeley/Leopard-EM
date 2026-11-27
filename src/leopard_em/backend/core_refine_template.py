@@ -765,7 +765,6 @@ def _reduce_refine_best_zscore(
         z_score = (cross_correlation - corr_mean) / corr_std
 
         if z_score.max() > max_z_score:
-            max_cc = cross_correlation.max()
             max_z_score = z_score.max()
             max_values, max_indices = torch.max(z_score.view(-1, crop_h, crop_w), dim=0)
             _, max_pos = torch.max(max_values.view(-1), dim=0)
@@ -776,6 +775,7 @@ def _reduce_refine_best_zscore(
             px_idx = flat_idx // (len(defocus_offsets) * num_angles_batch)
             defocus_idx = (flat_idx // num_angles_batch) % len(defocus_offsets)
             angle_idx = flat_idx % num_angles_batch
+            max_cc = cross_correlation[px_idx, defocus_idx, angle_idx, y_idx, x_idx]
 
             refined_phi_offset = euler_angle_offsets_batch[angle_idx, 0]
             refined_theta_offset = euler_angle_offsets_batch[angle_idx, 1]
