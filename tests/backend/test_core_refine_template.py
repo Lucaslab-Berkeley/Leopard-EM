@@ -74,7 +74,7 @@ def test_reduce_refine_best_zscore_matches_snapshot():
         value = result[key]
         return value.item() if torch.is_tensor(value) else value
 
-    assert _val("max_cc") == 3.4028263092041016
+    assert _val("max_cc") == 2.63523530960083
     assert _val("max_z_score") == 5.6347527503967285
     assert _val("refined_phi_offset") == -2.2187793254852295
     assert _val("refined_theta_offset") == 0.2589845359325409
@@ -84,6 +84,32 @@ def test_reduce_refine_best_zscore_matches_snapshot():
     assert _val("refined_pos_y") == 1
     assert _val("refined_pos_x") == 0
     assert _val("angle_idx") == 2
+
+
+def test_reduce_refine_best_zscore_max_cc_matches_winning_zscore_index():
+    """Return cross-correlation from the winning z-score index, not the global max."""
+    corr_mean = torch.zeros(2, 2)
+    corr_std = torch.tensor([[1.0, 10.0], [10.0, 10.0]])
+    cross_correlation = torch.zeros(1, 2, 1, 2, 2)
+    # Winning z-score is at (px=0, defocus=0, angle=0, y=0, x=0): cc=3.0 -> z=3.0
+    cross_correlation[0, 0, 0, 0, 0] = 3.0
+    # Higher raw cc at a different defocus/pixel with high std: cc=9.0 -> z=0.9
+    cross_correlation[0, 1, 0, 0, 1] = 9.0
+
+    batches = [(0, torch.zeros(1, 3), cross_correlation, 2, 2)]
+    result = _reduce_refine_best_zscore(
+        iter(batches),
+        corr_mean=corr_mean,
+        corr_std=corr_std,
+        defocus_offsets=torch.tensor([-10.0, 10.0]),
+        pixel_size_offsets=torch.tensor([0.0]),
+    )
+
+    assert result["refined_pos_y"] == 0
+    assert result["refined_pos_x"] == 0
+    assert result["refined_defocus_offset"] == pytest.approx(-10.0)
+    assert result["max_z_score"] == pytest.approx(3.0)
+    assert result["max_cc"] == pytest.approx(3.0)
 
 
 def _minimal_refine_kwargs(num_particles: int = 2) -> dict:
